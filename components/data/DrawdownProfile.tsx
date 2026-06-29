@@ -105,7 +105,7 @@ export default function DrawdownProfile() {
               axisLine={false}
               tickLine={false}
               tick={{ fill: "var(--ink-2)", fontSize: 10, fontFamily: "var(--font-mono)" }}
-              tickFormatter={(v) => view === "equity" ? `${v.toFixed(0)}` : `${v.toFixed(1)}%`}
+              tickFormatter={(v) => typeof v === "number" ? (view === "equity" ? `${v.toFixed(0)}` : `${v.toFixed(1)}%`) : String(v)}
             />
             {view === "drawdown" && <ReferenceLine y={0} stroke="var(--line-hi)" strokeWidth={1} />}
             <Tooltip
@@ -117,11 +117,12 @@ export default function DrawdownProfile() {
                 fontFamily: "var(--font-mono), monospace",
                 color: "var(--ink-0)",
               }}
-              formatter={(v: number) =>
-                view === "equity"
-                  ? [`${v.toFixed(2)} R accumulated`, "Equity"]
-                  : [`${v.toFixed(2)}%`, "Drawdown"]
-              }
+              formatter={(v) => {
+                const n = typeof v === "number" ? v : Number(v);
+                return view === "equity"
+                  ? [`${n.toFixed(2)} R accumulated`, "Equity"]
+                  : [`${n.toFixed(2)}%`, "Drawdown"];
+              }}
               labelFormatter={(l) => `Trade ${l}`}
               cursor={{ stroke: "var(--line-hi)", strokeWidth: 1 }}
             />

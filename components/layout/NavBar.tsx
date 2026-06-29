@@ -124,9 +124,9 @@ export default function NavBar() {
               opacity: open ? 0 : 1,
             }}/>
             <span style={{
-              display: "block", width: 14, height: 1.5,
+              display: "block", height: 1.5,
               background: "var(--ink-2)",
-              transition: "transform 0.22s ease, opacity 0.22s ease",
+              transition: "transform 0.22s ease, opacity 0.22s ease, width 0.22s ease",
               transform: open ? "translateY(-6.5px) rotate(-45deg)" : "none",
               width: open ? 20 : 14,
             }}/>
