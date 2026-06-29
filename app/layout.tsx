@@ -1,0 +1,62 @@
+import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
+import NavBar from "@/components/layout/NavBar";
+import StatusBar from "@/components/layout/StatusBar";
+import Footer from "@/components/layout/Footer";
+import ScrollToTop from "@/components/ui/ScrollToTop";
+import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const mono  = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
+
+export const viewport: Viewport = {
+  themeColor: "#04080f",
+  colorScheme: "dark",
+  width: "device-width",
+  initialScale: 1,
+};
+
+export const metadata: Metadata = {
+  metadataBase: new URL("https://xtnl-solutions.com"),
+  title: {
+    default:  "XTNL Sovereign Trust",
+    template: "%s | XTNL",
+  },
+  description:
+    "A 96.5% deterministic quantitative compounding engine for EUR/USD spot foreign exchange. Statistical edge SQN 4.253, validated across N=914 live transactions.",
+  keywords: [
+    "quantitative trading", "algorithmic trading", "forex", "EUR/USD",
+    "systematic trading", "Monte Carlo", "risk management", "XTNL",
+  ],
+  authors: [{ name: "XTNL Sovereign Trust", url: "mailto:xt@xtnl-solutions.com" }],
+  creator: "XTNL Sovereign Trust",
+  openGraph: {
+    type:        "website",
+    siteName:    "XTNL Sovereign Trust",
+    title:       "XTNL Sovereign Trust | Institutional Prospectus",
+    description: "A 96.5% deterministic quantitative compounding engine for EUR/USD spot FX. SQN 4.253 · OOS Expectancy 0.904 R · Validated N=914.",
+    locale:      "en_AU",
+  },
+  twitter: {
+    card:        "summary",
+    title:       "XTNL Sovereign Trust",
+    description: "Quantitative EUR/USD compounding engine. SQN 4.253 · STABLE · OOS validated.",
+  },
+  robots: { index: false, follow: false }, // private prospectus
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en" className={`${inter.variable} ${mono.variable}`}>
+      <body>
+        <NavBar />
+        <StatusBar />
+        <div style={{ paddingTop: "calc(var(--nav-h) + var(--bar-h))" }}>
+          {children}
+        </div>
+        <Footer />
+        <ScrollToTop />
+      </body>
+    </html>
+  );
+}
