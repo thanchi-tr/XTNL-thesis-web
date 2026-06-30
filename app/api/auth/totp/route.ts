@@ -7,8 +7,11 @@ import QRCode                        from "qrcode";
 
 /* ── Enrollment store ───────────────────────────────────────
  * Persists which users have completed first-time TOTP setup.
- * Emails are stored as HMAC hashes — never in plaintext.     */
-const DATA_DIR      = join(process.cwd(), "data");
+ * Emails are stored as HMAC hashes — never in plaintext.
+ * On Vercel the CWD is read-only; writes go to /tmp instead. */
+const DATA_DIR      = process.env.VERCEL
+  ? "/tmp/xtnl-data"
+  : join(process.cwd(), "data");
 const ENROLLED_FILE = join(DATA_DIR, "totp-enrolled.json");
 
 function emailHash(email: string): string {
