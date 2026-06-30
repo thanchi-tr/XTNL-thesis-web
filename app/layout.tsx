@@ -4,6 +4,8 @@ import NavBar from "@/components/layout/NavBar";
 import StatusBar from "@/components/layout/StatusBar";
 import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
+import SessionProvider          from "@/components/SessionProvider";
+import { SimulatorProvider }   from "@/context/SimulatorContext";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -49,13 +51,17 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${inter.variable} ${mono.variable}`}>
       <body>
-        <NavBar />
-        <StatusBar />
-        <div style={{ paddingTop: "calc(var(--nav-h) + var(--bar-h))" }}>
-          {children}
-        </div>
-        <Footer />
-        <ScrollToTop />
+        <SessionProvider>
+          <SimulatorProvider>
+            <NavBar />
+            <StatusBar />
+            <div style={{ paddingTop: "calc(var(--nav-h) + var(--bar-h))" }}>
+              {children}
+            </div>
+            <Footer />
+            <ScrollToTop />
+          </SimulatorProvider>
+        </SessionProvider>
       </body>
     </html>
   );

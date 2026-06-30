@@ -1,40 +1,14 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, AreaChart, Area,
 } from "recharts";
-import { startTransition } from "react";
-import {
-  runSimulation, formatMultiple,
-  type SimParams, type SimSummary,
-} from "@/lib/simulation";
+import { formatMultiple, type SimParams } from "@/lib/simulation";
 import SliderControl from "@/components/ui/SliderControl";
+import { useSimulator } from "@/context/SimulatorContext";
 
-/* ── Defaults from live system data ─────────────────────── */
-const DEFAULT: SimParams = {
-  /* Edge */
-  baseRiskPct:         0.70,    // Recommend R = 0.007 (SESSION_FILTERED)
-  expPerTrade:         0.982,   // SESSION_FILTERED μ
-  tradesPerWeek:       8,       // live avg trades/week
-  volPerTrade:         2.4,
-  edgeDecayPctPerQtr:  3,
-
-  /* Operator */
-  operatorMeanEff:     0.82,    // live inferred efficiency rating
-
-  /* Commission */
-  commissionStartWeek: 52,      // distribute after 1 year of operation
-
-  /* Injection */
-  frozenPoolPct:       0,       // off by default — enable to model 4-wk gate
-
-  /* Risk controls */
-  taxRatePct:          47,      // ATO max marginal + 2% Medicare
-  maxDDLimit:          0,       // off
-  weeks:               260,     // 5 years
-};
 
 const PRESETS = [
   { label: "Baseline",    icon: "◎", p: { operatorMeanEff: 0.82, edgeDecayPctPerQtr: 3,   baseRiskPct: 0.70 } },
@@ -123,12 +97,7 @@ function EffTip({ active, payload, label }: {
    Main component
    ═══════════════════════════════════════════════════════════ */
 export default function MonteCarloSimulator() {
-  const [p,       setP]       = useState<SimParams>(DEFAULT);
-  const [res,     setRes]     = useState<SimSummary | null>(null);
-  const [running, setRunning] = useState(false);
-  const [eqData,  setEqData]  = useState<Record<string, number>[]>([]);
-  const [effData, setEffData] = useState<{ week: number; eff: number; regime: number }[]>([]);
-  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { params: p, result: res, running, setParam, setParams, rerun } = useSimulator();
 
   const buildEqData = useCallback((paths: number[][], weeks: number) => {
     const out: Record<string, number>[] = [];
@@ -150,35 +119,18 @@ export default function MonteCarloSimulator() {
     }));
   }, []);
 
-  const simulate = useCallback((params: SimParams) => {
-    setRunning(true);
-    // setTimeout(0) yields to the browser so the slider paint completes first,
-    // then startTransition marks the heavy state updates as non-urgent so React
-    // doesn't block input events while committing the 1000-path result.
-    setTimeout(() => {
-      const s = runSimulation(params, 1000);
-      startTransition(() => {
-        setRes(s);
-        setEqData(buildEqData(s.paths, params.weeks));
-        setEffData(buildEffData(s.effPathSamples, s.regPathSamples, params.weeks));
-        setRunning(false);
-      });
-    }, 0);
-  }, [buildEqData, buildEffData]);
+  // Chart data derived from context result — recomputed only when result or weeks changes
+  const eqData = useMemo(
+    () => res ? buildEqData(res.paths, p.weeks) : [],
+    [res, p.weeks, buildEqData]
+  );
+  const effData = useMemo(
+    () => res ? buildEffData(res.effPathSamples, res.regPathSamples, p.weeks) : [],
+    [res, p.weeks, buildEffData]
+  );
 
-  useEffect(() => { simulate(DEFAULT); }, [simulate]);
-
-  const update = useCallback((key: keyof SimParams, val: number) => {
-    const next = { ...p, [key]: val };
-    setP(next);                                       // instant formula strip update
-    if (debRef.current) clearTimeout(debRef.current);
-    debRef.current = setTimeout(() => simulate(next), 220); // debounce the heavy work
-  }, [p, simulate]);
-
-  const applyPreset = (preset: Partial<SimParams>) => {
-    const next = { ...p, ...preset };
-    setP(next); simulate(next);
-  };
+  const update      = useCallback((key: keyof SimParams, val: number) => setParam(key, val), [setParam]);
+  const applyPreset = (preset: Partial<SimParams>) => setParams({ ...p, ...preset });
 
   const pathKeys = res ? res.paths.map((_, i) => `p${i}`) : [];
   const yFmt     = (v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}K×` : `${v.toFixed(1)}×`;
@@ -400,7 +352,7 @@ export default function MonteCarloSimulator() {
                   Log scale · Post-commission · Post-tax · OU operator + regime-gated risk
                 </p>
               </div>
-              <button className="btn btn-primary" style={{ fontSize: 10, padding: "7px 16px" }} onClick={() => simulate(p)} disabled={running}>
+              <button className="btn btn-primary" style={{ fontSize: 10, padding: "7px 16px" }} onClick={rerun} disabled={running}>
                 {running ? "Running…" : "Re-Run ↻"}
               </button>
             </div>

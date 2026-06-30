@@ -387,5 +387,128 @@ a { transition: color 0.15s, opacity 0.15s; }
 
 .divider { width: 100%; height: 1px; background: var(--line); }
 
+/* ═══════════════════════════════════════════════════════════
+   SESSION PAGE — responsive two-column layout
+   ═══════════════════════════════════════════════════════════ */
+.session-2col {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+.session-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.session-sidebar {
+  width: 356px;
+  flex-shrink: 0;
+  position: sticky;
+  top: calc(var(--nav-h) + var(--bar-h) + 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.session-sidebar-340 { width: 340px; }
+
+@media (max-width: 700px) {
+  .session-2col             { flex-direction: column; }
+  .session-sidebar,
+  .session-sidebar-340      { width: 100%; position: static; }
+}
+
+/* Countdown — shrink the clock on small screens */
+.session-clock {
+  font-size: 26px;
+  font-family: var(--font-mono), monospace;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+.session-countdown-wrap { flex-wrap: nowrap; }
+@media (max-width: 480px) {
+  .session-clock              { font-size: 20px; }
+  .session-countdown-wrap     { flex-wrap: wrap; gap: 10px; }
+}
+
+/* Mirror card body */
+.mirror-body { padding: 22px 24px 18px; }
+@media (max-width: 600px) { .mirror-body { padding: 14px 16px 14px; } }
+
+/* Mirror handover notes */
+.mirror-handover { padding: 14px 24px 18px; }
+@media (max-width: 600px) { .mirror-handover { padding: 12px 16px 14px; } }
+
+/* Friction updates — rule text */
+.friction-rule-text { padding: 14px 18px; flex: 1; }
+@media (max-width: 600px) { .friction-rule-text { padding: 11px 14px; } }
+
+/* Three-column grid that gracefully collapses */
+.grid-3-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (max-width: 900px) { .grid-3-col { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .grid-3-col { grid-template-columns: 1fr; } }
+
+/* Page header: right-side task pills */
+.session-header-tasks { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+@media (max-width: 600px) {
+  .session-header-tasks { align-items: flex-start; margin-top: 4px; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANALYTICS PAGE — sidebar → horizontal tab-strip on mobile
+   ═══════════════════════════════════════════════════════════ */
+.analytics-2col {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.analytics-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: calc(var(--nav-h) + 16px);
+}
+
+/* On mobile: rotate to a horizontal scrollable pill-bar */
+@media (max-width: 768px) {
+  .analytics-2col {
+    grid-template-columns: 1fr;
+  }
+  .analytics-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 4px;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .analytics-nav::-webkit-scrollbar { display: none; }
+  /* Hide the vertical divider and section label — not meaningful in row layout */
+  .analytics-nav-divider,
+  .analytics-nav-label { display: none; }
+}
+
+/* Button row in the input panel */
+.analytics-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+@media (max-width: 400px) {
+  .analytics-btn-row         { flex-direction: column; }
+  .analytics-btn-row .btn    { width: 100%; }
+}
+
 /* KaTeX */
 .katex { color: var(--ink-0) !important; }

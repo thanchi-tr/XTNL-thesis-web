@@ -119,16 +119,23 @@ export interface SimSummary {
 /* ─────────────────────────────────────────────────────────────────
    Math helpers
    ───────────────────────────────────────────────────────────────── */
-function randnBm(): number {
-  let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+
+// Marsaglia-Bray polar method: produces 2 normals per iteration (no Math.cos),
+// caches the second.  ~40 % faster than Box-Muller for bulk generation.
+let _spare: number | null = null;
+function randn(): number {
+  if (_spare !== null) { const z = _spare; _spare = null; return z; }
+  let u: number, v: number, s: number;
+  do { u = Math.random() * 2 - 1; v = Math.random() * 2 - 1; s = u * u + v * v; }
+  while (s >= 1 || s === 0);
+  const f = Math.sqrt(-2 * Math.log(s) / s);
+  _spare = v * f;
+  return u * f;
 }
 
 /** OU step for operator efficiency */
 function ouStep(current: number, mean: number): number {
-  const next = current + 0.35 * (mean - current) + 0.075 * randnBm();
+  const next = current + 0.35 * (mean - current) + 0.075 * randn();
   return Math.max(0.40, Math.min(1.0, next));
 }
 
@@ -176,7 +183,7 @@ export function runPath(p: SimParams): PathResult {
   let haltWeek: number | null = null;
 
   /* Operator efficiency — start near mean with small noise */
-  let eff = Math.max(0.40, Math.min(1.0, p.operatorMeanEff + 0.06 * randnBm()));
+  let eff = Math.max(0.40, Math.min(1.0, p.operatorMeanEff + 0.06 * randn()));
 
   /* Streak: individual-trade level, persists across weeks */
   let losingStreak  = 0;
@@ -223,7 +230,7 @@ export function runPath(p: SimParams): PathResult {
     let weeklyTotalR  = 0;   // sum of raw R-multiples across all trades
 
     for (let t = 0; t < p.tradesPerWeek; t++) {
-      const tradeR = muTrade + p.volPerTrade * randnBm();
+      const tradeR = muTrade + p.volPerTrade * randn();
       weeklyTotalR += tradeR;
 
       /* Streak updates per-trade, but does NOT change appliedRisk    *
@@ -337,80 +344,274 @@ export function runPath(p: SimParams): PathResult {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   Full simulation — 1,000 paths
+   Full simulation — optimised for speed
+   Key changes over the naïve version:
+   • Decay factors pre-computed once (not per-week-per-path)
+   • Only 200 sampled paths write equity/eff/reg arrays; the other
+     800 paths update scalar accumulators only — zero GC pressure
+   • Eff / regime tier counts accumulated inline — no post passes
+   • Float64Array used throughout for cache-friendly numeric storage
    ───────────────────────────────────────────────────────────────── */
 export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
-  const results: PathResult[] = [];
-  for (let i = 0; i < iterations; i++) results.push(runPath(p));
+  const baseRisk  = p.baseRiskPct / 100;
+  const taxRate   = p.taxRatePct  / 100;
+  const edgeDecay = 1 - p.edgeDecayPctPerQtr / 100;
+  const { weeks, tradesPerWeek, expPerTrade, volPerTrade,
+          operatorMeanEff, frozenPoolPct,
+          commissionStartWeek, maxDDLimit } = p;
 
-  const terminals  = results.map((r) => r.terminal).sort((a, b) => a - b);
-  const drawdowns  = results.map((r) => r.maxDD);
-  const meanEffs   = results.map((r) => r.meanEff);
+  /* Pre-compute quarterly decay factor per week — eliminates Math.pow from hot loop */
+  const decayFactors = new Float64Array(weeks);
+  for (let w = 0; w < weeks; w++) decayFactors[w] = Math.pow(edgeDecay, Math.floor(w / 13));
 
-  const n          = iterations;
-  const mean       = terminals.reduce((a, b) => a + b, 0) / n;
-  const median     = terminals[Math.floor(n / 2)];
-  const p5         = terminals[Math.floor(n * 0.05)];
-  const p95        = terminals[Math.floor(n * 0.95)];
-  const meanMaxDD  = drawdowns.reduce((a, b) => a + b, 0) / n;
-  const worstMaxDD = Math.max(...drawdowns);
-  const ruined     = results.filter((r) => r.terminal < 0.10).length;
-  const meanMeanEff      = meanEffs.reduce((a, b) => a + b, 0) / n;
-  const meanTotalComm    = results.reduce((a, r) => a + r.totalComm, 0) / n;
-  const meanAvgCommPerWeek = meanTotalComm / p.weeks;
-  const meanTotalInj     = results.reduce((a, r) => a + r.totalInj, 0) / n;
-  const meanInjEvents    = results.reduce((a, r) => a + r.injEvents, 0) / n;
+  /* Chart storage: every STEP-th path, up to 200 */
+  const STEP   = Math.max(1, Math.floor(iterations / 200));
+  const NCHART = Math.min(200, Math.ceil(iterations / STEP));
+  const chartEq  = Array.from({ length: NCHART }, () => new Float64Array(weeks));
+  const chartEff = Array.from({ length: NCHART }, () => new Float64Array(weeks));
+  const chartReg = Array.from({ length: NCHART }, () => new Float64Array(weeks));
+  const chartMeanEff = new Float64Array(NCHART);
 
-  /* Efficiency tier stats */
-  let tot = 0, exc = 0, nor = 0, red = 0, crit = 0, hlt = 0;
-  results.forEach((r) => r.effPath.forEach((e) => {
-    tot++;
-    if (e >= 0.95) exc++; else if (e >= 0.80) nor++;
-    else if (e >= 0.50) red++; else if (e >= 0.40) crit++; else hlt++;
-  }));
+  /* Per-path scalars (no per-path series arrays) */
+  const terminals = new Float64Array(iterations);
+  const maxDDs    = new Float64Array(iterations);
+  const meanEffs  = new Float64Array(iterations);
+  const commSums  = new Float64Array(iterations);
+  const injSums   = new Float64Array(iterations);
+  const injEvts   = new Uint16Array(iterations);
+
+  /* Inline stat counters — no post-processing passes needed */
+  let excCt = 0, norCt = 0, redCt = 0, critCt = 0, hltCt = 0;
+  let rHealthy = 0, rHair = 0, rTox = 0, globalRegSum = 0;
+  let ruined = 0;
+
+  /* Reusable buffers for sampled-path recording */
+  const tmpEq  = new Float64Array(weeks);
+  const tmpEff = new Float64Array(weeks);
+  const tmpReg = new Float64Array(weeks);
+
+  /* 4-slot circular buffer for the injection gate */
+  const eff4 = new Float64Array(4);
+
+  for (let i = 0; i < iterations; i++) {
+    const isSampled = i % STEP === 0;
+    const chartIdx  = isSampled ? Math.floor(i / STEP) : -1;
+
+    /* ── Path init ─────────────────────────────────────────────── */
+    let equity      = 1.0;
+    let maxPeak     = 1.0;
+    let maxDD_p     = 0.0;
+    let capAtYear   = 1.0;
+    let halted      = false;
+
+    let eff = Math.max(0.40, Math.min(1.0, operatorMeanEff + 0.06 * randn()));
+    let losingStreak = 0;
+
+    let frozenPool  = frozenPoolPct;
+    let injStreak   = 0;
+    let inj4Count   = 0;
+    let totalInj_p  = 0;
+    let injEvts_p   = 0;
+    let totalComm_p = 0;
+    let effSum_p    = 0;
+
+    /* ── Weekly loop ───────────────────────────────────────────── */
+    for (let w = 0; w < weeks; w++) {
+
+      /* 1. OU step (inlined for speed) */
+      {
+        const nx = eff + 0.35 * (operatorMeanEff - eff) + 0.075 * randn();
+        eff = nx < 0.40 ? 0.40 : nx > 1.0 ? 1.0 : nx;
+      }
+      effSum_p += eff;
+
+      /* 2. Weekly risk (perfMult + regimePenalty inlined) */
+      const streakRatio = losingStreak / MC95_MAX_STREAK;
+      const weekRegPen  = streakRatio >= 1.0 ? 0.5
+                        : streakRatio >= 0.8  ? Math.max(0.6, 1.0 - (streakRatio - 0.8) * 3.5)
+                        : 1.0;
+      const weekEffMult = eff >= 0.95 ? 1.18
+                        : eff >= 0.80 ? 1.00
+                        : eff >= 0.50 ? 0.60
+                        : eff >= 0.40 ? 0.30 : 0.00;
+      const appliedRisk = baseRisk * weekEffMult * weekRegPen * 0.95;
+
+      /* 3. Simulate trades */
+      const muTrade = expPerTrade * decayFactors[w];
+      let weeklyTotalR = 0;
+      for (let t = 0; t < tradesPerWeek; t++) {
+        const tradeR = muTrade + volPerTrade * randn();
+        weeklyTotalR += tradeR;
+        if (tradeR < 0) losingStreak++; else losingStreak = 0;
+      }
+
+      /* 4. Slippage */
+      if (weeklyTotalR > 0) weeklyTotalR -= (0.1 + Math.random() * 0.1);
+
+      /* 5. Captured R */
+      const capturedR = weeklyTotalR * eff;
+
+      /* 6. Equity update */
+      if (!halted) {
+        equity *= (1 + appliedRisk * capturedR);
+        if (equity < 0) equity = 0;
+      }
+
+      /* 7. Commission */
+      if (!halted && w + 1 >= commissionStartWeek && eff >= 0.88) {
+        const commMult  = eff >= 0.95 ? 1.5 : 1.0;
+        const commFrac  = (appliedRisk * 0.20 + Math.max(capturedR * appliedRisk, 0) * 0.05) * commMult;
+        equity         *= (1 - commFrac);
+        totalComm_p    += commFrac;
+      }
+
+      /* 8. 4-week injection gate (circular buffer, no push/shift) */
+      eff4[w & 3] = eff;
+      if (inj4Count < 4) inj4Count++;
+
+      if ((w + 1) % 4 === 0 && frozenPoolPct > 0) {
+        let allQ = inj4Count === 4, anyExc = false;
+        if (allQ) {
+          for (let k = 0; k < 4; k++) {
+            if (eff4[k] <= 0.85) { allQ = false; break; }
+            if (eff4[k] > 0.95) anyExc = true;
+          }
+        }
+        if (allQ) {
+          if (anyExc) {
+            injStreak++;
+            frozenPool = Math.max(frozenPoolPct, frozenPool * Math.max(1.0, 1.20 - 0.025 * injStreak));
+          } else {
+            injStreak++;
+          }
+          if (!halted) {
+            equity += frozenPool;
+            if (equity > maxPeak) maxPeak = equity;
+            totalInj_p += frozenPool;
+            injEvts_p++;
+          }
+        } else {
+          injStreak = 0; frozenPool = frozenPoolPct;
+        }
+      }
+
+      /* 9. Annual tax */
+      if ((w + 1) % 52 === 0 && !halted && equity > capAtYear) {
+        const taxable = equity - capAtYear;
+        equity       -= taxable * taxRate;
+        maxPeak       = Math.max(0, maxPeak - taxable * taxRate);
+        capAtYear     = equity;
+      }
+
+      /* 10. Drawdown + halt */
+      if (equity > maxPeak) maxPeak = equity;
+      const dd = maxPeak > 0 ? (maxPeak - equity) / maxPeak : 0;
+      if (dd > maxDD_p) maxDD_p = dd;
+      if (!halted && maxDDLimit > 0 && dd * 100 >= maxDDLimit) halted = true;
+
+      /* 11. Tier counters accumulated inline — replaces two O(n×w) post passes */
+      if      (eff >= 0.95) excCt++;
+      else if (eff >= 0.80) norCt++;
+      else if (eff >= 0.50) redCt++;
+      else if (eff >= 0.40) critCt++;
+      else                  hltCt++;
+
+      if      (weekRegPen >= 1.0) rHealthy++;
+      else if (weekRegPen > 0.55) rHair++;
+      else                        rTox++;
+      globalRegSum += weekRegPen;
+
+      /* 12. Only write series for sampled paths (saves 80 % of array writes) */
+      if (isSampled) {
+        tmpEq[w]  = equity;
+        tmpEff[w] = eff;
+        tmpReg[w] = weekRegPen;
+      }
+    }
+
+    /* ── Store path scalars ─────────────────────────────────── */
+    terminals[i] = equity;
+    maxDDs[i]    = maxDD_p;
+    meanEffs[i]  = effSum_p / weeks;
+    commSums[i]  = totalComm_p;
+    injSums[i]   = totalInj_p;
+    injEvts[i]   = injEvts_p;
+    if (equity < 0.10) ruined++;
+
+    if (isSampled && chartIdx < NCHART) {
+      chartEq[chartIdx].set(tmpEq);
+      chartEff[chartIdx].set(tmpEff);
+      chartReg[chartIdx].set(tmpReg);
+      chartMeanEff[chartIdx] = effSum_p / weeks;
+    }
+  }
+
+  /* ── Aggregate ──────────────────────────────────────────────── */
+  const n = iterations;
+  const sortedTerminals = Float64Array.from(terminals).sort();
+
+  let meanTerminal = 0, commTotal = 0, injTotal = 0, injEvtTotal = 0,
+      ddTotal = 0, worstDD = 0, effMeanTotal = 0;
+  for (let i = 0; i < n; i++) {
+    meanTerminal  += terminals[i];
+    commTotal     += commSums[i];
+    injTotal      += injSums[i];
+    injEvtTotal   += injEvts[i];
+    ddTotal       += maxDDs[i];
+    if (maxDDs[i] > worstDD) worstDD = maxDDs[i];
+    effMeanTotal  += meanEffs[i];
+  }
+  meanTerminal /= n;
+
+  const nw = n * weeks;
   const effStats: EffStats = {
-    pctExcellence: exc  / tot * 100,
-    pctNormal:     nor  / tot * 100,
-    pctReduced:    red  / tot * 100,
-    pctCritical:   crit / tot * 100,
-    pctHalted:     hlt  / tot * 100,
+    pctExcellence: excCt  / nw * 100,
+    pctNormal:     norCt  / nw * 100,
+    pctReduced:    redCt  / nw * 100,
+    pctCritical:   critCt / nw * 100,
+    pctHalted:     hltCt  / nw * 100,
   };
-
-  /* Regime penalty stats */
-  let rTot = 0, rHealthy = 0, rMon = 0, rHair = 0, rTox = 0, regSum = 0;
-  results.forEach((r) => r.regimePath.forEach((pen) => {
-    rTot++; regSum += pen;
-    if (pen >= 1.00) rHealthy++; else if (pen > 0.55) rHair++; else rTox++;
-  }));
   const regimeStats: RegimeStats = {
-    pctHealthy:  rHealthy / rTot * 100,
-    pctMonitor:  rMon     / rTot * 100,
-    pctHaircut:  rHair    / rTot * 100,
-    pctToxic:    rTox     / rTot * 100,
+    pctHealthy:  rHealthy / nw * 100,
+    pctMonitor:  0,
+    pctHaircut:  rHair    / nw * 100,
+    pctToxic:    rTox     / nw * 100,
   };
 
-  /* Sample paths for chart rendering */
-  const step           = Math.max(1, Math.floor(n / 200));
-  const paths          = results.filter((_, i) => i % step === 0).slice(0, 200).map((r) => r.equity);
-  const sortedByEff    = [...results].sort((a, b) => a.meanEff - b.meanEff);
-  const effPathSamples = [0, 0.1, 0.25, 0.5, 0.75, 0.9].map((pct) =>
-    sortedByEff[Math.min(Math.floor(pct * n), n - 1)].effPath
-  );
-  const regPathSamples = [0, 0.1, 0.25, 0.5, 0.75, 0.9].map((pct) =>
-    sortedByEff[Math.min(Math.floor(pct * n), n - 1)].regimePath
-  );
+  /* eff/reg path samples: sort the 200 chart paths by meanEff, pick 6 percentiles */
+  const sortedChartIdx = Array.from({ length: NCHART }, (_, i) => i)
+    .sort((a, b) => chartMeanEff[a] - chartMeanEff[b]);
+  const EFF_PCTS = [0, 0.1, 0.25, 0.5, 0.75, 0.9];
+  const effPathSamples = EFF_PCTS.map((pct) => {
+    const idx = sortedChartIdx[Math.min(Math.floor(pct * NCHART), NCHART - 1)];
+    return Array.from(chartEff[idx]);
+  });
+  const regPathSamples = EFF_PCTS.map((pct) => {
+    const idx = sortedChartIdx[Math.min(Math.floor(pct * NCHART), NCHART - 1)];
+    return Array.from(chartReg[idx]);
+  });
+
+  const paths = chartEq.map((buf) => Array.from(buf));
+  const meanTotalComm = commTotal / n;
 
   return {
-    meanTerminal: mean, medianTerminal: median,
-    p5Terminal: p5, p95Terminal: p95,
-    worstTerminal: terminals[0],
-    meanMaxDD, worstMaxDD,
-    pctRuined: ruined / n * 100,
+    meanTerminal,
+    medianTerminal:    sortedTerminals[Math.floor(n / 2)],
+    p5Terminal:        sortedTerminals[Math.floor(n * 0.05)],
+    p95Terminal:       sortedTerminals[Math.floor(n * 0.95)],
+    worstTerminal:     sortedTerminals[0],
+    meanMaxDD:         ddTotal / n,
+    worstMaxDD:        worstDD,
+    pctRuined:         ruined / n * 100,
     paths, effPathSamples, regPathSamples,
-    injectionCutoff: 0,
+    injectionCutoff:   0,
     effStats, regimeStats,
-    meanMeanEff, meanRegimePenalty: regSum / rTot,
-    meanTotalComm, meanAvgCommPerWeek, meanTotalInj, meanInjEvents,
+    meanMeanEff:           effMeanTotal / n,
+    meanRegimePenalty:     globalRegSum / nw,
+    meanTotalComm,
+    meanAvgCommPerWeek:    meanTotalComm / weeks,
+    meanTotalInj:          injTotal / n,
+    meanInjEvents:         injEvtTotal / n,
   };
 }
 

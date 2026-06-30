@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import AnimatedCounter from "@/components/home/AnimatedCounter";
 import FiveQuestions from "@/components/home/FiveQuestions";
@@ -28,7 +29,14 @@ function PillarCard({ n, title, body }: { n: string; title: string; body: string
 }
 
 /* ─── page ────────────────────────────────────────────────── */
-export default function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  if (error) redirect(`/sign-error?error=${encodeURIComponent(error)}`);
+
   return (
     <>
 
