@@ -132,8 +132,8 @@ export default function StatusBar() {
           </div>
         </div>
 
-        {/* Right: system version */}
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
+        {/* Right: system version — hidden on mobile */}
+        <div className="nav-desktop" style={{ flexShrink: 0, alignItems: "center", gap: 10 }}>
           <span style={{ width: 1, height: 12, background: "var(--line)" }} />
           <span
             className="mono"

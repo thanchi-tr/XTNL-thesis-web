@@ -3,7 +3,7 @@ import { redirect }      from "next/navigation";
 import type { Metadata } from "next";
 import AnalyticsClient   from "./AnalyticsClient";
 
-export const metadata: Metadata = { title: "Analytics | XTNL" };
+export const metadata: Metadata = { title: "Analytics" };
 
 export default async function AnalyticsPage() {
   const session = await auth();

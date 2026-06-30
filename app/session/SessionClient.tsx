@@ -645,8 +645,10 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst }: { tradeId?: s
 
 /* ═══════════════════════════════════════════════════════════
    SESSION COUNTDOWN
+   hero=true  → operator standby gets a large centred clock
+   hero=false → compact strip used everywhere else
 ═══════════════════════════════════════════════════════════ */
-function SessionCountdown() {
+function SessionCountdown({ hero = false }: { hero?: boolean }) {
   const [status, setStatus] = useState<SessionStatus | null>(null);
 
   useEffect(() => {
@@ -659,9 +661,61 @@ function SessionCountdown() {
 
   const { inSession, sessionName, targetLabel, remainingSec } = status;
   const accent = inSession ? "var(--green)" : "var(--blue)";
-  const bg     = inSession ? "var(--green-06)"  : "rgba(77,156,245,0.05)";
+  const bg     = inSession ? "var(--green-06)" : "rgba(77,156,245,0.05)";
   const border = inSession ? "rgba(0,204,122,0.22)" : "rgba(77,156,245,0.18)";
 
+  /* ── Hero layout: operator standby only ─────────────── */
+  if (hero && !inSession) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        gap: 20, padding: "52px 24px",
+        borderRadius: 8,
+        background: "rgba(77,156,245,0.04)",
+        border: "1px solid rgba(77,156,245,0.14)",
+        textAlign: "center",
+      }}>
+        {/* Status badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: "var(--blue)",
+            boxShadow: "0 0 0 4px rgba(77,156,245,0.14)",
+          }} />
+          <span className="mono" style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: "0.14em",
+            textTransform: "uppercase" as const, color: "var(--blue)",
+          }}>Standby</span>
+        </div>
+
+        {/* Session label */}
+        <p style={{ margin: 0, fontSize: 13, color: "var(--ink-2)", letterSpacing: "0.01em" }}>
+          {sessionName}
+          <span style={{ color: "var(--ink-3)", marginLeft: 8 }}>· starts at {targetLabel}</span>
+        </p>
+
+        {/* Giant clock */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+          <span className="mono" style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: "0.14em",
+            textTransform: "uppercase" as const, color: "var(--ink-3)",
+          }}>starts in</span>
+          <span className="mono" style={{
+            fontSize: "clamp(52px, 10vw, 80px)",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            color: "var(--blue)",
+            lineHeight: 1,
+            textShadow: "0 0 40px rgba(77,156,245,0.35)",
+          }}>
+            {fmtHMS(remainingSec)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Compact layout: all other states ───────────────── */
   return (
     <div className="session-countdown-wrap" style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -670,13 +724,11 @@ function SessionCountdown() {
     }}>
       {/* Left — session info */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {/* Status dot */}
         <div style={{
           width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
           background: accent,
-          boxShadow: inSession ? `0 0 0 3px ${inSession ? "rgba(0,204,122,0.18)" : "rgba(77,156,245,0.15)"}` : "none",
+          boxShadow: inSession ? `0 0 0 3px rgba(0,204,122,0.18)` : "none",
         }} />
-
         <div>
           <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: accent, lineHeight: 1 }}>
             {inSession ? "Session Active" : "Standby"}
@@ -969,7 +1021,7 @@ export default function SessionClient({ user }: { user: User }) {
 
         {/* ── SESSION COUNTDOWN ────────────────────────────── */}
         <div style={{ marginBottom: 24 }}>
-          <SessionCountdown />
+          <SessionCountdown hero={effectiveMode === "operator"} />
         </div>
 
         {/* ════════════════════════════════════════════════════

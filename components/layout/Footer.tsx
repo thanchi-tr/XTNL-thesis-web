@@ -70,11 +70,14 @@ export default function Footer() {
           </div>
         </div>
 
-        <div style={{ marginTop: 32, borderTop: "1px solid var(--line)", paddingTop: 24 }}>
+        <div style={{ marginTop: 32, borderTop: "1px solid var(--line)", paddingTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
           <p style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.7 }}>
             This document is for informational purposes only. Past performance does not guarantee
             future results. Algorithmic trading involves substantial risk of capital loss.
             Projections are based on historical statistical data and are not financial advice.
+          </p>
+          <p className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
+            © {new Date().getFullYear()} XTNL Solutions · xtnl-solutions.com · All rights reserved.
           </p>
         </div>
       </div>

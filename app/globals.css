@@ -62,6 +62,13 @@ body {
   overflow-x: hidden;
 }
 
+@media (max-width: 600px) {
+  body            { font-size: 16px; line-height: 1.7; }
+  .label-xs       { font-size: 12px; }
+  .panel-title    { font-size: 12.5px; }
+  .section-eyebrow { font-size: 11px; }
+}
+
 code, pre, .mono {
   font-family: var(--font-mono), ui-monospace, "Cascadia Code", monospace !important;
 }
@@ -188,7 +195,7 @@ code, pre, .mono {
    ═══════════════════════════════════════════════════════════ */
 .nav-desktop   { display: none !important; }
 .nav-hamburger { display: flex !important; }
-@media (min-width: 1024px) {
+@media (min-width: 1200px) {
   .nav-desktop   { display: flex !important; }
   .nav-hamburger { display: none !important; }
 }
@@ -200,6 +207,9 @@ code, pre, .mono {
   font-family: var(--font-inter), sans-serif;
   transition: color 0.15s;
 }
+
+/* Session / Analytics — slightly elevated weight */
+.nav-link.nav-link-accent { color: var(--ink-1); font-weight: 600; }
 .nav-link::after {
   content: ""; position: absolute; bottom: -1px; left: 0; right: 0;
   height: 1px; background: var(--green); transform: scaleX(0);

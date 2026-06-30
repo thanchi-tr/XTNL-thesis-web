@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-export const metadata: Metadata = { title: "Sign-in Error | XTNL" };
+export const metadata: Metadata = { title: "Sign-in Error" };
 
 /* ── Map next-auth error codes to human messages ─────────── */
 const ERRORS: Record<string, { headline: string; detail: string }> = {

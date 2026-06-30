@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -16,9 +16,11 @@ const LINKS = [
 ];
 
 export default function NavBar() {
-  const [scrolled,   setScrolled]   = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [modalOpen,  setModalOpen]  = useState(false);
+  const [scrolled,     setScrolled]     = useState(false);
+  const [drawerOpen,   setDrawerOpen]   = useState(false);
+  const [modalOpen,    setModalOpen]    = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const pathname           = usePathname();
   const { data: session }  = useSession();
@@ -40,6 +42,18 @@ export default function NavBar() {
   }, []);
 
   useEffect(() => setDrawerOpen(false), [pathname]);
+  useEffect(() => setDropdownOpen(false), [pathname]);
+
+  /* Close user dropdown on outside click */
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function handler(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node))
+        setDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [dropdownOpen]);
 
   /* Body scroll lock for drawer (modal manages its own) */
   useEffect(() => {
@@ -85,8 +99,11 @@ export default function NavBar() {
 
           {/* ── Desktop nav ───────────────────────────── */}
           <div className="nav-desktop" style={{ alignItems: "center", gap: 32 }}>
-            {LINKS.filter(l => (!l.authedOnly || authed) && !(l.hideWhenAuthed && authed)).map(({ href, label }) => (
-              <Link key={href} href={href} className={`nav-link${pathname === href ? " active" : ""}`}>
+            {LINKS.filter(l => (!l.authedOnly || authed) && !(l.hideWhenAuthed && authed)).map(({ href, label, authedOnly }) => (
+              <Link
+                key={href} href={href}
+                className={`nav-link${pathname === href ? " active" : ""}${authedOnly ? " nav-link-accent" : ""}`}
+              >
                 {label}
               </Link>
             ))}
@@ -95,39 +112,69 @@ export default function NavBar() {
           {/* ── Desktop CTAs ──────────────────────────── */}
           <div className="nav-desktop" style={{ alignItems: "center", gap: 10, flexShrink: 0 }}>
             {authed ? (
-              <>
-                {/* Authenticated user chip */}
-                <div
+              /* User dropdown */
+              <div ref={dropdownRef} style={{ position: "relative" }}>
+                <button
+                  onClick={() => setDropdownOpen(o => !o)}
                   style={{
                     display: "flex", alignItems: "center", gap: 6,
                     background: "var(--green-10)", border: "1px solid rgba(0,204,122,0.20)",
-                    borderRadius: 5, padding: "5px 10px", maxWidth: 200,
+                    borderRadius: 5, padding: "5px 10px", maxWidth: 220,
+                    cursor: "pointer",
                   }}
                 >
-                  <span
-                    style={{
-                      width: 6, height: 6, borderRadius: "50%",
-                      background: "var(--green)", flexShrink: 0,
-                    }}
-                  />
-                  <span
-                    className="mono"
-                    style={{
-                      fontSize: 10.5, color: "var(--green)", fontWeight: 600,
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    }}
-                  >
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)", flexShrink: 0 }} />
+                  <span className="mono" style={{ fontSize: 10.5, color: "var(--green)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {session.userEmail || session.userName}
                   </span>
-                </div>
-                <button
-                  onClick={() => signOut({ redirectTo: "/" })}
-                  className="btn btn-ghost"
-                  style={{ fontSize: 11, padding: "7px 14px" }}
-                >
-                  Sign Out
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ flexShrink: 0, transition: "transform 0.18s", transform: dropdownOpen ? "rotate(180deg)" : "none" }}>
+                    <path d="M1 2.5l3 3 3-3" stroke="var(--green)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
                 </button>
-              </>
+
+                {dropdownOpen && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 200,
+                    background: "rgba(4,8,15,0.97)", border: "1px solid var(--line-hi)",
+                    borderRadius: 7, padding: "6px", minWidth: 160,
+                    boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
+                    backdropFilter: "blur(16px)",
+                  }}>
+                    <Link
+                      href="/profile"
+                      onClick={() => setDropdownOpen(false)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 9,
+                        padding: "9px 12px", borderRadius: 5,
+                        color: "var(--ink-1)", textDecoration: "none", fontSize: 12,
+                        fontWeight: 500, letterSpacing: "0.01em",
+                        transition: "background 0.12s",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--raised)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/><path d="M2.5 13.5c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                      Profile
+                    </Link>
+                    <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
+                    <button
+                      onClick={() => { setDropdownOpen(false); signOut({ redirectTo: "/" }); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 9, width: "100%",
+                        padding: "9px 12px", borderRadius: 5,
+                        color: "var(--red)", background: "none", border: "none",
+                        cursor: "pointer", fontSize: 12, fontWeight: 500,
+                        textAlign: "left", transition: "background 0.12s",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--red-10)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6 8h7M10 5l3 3-3 3M9 3H3v10h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <button
                 onClick={() => setModalOpen(true)}
@@ -185,9 +232,14 @@ export default function NavBar() {
               Run Simulation
             </Link>
             {authed ? (
-              <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", fontSize: 13 }} onClick={() => { setDrawerOpen(false); signOut({ redirectTo: "/" }); }}>
-                Sign Out
-              </button>
+              <>
+                <Link href="/profile" className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", fontSize: 13 }} onClick={() => setDrawerOpen(false)}>
+                  Profile
+                </Link>
+                <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", fontSize: 13, color: "var(--red)" }} onClick={() => { setDrawerOpen(false); signOut({ redirectTo: "/" }); }}>
+                  Sign Out
+                </button>
+              </>
             ) : (
               <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", fontSize: 13 }} onClick={() => { setDrawerOpen(false); setModalOpen(true); }}>
                 Sign In
