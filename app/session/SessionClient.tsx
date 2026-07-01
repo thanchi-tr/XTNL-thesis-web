@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import React, { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -152,37 +152,97 @@ HANDOVER NOTES: Operator is under extreme psychological stress due to a family m
 const FRICTION = parseFrictionReport(MOCK_RAW_REPORT);
 
 /* ═══════════════════════════════════════════════════════════
-   OTHER MOCK DATA  (replace with DB calls when wired)
+   DB ROW TYPES
 ═══════════════════════════════════════════════════════════ */
-const OPTIMAL = [
-  { id: "ad169a2b-83f2", r:  5.0000, entry: "Jun 26 · 12:15 PM", exit: "Jun 26 · 5:45 PM",  tradeId: "" },
-  { id: "3295b9c2-ad8f", r:  8.2600, entry: "Jun 25 · 10:00 PM", exit: "Jun 26 · 1:33 AM",  tradeId: "250a8195-11f0-4535-8c…" },
-  { id: "7a2b4c52-f4e9", r: -0.8000, entry: "Jun 25 · 4:00 PM",  exit: "Jun 25 · 5:15 PM",  tradeId: "" },
-  { id: "963f9b17-2c34", r:  3.8300, entry: "Jun 24 · 11:00 AM", exit: "Jun 25 · 9:45 AM",  tradeId: "" },
-  { id: "d2e6a363-ee5c", r: -0.7500, entry: "Jun 24 · 8:15 AM",  exit: "Jun 24 · 10:15 AM", tradeId: "" },
-  { id: "2e945c00-21f4", r: -0.4800, entry: "Jun 24 · 3:15 AM",  exit: "Jun 24 · 10:15 AM", tradeId: "" },
-  { id: "20c542d0-ca9b", r: -0.7430, entry: "Jun 23 · 8:46 PM",  exit: "Jun 23 · 8:46 PM",  tradeId: "ff726c2d-7ba0-41d0-a9d…" },
-  { id: "83016614-0bb2", r:  0.0000, entry: "Jun 23 · 5:30 AM",  exit: "Jun 23 · 1:15 AM",  tradeId: "" },
-  { id: "b23b5984-f5a6", r:  0.0000, entry: "Jun 22 · 10:15 AM", exit: "Jun 22 · 12:00 PM", tradeId: "" },
-];
+interface OptimalRow {
+  optimal_trade_id: string;
+  trade_id:         string | null;
+  result_r:         number;
+  entry:            string;
+  exit:             string;
+  created_at:       string;
+}
 
-const JOURNAL = [
-  { tradeId: "",                   time: "Jun 29 · 11:30 AM", analyst: false, content: "First anchor turn into an opportunity — feeling calm and focused today." },
-  { tradeId: "",                   time: "Jun 26 · 2:38 AM",  analyst: true,  content: "OS blocker is working well. Operator is forced to sit and be diligent. He can watch movies freely — as long as he pays 100% attention when the session window opens. OS Wise firmware now alerts at session start." },
-  { tradeId: "",                   time: "Jun 25 · 12:15 PM", analyst: false, content: "Got myself back together. Anchored my mind to the lock: −0.6R worst case, and the meaning of statistical sampling." },
-  { tradeId: "250a8195-11f0-4535", time: "Jun 25 · 12:00 PM", analyst: true,  content: "Target setting discovered a loop hole — target was set but a grey area caused price to hesitate, leading to manual termination at Jun 25 · 10:00 PM." },
-];
+interface LiveRow {
+  id?:         string;
+  entry:       string;
+  exit:        string | null;
+  cor_lock:    string | null;
+  cor_dir:     string | null;
+  cor_target:  string | null;
+  cor_entry:   string | null;
+  cor_rm:      string | null;
+  [key: string]: unknown;
+}
 
+interface CommentRow {
+  id?:        string;
+  trade_id:   string | null;
+  content:    string;
+  Entry:      string;
+  created_at: string;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOAST NOTIFICATION
+═══════════════════════════════════════════════════════════ */
+type ToastMsg = { id: number; kind: "success" | "error"; text: string };
+type ShowToast = (kind: ToastMsg["kind"], text: string) => void;
+
+function Toaster({ toasts }: { toasts: ToastMsg[] }) {
+  return (
+    <>
+      <style>{`
+        @keyframes _toast-in {
+          from { opacity: 0; transform: translateY(12px) scale(0.95); }
+          to   { opacity: 1; transform: translateY(0)    scale(1);    }
+        }
+        ._toast { animation: _toast-in 0.2s cubic-bezier(0.16,1,0.3,1) forwards; }
+      `}</style>
+      <div style={{
+        position: "fixed", bottom: 32, right: 32, zIndex: 99999,
+        display: "flex", flexDirection: "column", gap: 10,
+        pointerEvents: "none",
+      }}>
+        {toasts.map(t => (
+          <div key={t.id} className="_toast" style={{
+            display: "flex", alignItems: "flex-start", gap: 11,
+            padding: "14px 18px", borderRadius: 10,
+            /* solid opaque backgrounds so they're visible on any bg */
+            background: t.kind === "success" ? "#0d2e1f" : "#2e0d10",
+            border: `1px solid ${t.kind === "success" ? "#00cc7a55" : "#f03a5755"}`,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
+            minWidth: 240, maxWidth: 360,
+          }}>
+            {t.kind === "success"
+              ? <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="8" cy="8" r="7" stroke="#00cc7a" strokeWidth="1.4"/><path d="M5 8l2.2 2.2L11 5.5" stroke="#00cc7a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              : <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="8" cy="8" r="7" stroke="#f03a57" strokeWidth="1.4"/><path d="M8 5v3.5M8 10.5h.01" stroke="#f03a57" strokeWidth="1.6" strokeLinecap="round"/></svg>
+            }
+            <span style={{
+              fontSize: 13, fontWeight: 600, lineHeight: 1.5,
+              color: t.kind === "success" ? "#00cc7a" : "#f03a57",
+            }}>{t.text}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* Static task list — update manually as needed */
 const TASKS = [
-  { id: "ingestion", label: "Ingestion",       done: true,  ts: "Jun 30 · 06:00 AM" },
-  { id: "analysis",  label: "Analysis Session", done: false, ts: null                },
+  { id: "ingestion", label: "Ingestion",        done: true,  ts: "Jun 30 · 06:00 AM" },
+  { id: "analysis",  label: "Analysis Session", done: false, ts: null                 },
 ];
 
 /* ═══════════════════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════════════════ */
 function rFmt(r: number)   { return r.toFixed(4) + "R"; }
-function rColor(r: number) { return r > 0 ? "var(--green)" : r < 0 ? "var(--red)" : "var(--ink-2)"; }
+function rColor(r: number) {
+  if (Math.abs(r) <= 0.08) return "var(--ink-3)";
+  return r > 0 ? "var(--green)" : "var(--red)";
+}
 
 /*
   Trading sessions (Melbourne local time):
@@ -311,20 +371,20 @@ function CardHeader({ eyebrow, eyebrowColor, title, badge, actions, right }: {
   badge?: React.ReactNode; actions?: React.ReactNode; right?: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px 10px", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
         {eyebrow && <span className="section-eyebrow" style={{ color: eyebrowColor ?? "var(--green)" }}>{eyebrow}</span>}
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)", letterSpacing: "-0.01em" }}>{title}</span>
         {badge}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>{right}{actions}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>{right}{actions}</div>
     </div>
   );
 }
 
-function IconBtn({ icon }: { icon: "filter" | "download" | "refresh" }) {
+function IconBtn({ icon, onClick }: { icon: "filter" | "download" | "refresh"; onClick?: () => void }) {
   return (
-    <button type="button" style={{ background: "none", border: "none", padding: 4, cursor: "pointer", color: "var(--ink-3)", display: "flex", alignItems: "center" }}>
+    <button type="button" onClick={onClick} style={{ background: "none", border: "none", padding: 4, cursor: "pointer", color: "var(--ink-3)", display: "flex", alignItems: "center" }}>
       {icon === "filter"   && <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5 8h6M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>}
       {icon === "download" && <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>}
       {icon === "refresh"  && <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13 8A5 5 0 1 1 8 3h3.5M11.5 3v3.5H8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>}
@@ -335,9 +395,85 @@ function IconBtn({ icon }: { icon: "filter" | "download" | "refresh" }) {
 /* ═══════════════════════════════════════════════════════════
    OPTIMAL TRADE TABLE
 ═══════════════════════════════════════════════════════════ */
-function OptimalTable({ selected, onSelect }: { selected: string | null; onSelect: (id: string) => void }) {
-  const [hov,       setHov]       = useState<string | null>(null);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+function tzOffset(tz: string): string {
+  try {
+    const p = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, timeZoneName: "shortOffset",
+    }).formatToParts(new Date());
+    return p.find(x => x.type === "timeZoneName")?.value ?? "";
+  } catch { return ""; }
+}
+
+const TIMEZONES = [
+  { label: "Melbourne (AEST/AEDT)", value: "Australia/Melbourne" },
+  { label: "Sydney   (AEST/AEDT)", value: "Australia/Sydney"    },
+  { label: "UTC",                   value: "UTC"                 },
+  { label: "London   (GMT/BST)",    value: "Europe/London"       },
+  { label: "New York (EST/EDT)",    value: "America/New_York"    },
+  { label: "Chicago  (CST/CDT)",    value: "America/Chicago"     },
+  { label: "LA       (PST/PDT)",    value: "America/Los_Angeles" },
+  { label: "Tokyo    (JST)",        value: "Asia/Tokyo"          },
+  { label: "Singapore(SGT)",        value: "Asia/Singapore"      },
+  { label: "Dubai    (GST)",        value: "Asia/Dubai"          },
+  { label: "Frankfurt(CET/CEST)",   value: "Europe/Berlin"       },
+];
+
+/* Format a UTC ISO string for display in an arbitrary timezone */
+function fmtTz(iso: string, tz: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-AU", {
+      timeZone: tz, day: "numeric", month: "short",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    });
+  } catch { return iso; }
+}
+
+/* Current time as "YYYY-MM-DDTHH:MM" in the given timezone (for datetime-local inputs) */
+function nowInTZ(tz: string): string {
+  const now  = new Date();
+  const ptz  = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const p    = ptz.formatToParts(now);
+  const get  = (t: string) => p.find(x => x.type === t)?.value ?? "00";
+  const hr   = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hr}:${get("minute")}`;
+}
+
+/* Convert a datetime-local string (treated as local time in `tz`) to UTC ISO */
+function tzLocalToUTC(localStr: string, tz: string): string {
+  const nums = localStr.split(/[-T:]/).map(Number);
+  const [yr, mo, dy, hr = 0, mn = 0] = nums;
+
+  const getOffset = (d: Date): number => {
+    const ptz = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, year: "numeric", month: "numeric", day: "numeric",
+      hour: "numeric", minute: "numeric", second: "numeric", hour12: false,
+    }).formatToParts(d);
+    const g   = (t: string) => Number(ptz.find(x => x.type === t)?.value ?? 0);
+    const h   = g("hour") % 24;
+    return Date.UTC(g("year"), g("month") - 1, g("day"), h, g("minute"), g("second")) - d.getTime();
+  };
+
+  let d    = new Date(Date.UTC(yr, mo - 1, dy, hr, mn));
+  const o1 = getOffset(d);
+  d        = new Date(Date.UTC(yr, mo - 1, dy, hr, mn) - o1);
+  const o2 = getOffset(d);
+  if (o1 !== o2) d = new Date(Date.UTC(yr, mo - 1, dy, hr, mn) - o2);
+  return d.toISOString();
+}
+
+
+function OptimalTable({ rows, loading, selected, onSelect, tz, onDelete, onRefresh }: {
+  rows: OptimalRow[]; loading: boolean; selected: string | null;
+  onSelect: (id: string) => void; tz: string;
+  onDelete: (id: string) => Promise<void>; onRefresh?: () => void;
+}) {
+  const [hov,        setHov]        = useState<string | null>(null);
+  const [copiedKey,  setCopiedKey]  = useState<string | null>(null);
+  const [confirmId,  setConfirmId]  = useState<string | null>(null);
+  const [deleting,   setDeleting]   = useState(false);
 
   function copy(key: string, text: string, e: React.MouseEvent) {
     if (!text || text === "—") return;
@@ -372,19 +508,62 @@ function OptimalTable({ selected, onSelect }: { selected: string | null; onSelec
     );
   }
 
+  async function confirmDelete() {
+    if (!confirmId) return;
+    setDeleting(true);
+    await onDelete(confirmId);
+    setDeleting(false);
+    setConfirmId(null);
+  }
+
+  const confirmRow = confirmId ? rows.find(r => r.optimal_trade_id === confirmId) : null;
+
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
+    <div className="card" style={{ position: "relative" }}>
+      {/* ── Delete confirmation overlay ── */}
+      {confirmId && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 50,
+          background: "rgba(4,8,15,0.82)", borderRadius: 6,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: 20, padding: 28,
+        }}>
+          <div style={{ textAlign: "center" }}>
+            <p style={{ margin: "0 0 6px", fontSize: 13.5, fontWeight: 600, color: "var(--ink-0)" }}>Delete trade?</p>
+            <p style={{ margin: 0, fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>
+              {confirmRow ? `${rFmt(confirmRow.result_r)}  ·  ${fmtTz(confirmRow.entry, tz)}` : confirmId.slice(0, 18) + "…"}
+            </p>
+            <p style={{ margin: "8px 0 0", fontSize: 10.5, color: "var(--red)" }}>
+              This also removes linked exempts. Cannot be undone.
+            </p>
+          </div>
+          <div style={{
+            background: "var(--card)", border: "1px solid var(--line-hi)", borderRadius: 7,
+            padding: "14px 20px", display: "flex", gap: 10, justifyContent: "center",
+            width: "100%", maxWidth: 280,
+          }}>
+            <button type="button" onClick={() => setConfirmId(null)} disabled={deleting}
+              style={{ flex: 1, padding: "9px 0", borderRadius: 5, background: "var(--sub)", border: "1px solid var(--line-hi)", color: "var(--ink-1)", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>
+              Cancel
+            </button>
+            <button type="button" onClick={confirmDelete} disabled={deleting}
+              style={{ flex: 1, padding: "9px 0", borderRadius: 5, background: deleting ? "rgba(240,58,87,0.5)" : "var(--sub)", border: "1px solid rgba(240,58,87,0.6)", color: "var(--red)", fontSize: 12.5, cursor: deleting ? "default" : "pointer", fontWeight: 700 }}>
+              {deleting ? "Deleting…" : "Yes, proceed"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <CardHeader eyebrow="Theoretical" eyebrowColor="var(--amber)" title="Optimal Sample"
-        badge={<span className="chip chip-muted">{OPTIMAL.length} results</span>}
-        actions={<><IconBtn icon="filter"/><IconBtn icon="download"/><IconBtn icon="refresh"/></>}
+        badge={<span className="chip chip-muted">{rows.length} results</span>}
+        actions={<><IconBtn icon="filter"/><IconBtn icon="download"/><IconBtn icon="refresh" onClick={onRefresh}/></>}
       />
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
+      <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 420, width: "100%", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
+          <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card)" }}>
             <tr>
               {["ID","R","Entry","Exit","Trade ID",""].map((h, i) => (
                 <th key={i} style={{ ...TH, width: i === 5 ? 28 : undefined }}>
-                  {/* copy hint on copyable columns */}
                   {[0,2,3,4].includes(i) && h
                     ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         {h}
@@ -399,21 +578,50 @@ function OptimalTable({ selected, onSelect }: { selected: string | null; onSelec
             </tr>
           </thead>
           <tbody>
-            {OPTIMAL.map(t => {
-              const sel = selected === t.id;
-              const bg  = sel ? "rgba(77,156,245,0.06)" : hov === t.id ? "var(--raised)" : "transparent";
+            {loading && <tr><td colSpan={6} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No records</td></tr>}
+            {!loading && rows.map(t => {
+              const id  = t.optimal_trade_id;
+              const sel = selected === id;
+              const bg  = sel ? "rgba(77,156,245,0.06)" : hov === id ? "var(--raised)" : "transparent";
               return (
-                <tr key={t.id}
-                  onMouseEnter={() => setHov(t.id)}
+                <tr key={id}
+                  onMouseEnter={() => setHov(id)}
                   onMouseLeave={() => setHov(null)}
-                  onClick={() => onSelect(t.id)}
+                  onClick={() => onSelect(id)}
                   style={{ background: bg, cursor: "pointer", transition: "background 0.1s" }}
                 >
-                  <CopyTd id={t.id} field="id"      value={t.id}             baseStyle={{ color: "var(--ink-2)", fontSize: 11.5 }} />
-                  <td style={{ ...TD, color: rColor(t.r), fontWeight: 600 }}>{rFmt(t.r)}</td>
-                  <CopyTd id={t.id} field="entry"   value={t.entry}          baseStyle={{ fontSize: 11.5 }} />
-                  <CopyTd id={t.id} field="exit"    value={t.exit}           baseStyle={{ fontSize: 11.5 }} />
-                  <CopyTd id={t.id} field="tradeId" value={t.tradeId || "—"} baseStyle={{ color: t.tradeId ? "var(--blue)" : "var(--ink-3)", fontSize: 11.5 }} />
+                  {/* ID cell — fixed padding always 22px so column never shifts;
+                      × is position:absolute and excluded from layout */}
+                  <td
+                    onClick={e => { copy(`${id}-id`, id, e); }}
+                    title="Click to copy ID"
+                    style={{
+                      ...TD, color: copiedKey === `${id}-id` ? "var(--green)" : "var(--ink-2)",
+                      fontSize: 11.5, cursor: "copy", userSelect: "none",
+                      position: "relative", transition: "color 0.15s",
+                      paddingLeft: 22,
+                    }}
+                  >
+                    <button type="button"
+                      onClick={e => { e.stopPropagation(); setConfirmId(id); }}
+                      title="Delete trade"
+                      style={{
+                        position: "absolute", left: 4, top: "50%", transform: "translateY(-50%)",
+                        background: "none", border: "none", color: "var(--red)",
+                        cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0,
+                        opacity: hov === id ? 1 : 0,
+                        pointerEvents: hov === id ? "auto" : "none",
+                        transition: "opacity 0.12s",
+                      }}>
+                      ×
+                    </button>
+                    {copiedKey === `${id}-id` ? "✓ copied" : id.slice(0,13)+"…"}
+                  </td>
+                  <td style={{ ...TD, color: rColor(t.result_r), fontWeight: 600 }}>{rFmt(t.result_r)}</td>
+                  <CopyTd id={id} field="entry"   value={fmtTz(t.entry, tz)}    baseStyle={{ fontSize: 11.5 }} />
+                  <CopyTd id={id} field="exit"    value={fmtTz(t.exit, tz)}     baseStyle={{ fontSize: 11.5 }} />
+                  <CopyTd id={id} field="tradeId" value={t.trade_id ?? "—"}     baseStyle={{ color: t.trade_id ? "var(--blue)" : "var(--ink-3)", fontSize: 11.5 }} />
                   <td style={{ ...TD, padding: "9px 8px", width: 28 }}>
                     {sel && <button type="button" onClick={e => { e.stopPropagation(); onSelect(""); }} style={{ background: "none", border: "none", color: "var(--ink-3)", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>}
                   </td>
@@ -430,19 +638,44 @@ function OptimalTable({ selected, onSelect }: { selected: string | null; onSelec
 /* ═══════════════════════════════════════════════════════════
    LIVE TRADE TABLE
 ═══════════════════════════════════════════════════════════ */
-function LiveTable() {
-  const COLS = ["ID","Entry","Exit","R","Entry Price","Dir","RM","Lock","Target","Is Bad"];
+function LiveTable({ rows, loading, tz, onRefresh }: { rows: LiveRow[]; loading: boolean; tz: string; onRefresh?: () => void }) {
+  const COLS = ["Entry","Exit","Dir","Lock","Target","RM","Entry Price","Is Bad"];
+  const sopBad = (r: LiveRow) =>
+    r.cor_lock === null || r.cor_dir === null || r.cor_target === null ||
+    r.cor_entry === null || r.cor_rm === null;
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
+    <div className="card">
       <CardHeader eyebrow="Live" eyebrowColor="var(--red)" title="Trade"
         badge={<span className="chip chip-red"><span style={{ display:"inline-block", width:5, height:5, borderRadius:"50%", background:"var(--red)", marginRight:5, verticalAlign:"middle" }}/>LIVE</span>}
-        right={<span className="chip chip-muted">0 results</span>}
-        actions={<><IconBtn icon="filter"/><IconBtn icon="download"/><IconBtn icon="refresh"/></>}
+        right={<span className="chip chip-muted">{rows.length} results</span>}
+        actions={<><IconBtn icon="filter"/><IconBtn icon="download"/><IconBtn icon="refresh" onClick={onRefresh}/></>}
       />
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <div style={{ overflowX: "auto", width: "100%", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
           <thead><tr>{COLS.map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
-          <tbody><tr><td colSpan={COLS.length} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No active positions</td></tr></tbody>
+          <tbody>
+            {loading && <tr><td colSpan={COLS.length} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={COLS.length} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No active positions</td></tr>}
+            {!loading && rows.map((r, i) => {
+              const bad = sopBad(r);
+              return (
+                <tr key={i} style={{ background: bad ? "rgba(240,58,87,0.04)" : "transparent" }}>
+                  <td style={TD}>{fmtTz(r.entry, tz)}</td>
+                  <td style={TD}>{r.exit ? fmtTz(r.exit, tz) : "—"}</td>
+                  <td style={{ ...TD, color: r.cor_dir ?? "var(--ink-3)" }}>{r.cor_dir ?? <span style={{ color: "var(--red)" }}>—</span>}</td>
+                  <td style={{ ...TD, color: r.cor_lock ? "var(--ink-1)" : "var(--red)" }}>{r.cor_lock ?? "—"}</td>
+                  <td style={{ ...TD, color: r.cor_target ? "var(--ink-1)" : "var(--red)" }}>{r.cor_target ?? "—"}</td>
+                  <td style={{ ...TD, color: r.cor_rm ? "var(--ink-1)" : "var(--red)" }}>{r.cor_rm ?? "—"}</td>
+                  <td style={{ ...TD, color: r.cor_entry ? "var(--ink-1)" : "var(--red)" }}>{r.cor_entry ?? "—"}</td>
+                  <td style={{ ...TD }}>
+                    {bad
+                      ? <span style={{ fontSize: 10, fontWeight: 700, color: "var(--red)", letterSpacing: "0.05em" }}>BAD</span>
+                      : <span style={{ fontSize: 10, color: "var(--green)" }}>OK</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
         </table>
       </div>
     </div>
@@ -450,23 +683,439 @@ function LiveTable() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SESSION JOURNAL
+   SESSION JOURNAL  —  trade Gantt + comment timeline
 ═══════════════════════════════════════════════════════════ */
-function JournalLog() {
+/* Y-scale constants */
+const TL_PAD      = 24;   // top/bottom canvas padding
+const TL_COL_W    = 12;   // trade column width
+const TL_MIN_BAR  = 6;    // minimum trade bar height
+const TL_PX_HR    = 44;   // px per hour between adjacent key events
+const TL_MAX_GAP  = 52;   // px cap on any single inter-event gap
+const TL_MIN_GAP  = 20;   // minimum px between any two key events
+const TL_LEFT_ZONE = 100; // px reserved left of axis for day labels
+
+/* Non-linear Y scale: caps empty gaps so whitespace stays proportional but bounded */
+function buildYScale(keyMs: number[]): [number, number][] {
+  const sorted = [...new Set(keyMs)].sort((a, b) => a - b);
+  if (!sorted.length) return [];
+  const pts: [number, number][] = [[sorted[0], TL_PAD]];
+  let y = TL_PAD;
+  for (let i = 1; i < sorted.length; i++) {
+    const hrs = (sorted[i] - sorted[i - 1]) / 3_600_000;
+    y += Math.min(TL_MAX_GAP, Math.max(TL_MIN_GAP, hrs * TL_PX_HR));
+    pts.push([sorted[i], y]);
+  }
+  return pts;
+}
+
+function yAt(ms: number, pts: [number, number][]): number {
+  if (!pts.length) return TL_PAD;
+  if (ms <= pts[0][0]) return pts[0][1];
+  const last = pts[pts.length - 1];
+  if (ms >= last[0]) return last[1];
+  let lo = 0, hi = pts.length - 1;
+  while (lo < hi - 1) {
+    const m = (lo + hi) >> 1;
+    if (pts[m][0] <= ms) lo = m; else hi = m;
+  }
+  const [t0, y0] = pts[lo], [t1, y1] = pts[hi];
+  return y0 + ((ms - t0) / (t1 - t0)) * (y1 - y0);
+}
+
+function assignTradeCols(trades: OptimalRow[]): { trade: OptimalRow; col: number }[] {
+  const sorted = [...trades].sort(
+    (a, b) => new Date(a.entry).getTime() - new Date(b.entry).getTime()
+  );
+  const ends: number[] = [];
+  return sorted.map(tr => {
+    const s = new Date(tr.entry).getTime();
+    const e = new Date(tr.exit).getTime();
+    let c = 0;
+    while (c < ends.length && ends[c] > s) c++;
+    if (c === ends.length) ends.push(0);
+    ends[c] = e;
+    return { trade: tr, col: c };
+  });
+}
+
+/* Trade bar — expands detail card on hover */
+function TLTrade({ trade, y1, y2, col, axisX, tz }: {
+  trade: OptimalRow; y1: number; y2: number; col: number; axisX: number; tz: string;
+}) {
+  const [hover, setHover] = useState(false);
+  const be  = Math.abs(trade.result_r) <= 0.08;
+  const win = !be && trade.result_r > 0;
+  const clr = be ? "#888888" : win ? "#00cc7a" : "#f03a57";
+  const bgHi  = be ? "rgba(136,136,136,0.22)" : win ? "rgba(0,204,122,0.26)" : "rgba(240,58,87,0.24)";
+  const bgLo  = be ? "rgba(136,136,136,0.10)" : win ? "rgba(0,204,122,0.13)" : "rgba(240,58,87,0.11)";
+  const top = Math.min(y1, y2);
+  const h   = Math.max(TL_MIN_BAR, Math.abs(y2 - y1));
+  const x   = 8 + col * TL_COL_W;
+
+  return (
+    <div
+      style={{ position: "absolute", left: x, top, width: TL_COL_W - 2, zIndex: hover ? 30 : 1 }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {/* Bar */}
+      <div style={{
+        width: "100%", height: h, borderRadius: 3,
+        background: hover ? bgHi : bgLo,
+        borderTop:    `1px solid ${clr}${hover ? "88" : "44"}`,
+        borderRight:  `1px solid ${clr}${hover ? "88" : "44"}`,
+        borderBottom: `1px solid ${clr}${hover ? "88" : "44"}`,
+        borderLeft:   `3px solid ${clr}`,
+        transition: "background 0.12s, border-color 0.12s",
+        cursor: "pointer",
+      }} />
+
+      {/* Hover detail card — floats right of axis, constrained for mobile */}
+      {hover && (
+        <div style={{
+          position: "absolute",
+          left: axisX - x + 10,
+          top: 0,
+          zIndex: 40,
+          background: "var(--card)",
+          borderTop:    `1px solid ${clr}44`,
+          borderRight:  `1px solid ${clr}44`,
+          borderBottom: `1px solid ${clr}44`,
+          borderLeft:   `2px solid ${clr}`,
+          borderRadius: 6,
+          padding: "9px 13px",
+          boxShadow: "0 6px 28px rgba(0,0,0,0.40)",
+          width: "min(220px, calc(100vw - 80px))",
+          pointerEvents: "none",
+          whiteSpace: "normal",
+          wordBreak: "break-word",
+        }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", color: clr, marginBottom: 8 }}>
+            {be ? "◆ BREAKEVEN" : win ? "▲ WINNER" : "▼ LOSER"}
+            <span style={{ marginLeft: 10, fontSize: 13, fontFamily: "var(--font-mono)" }}>
+              {win ? "+" : ""}{trade.result_r}R
+            </span>
+          </div>
+          <div style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-2)", lineHeight: 2 }}>
+            <span style={{ color: "var(--ink-3)", display: "inline-block", width: 34 }}>Entry</span>
+            {fmtTz(trade.entry, tz)}
+          </div>
+          <div style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-2)", lineHeight: 2 }}>
+            <span style={{ color: "var(--ink-3)", display: "inline-block", width: 34 }}>Exit</span>
+            {fmtTz(trade.exit, tz)}
+          </div>
+          {trade.trade_id && (
+            <div style={{
+              marginTop: 7, paddingTop: 7,
+              borderTop: "1px solid var(--line)",
+              fontSize: 9.5, fontFamily: "var(--font-mono)", color: "#4d9cf5",
+            }}>
+              {trade.trade_id.slice(0, 26)}…
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Comment node — focus/blur managed by parent */
+function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, canDelete, onDelete }: {
+  comment: CommentRow; top: number; axisX: number;
+  focused: boolean; dimmed: boolean; tz: string;
+  onFocus: () => void; onBlur: () => void;
+  canDelete?: boolean; onDelete?: () => Promise<void>;
+}) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [deleting,    setDeleting]    = useState(false);
+
+  const analyst = comment.content.startsWith("Analyst comment:");
+  const text    = analyst ? comment.content.replace(/^Analyst comment:\s*/i, "") : comment.content;
+  const accent  = analyst ? "#f0a030" : "#4d9cf5";
+
+  const handleBlur = () => { if (!showConfirm) onBlur(); };
+
+  async function doDelete() {
+    if (!onDelete) return;
+    setDeleting(true);
+    await onDelete();
+    setDeleting(false);
+    setShowConfirm(false);
+  }
+
+  /* When focused the card becomes position:absolute so the outer anchor div
+     stays at its collapsed height — the expanded card floats above lower items
+     without displacing them. */
+  const cardExpanded = focused || showConfirm;
+
+  return (
+    <div
+      style={{
+        position: "absolute", top, left: axisX + 10,
+        width: `calc(100% - ${axisX + 18}px)`,
+        zIndex: cardExpanded ? 20 : 1,
+        opacity: dimmed ? 0.25 : 1,
+        filter:  dimmed ? "blur(1.5px)" : "none",
+        transition: "opacity 0.18s, filter 0.18s",
+        minHeight: 26,
+      }}
+      onMouseEnter={onFocus}
+      onMouseLeave={handleBlur}
+    >
+      {/* Axis dot */}
+      <div style={{
+        position: "absolute", left: -14, top: 9,
+        width: 8, height: 8, borderRadius: "50%",
+        background: cardExpanded ? accent : "var(--sub)",
+        border: `2px solid ${accent}`,
+        boxShadow: cardExpanded
+          ? `0 0 0 4px ${analyst ? "rgba(240,160,48,0.18)" : "rgba(77,156,245,0.18)"}`
+          : "none",
+        transition: "background 0.15s, box-shadow 0.15s",
+      }} />
+
+      {/* Card — floats above siblings when expanded */}
+      <div style={{
+        position: cardExpanded ? "absolute" as const : "relative" as const,
+        top: cardExpanded ? 0 : undefined,
+        left: cardExpanded ? 0 : undefined,
+        right: cardExpanded ? 0 : undefined,
+        zIndex: cardExpanded ? 30 : undefined,
+        background: cardExpanded ? "var(--card)" : "transparent",
+        borderTop:    `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
+        borderRight:  `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
+        borderBottom: `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
+        borderLeft:   `2px solid ${accent}`,
+        borderRadius: 5,
+        padding: cardExpanded ? "8px 12px" : "3px 10px",
+        transition: "background 0.15s, border-color 0.15s, box-shadow 0.15s",
+        boxShadow: cardExpanded ? "0 6px 28px rgba(0,0,0,0.38)" : "none",
+        minWidth: 0, width: "100%",
+        boxSizing: "border-box" as const,
+        overflow: "hidden",
+      }}>
+
+        {!cardExpanded ? (
+          /* ── Collapsed: single row — timestamp · text ── */
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+            <span style={{
+              fontSize: 10, fontFamily: "var(--font-mono)", color: accent,
+              flexShrink: 0, whiteSpace: "nowrap",
+            }}>
+              {fmtTz(comment.Entry, tz)}
+            </span>
+            <span style={{
+              fontSize: 12, color: "var(--ink-1)",
+              overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
+              flex: 1, minWidth: 0,
+            }}>
+              {text}
+            </span>
+            {analyst && (
+              <span className="chip chip-amber" style={{ fontSize: 7.5, flexShrink: 0 }}>A</span>
+            )}
+          </div>
+        ) : (
+          /* ── Expanded: full card ── */
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap", minWidth: 0 }}>
+              <span style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: accent, fontWeight: 600, flexShrink: 0 }}>
+                {fmtTz(comment.Entry, tz)}
+              </span>
+              {comment.trade_id && (
+                <span style={{ fontSize: 8.5, fontFamily: "var(--font-mono)", color: "#4d9cf5", background: "rgba(77,156,245,0.10)", padding: "1px 5px", borderRadius: 2, flexShrink: 0 }}>
+                  {comment.trade_id.slice(0, 8)}…
+                </span>
+              )}
+              {analyst && <span className="chip chip-amber" style={{ fontSize: 8, flexShrink: 0 }}>Analyst</span>}
+              {canDelete && analyst && !showConfirm && (
+                <button type="button" onClick={e => { e.stopPropagation(); setShowConfirm(true); }}
+                  style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0, opacity: 0.7 }}>
+                  ×
+                </button>
+              )}
+            </div>
+            <p style={{
+              margin: 0, fontSize: 12.5, lineHeight: 1.65,
+              color: "var(--ink-0)", wordBreak: "break-word", overflowWrap: "break-word",
+            }}>
+              {text}
+            </p>
+            {showConfirm && (
+              <div style={{ marginTop: 10, background: "var(--card)", border: "1px solid var(--line-hi)", borderRadius: 6, padding: "12px 14px" }}>
+                <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--ink-0)", fontWeight: 600 }}>Delete this comment?</p>
+                <p style={{ margin: "0 0 12px", fontSize: 10.5, color: "var(--red)" }}>This cannot be undone.</p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" disabled={deleting} onClick={() => setShowConfirm(false)}
+                    style={{ flex: 1, padding: "8px 0", borderRadius: 5, background: "var(--sub)", border: "1px solid var(--line-hi)", color: "var(--ink-1)", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+                    Cancel
+                  </button>
+                  <button type="button" disabled={deleting} onClick={doDelete}
+                    style={{ flex: 1, padding: "8px 0", borderRadius: 5, background: "var(--sub)", border: "1px solid rgba(240,58,87,0.6)", color: "var(--red)", fontSize: 12, cursor: deleting ? "default" : "pointer", fontWeight: 700 }}>
+                    {deleting ? "Deleting…" : "Yes, proceed"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JournalTimeline({
+  trades, tradingLoading, comments, commentsLoading, tz, analystMode, onDeleteComment, onRefresh,
+}: {
+  trades: OptimalRow[];    tradingLoading: boolean;
+  comments: CommentRow[];  commentsLoading: boolean; tz: string;
+  analystMode?: boolean;
+  onDeleteComment?: (id: string) => Promise<void>;
+  onRefresh?: () => void;
+}) {
+  const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
+  const loading = tradingLoading || commentsLoading;
+
+  /* ── collect all key timestamps for non-linear scale ── */
+  const keyMs: number[] = [
+    ...trades.flatMap(t => [new Date(t.entry).getTime(), new Date(t.exit).getTime()]),
+    ...comments.map(c => new Date(c.Entry).getTime()),
+  ].filter(n => !isNaN(n));
+
+  const hasData = keyMs.length > 0;
+  const minT    = hasData ? Math.min(...keyMs) : 0;
+  const maxT    = hasData ? Math.max(...keyMs) : 0;
+
+  /* Add midnight boundaries as key points (keeps day ticks proportional) */
+  if (hasData) {
+    const d = new Date(minT); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1);
+    while (d.getTime() <= maxT) { keyMs.push(d.getTime()); d.setDate(d.getDate() + 1); }
+  }
+
+  const yPts    = buildYScale(keyMs);
+  const totalPx = yPts.length ? yPts[yPts.length - 1][1] : TL_PAD;
+  /* Flip: newest at top — invert the raw Y so maxT → TL_PAD, minT → totalPx */
+  const toY    = (iso: string) => totalPx + TL_PAD - yAt(new Date(iso).getTime(), yPts);
+  const toYMs  = (ms: number)  => totalPx + TL_PAD - yAt(ms, yPts);
+
+  /* ── trade layout ────────────────────────────────────── */
+  const placed  = assignTradeCols(trades);
+  const numCols = placed.length ? Math.max(...placed.map(p => p.col)) + 1 : 1;
+  const AXIS_X  = TL_LEFT_ZONE + numCols * TL_COL_W;
+
+  /* ── comment positions with collision avoidance ─────── */
+  const commentTops: number[] = (() => {
+    const raw = comments.map((c, i) => ({ i, y: toY(c.Entry) - 12 }));
+    raw.sort((a, b) => a.y - b.y);
+    const out = comments.map(c => toY(c.Entry) - 12);
+    let prevY = -Infinity;
+    for (const { i, y } of raw) {
+      const placed = Math.max(y, prevY + 40);
+      out[i] = placed;
+      prevY = placed;
+    }
+    return out;
+  })();
+
+  /* ── midnight day ticks ──────────────────────────────── */
+  const ticks: { label: string; y: number }[] = [];
+  if (hasData) {
+    const d = new Date(minT); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1);
+    while (d.getTime() <= maxT) {
+      ticks.push({
+        label: d.toLocaleDateString("en-AU", {
+          timeZone: tz,
+          weekday: "short", month: "short", day: "numeric",
+        }),
+        y: toYMs(d.getTime()),
+      });
+      d.setDate(d.getDate() + 1);
+    }
+  }
+
   return (
     <div className="card" style={{ overflow: "hidden" }}>
-      <CardHeader title="Session Journal" />
-      <div>
-        {JOURNAL.map((j, i) => (
-          <div key={i} style={{ padding: "13px 16px", borderBottom: i < JOURNAL.length - 1 ? "1px solid var(--line)" : "none" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              {j.tradeId && <span style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--blue)", background: "var(--blue-10)", padding: "2px 7px", borderRadius: 3 }}>{j.tradeId}</span>}
-              <span style={{ fontSize: 10.5, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>{j.time}</span>
-              {j.analyst && <span className="chip chip-amber" style={{ fontSize: 9.5 }}>Analyst</span>}
-            </div>
-            <p style={{ margin: 0, fontSize: 12.5, color: j.analyst ? "var(--ink-1)" : "var(--ink-2)", lineHeight: 1.7 }}>{j.content}</p>
+      <CardHeader
+        title="Session Journal"
+        badge={!loading && hasData
+          ? <span className="chip chip-muted">{trades.length} trades · {comments.length} comments · last 2w</span>
+          : undefined}
+        actions={<IconBtn icon="refresh" onClick={onRefresh} />}
+      />
+      <div style={{ overflowY: "auto", maxHeight: 560, overflowX: "hidden", width: "100%", padding: "16px 0" }}>
+        {loading && (
+          <div style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</div>
+        )}
+        {!loading && !hasData && (
+          <div style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No data in the last 2 weeks</div>
+        )}
+        {!loading && hasData && (
+          <div style={{ position: "relative", width: "100%", height: totalPx + TL_PAD, minHeight: 280, overflow: "hidden" }}>
+
+            {/* Axis */}
+            <div style={{ position: "absolute", left: AXIS_X, top: 0, bottom: 0, width: 2, background: "var(--line-hi)", borderRadius: 1 }} />
+
+            {/* Day dividers — pill label + full-width line */}
+            {ticks.map((t, i) => (
+              <div key={i} style={{ position: "absolute", top: t.y, left: 0, right: 0, height: 20, pointerEvents: "none" }}>
+                {/* Line left of label */}
+                <div style={{ position: "absolute", top: 10, left: 8, right: `calc(100% - ${AXIS_X / 2 - 4}px)`, height: 1, background: "var(--line-hi)" }} />
+                {/* Line right of label */}
+                <div style={{ position: "absolute", top: 10, left: `${AXIS_X / 2 + 4}px`, right: 8, height: 1, background: "var(--line-hi)" }} />
+                {/* Pill */}
+                <span style={{
+                  position: "absolute",
+                  left: "50%", transform: `translateX(calc(-50% - ${(AXIS_X / 2)}px))`,
+                  top: 3,
+                  background: "var(--sub)",
+                  border: "1px solid var(--line-hi)",
+                  borderRadius: 20,
+                  padding: "1px 10px",
+                  fontSize: 9.5,
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--ink-1)",
+                  whiteSpace: "nowrap",
+                  letterSpacing: "0.02em",
+                }}>
+                  {t.label}
+                </span>
+                {/* Axis notch */}
+                <div style={{ position: "absolute", left: AXIS_X - 1, top: 6, width: 3, height: 9, background: "var(--line-hi)", borderRadius: 1 }} />
+              </div>
+            ))}
+
+            {/* Trade bars */}
+            {placed.map(({ trade, col }) => (
+              <TLTrade
+                key={trade.optimal_trade_id}
+                trade={trade}
+                y1={toY(trade.entry)}
+                y2={toY(trade.exit)}
+                col={col}
+                axisX={AXIS_X}
+                tz={tz}
+              />
+            ))}
+
+            {/* Comment nodes */}
+            {comments.map((c, i) => (
+              <TLComment
+                key={c.id ?? i}
+                comment={c}
+                top={commentTops[i]}
+                axisX={AXIS_X}
+                tz={tz}
+                focused={focusedIdx === i}
+                dimmed={focusedIdx !== null && focusedIdx !== i}
+                onFocus={() => setFocusedIdx(i)}
+                onBlur={() => setFocusedIdx(null)}
+                canDelete={analystMode}
+                onDelete={onDeleteComment ? () => onDeleteComment(c.created_at) : undefined}
+              />
+            ))}
+
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
@@ -475,28 +1124,59 @@ function JournalLog() {
 /* ═══════════════════════════════════════════════════════════
    RECORD TRADE FORM
 ═══════════════════════════════════════════════════════════ */
-function RecordTradeForm({ selectedId }: { selectedId: string | null }) {
-  const pad   = (n: number) => String(n).padStart(2, "0");
-  const dtNow = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+function RecordTradeForm({ selectedId, onSuccess, showToast, baseTZ }: { selectedId: string | null; onSuccess?: () => void; showToast: ShowToast; baseTZ: string }) {
   const [tradeId, setTradeId] = useState("");
-  const [entry,   setEntry]   = useState(dtNow);
-  const [exit_,   setExit]    = useState(dtNow);
+  const [entry,   setEntry]   = useState(() => nowInTZ(baseTZ));
+  const [exit_,   setExit]    = useState(() => nowInTZ(baseTZ));
   const [exemptR, setExemptR] = useState("0");
   const [result,  setResult]  = useState("0");
   const [exemp,   setExemp]   = useState("false");
-  const [done,    setDone]    = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [lastErr,    setLastErr]    = useState<string | null>(null);
 
   useEffect(() => { if (selectedId) setTradeId(selectedId); }, [selectedId]);
 
-  function submit(e: FormEvent) { e.preventDefault(); setDone(true); setTimeout(() => setDone(false), 2500); }
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setLastErr(null);
+    try {
+      const res = await fetch("/api/session/optimal-trades", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trade_id:  tradeId || undefined,
+          result_r:  parseFloat(result),
+          entry:     tzLocalToUTC(entry, baseTZ),
+          exit:      tzLocalToUTC(exit_, baseTZ),
+          exempt_r:  parseFloat(exemptR),
+          is_exempt: exemp === "true",
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        const msg = j.error ?? `Server error ${res.status}`;
+        setLastErr(msg);
+        showToast("error", msg);
+      } else {
+        showToast("success", "Optimal trade recorded");
+        onSuccess?.();
+      }
+    } catch (e) {
+      const msg = "Network error — trade not saved";
+      setLastErr(msg);
+      showToast("error", msg);
+    }
+    setSubmitting(false);
+  }
 
-  const nowLabel = new Date().toLocaleString("en-AU", { timeZone: "Australia/Melbourne", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
+  const nowLabel = fmtTz(new Date().toISOString(), baseTZ);
 
   return (
     <div className="card" style={{ overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "4px 10px", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>Optimal Trade</span>
-        <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>{nowLabel}</span>
+        <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{nowLabel}</span>
       </div>
       <form onSubmit={submit} style={{ padding: "16px", display: "flex", flexDirection: "column", gap: 11 }}>
         <div><label style={LBL}>Trade ID</label><input style={INP} placeholder="Enter value" value={tradeId} onChange={e => setTradeId(e.target.value)} /></div>
@@ -533,8 +1213,14 @@ function RecordTradeForm({ selectedId }: { selectedId: string | null }) {
             <option value="false">False</option><option value="true">True</option>
           </select>
         </div>
-        <button type="submit" className="btn btn-primary" style={{ width: "100%", padding: "11px", fontSize: 12.5, marginTop: 2 }}>
-          {done ? "✓ Recorded" : "Submit"}
+        {lastErr && (
+          <div style={{ display: "flex", gap: 8, padding: "9px 11px", borderRadius: 5, background: "rgba(240,58,87,0.08)", border: "1px solid rgba(240,58,87,0.25)" }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="8" cy="8" r="7" stroke="#f03a57" strokeWidth="1.3"/><path d="M8 5v3.5M8 10.5h.01" stroke="#f03a57" strokeWidth="1.4" strokeLinecap="round"/></svg>
+            <span style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5 }}>{lastErr}</span>
+          </div>
+        )}
+        <button type="submit" disabled={submitting} className="btn btn-primary" style={{ width: "100%", padding: "11px", fontSize: 12.5, marginTop: 2, opacity: submitting ? 0.6 : 1 }}>
+          {submitting ? "Saving…" : "Submit"}
         </button>
       </form>
     </div>
@@ -544,29 +1230,50 @@ function RecordTradeForm({ selectedId }: { selectedId: string | null }) {
 /* ═══════════════════════════════════════════════════════════
    ADD COMMENT FORM
 ═══════════════════════════════════════════════════════════ */
-function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst }: { tradeId?: string; fullWidth?: boolean; isAnalyst?: boolean }) {
-  const pad     = (n: number) => String(n).padStart(2, "0");
-  const dtNow   = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-
-  const [content,   setContent]   = useState("");
-  const [tradeId,   setTradeId]   = useState(initId ?? "");
-  const [createdAt, setCreatedAt] = useState(dtNow);
-  const [done,      setDone]      = useState(false);
+function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, showToast, baseTZ }: { tradeId?: string; fullWidth?: boolean; isAnalyst?: boolean; onSuccess?: () => void; showToast: ShowToast; baseTZ: string }) {
+  const [content,    setContent]    = useState("");
+  const [tradeId,    setTradeId]    = useState(initId ?? "");
+  const [createdAt,  setCreatedAt]  = useState(() => nowInTZ(baseTZ));
+  const [submitting, setSubmitting] = useState(false);
+  const [lastErr,    setLastErr]    = useState<string | null>(null);
 
   useEffect(() => { if (initId) setTradeId(initId); }, [initId]);
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     if (!content.trim()) return;
-    /* Analyst comments are automatically prefixed */
-    const _final = isAnalyst ? `Analyst comment: ${content.trim()}` : content.trim();
-    void _final; /* will be sent to DB when wired */
-    setDone(true);
-    setContent("");
-    setTimeout(() => setDone(false), 2500);
+    setSubmitting(true);
+    setLastErr(null);
+    const final = isAnalyst ? `Analyst comment: ${content.trim()}` : content.trim();
+    try {
+      const res = await fetch("/api/session/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trade_id:   tradeId || undefined,
+          content:    final,
+          created_at: tzLocalToUTC(createdAt, baseTZ),
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        const msg = j.error ?? `Server error ${res.status}`;
+        setLastErr(msg);
+        showToast("error", msg);
+      } else {
+        showToast("success", isAnalyst ? "Analyst comment added" : "Comment added");
+        setContent("");
+        onSuccess?.();
+      }
+    } catch {
+      const msg = "Network error — comment not saved";
+      setLastErr(msg);
+      showToast("error", msg);
+    }
+    setSubmitting(false);
   }
 
-  const nowLabel = new Date().toLocaleString("en-AU", { timeZone: "Australia/Melbourne", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
+  const nowLabel = fmtTz(new Date().toISOString(), baseTZ);
 
   return (
     <div className="card" style={{ overflow: "hidden" }}>
@@ -635,8 +1342,14 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst }: { tradeId?: s
           </div>
         )}
 
-        <button type="submit" className="btn btn-primary" disabled={!content.trim()} style={{ width: "100%", padding: "11px", fontSize: 12.5 }}>
-          {done ? "✓ Comment added" : "Submit"}
+        {lastErr && (
+          <div style={{ display: "flex", gap: 8, padding: "9px 11px", borderRadius: 5, background: "rgba(240,58,87,0.08)", border: "1px solid rgba(240,58,87,0.25)" }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="8" cy="8" r="7" stroke="#f03a57" strokeWidth="1.3"/><path d="M8 5v3.5M8 10.5h.01" stroke="#f03a57" strokeWidth="1.4" strokeLinecap="round"/></svg>
+            <span style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5 }}>{lastErr}</span>
+          </div>
+        )}
+        <button type="submit" className="btn btn-primary" disabled={!content.trim() || submitting} style={{ width: "100%", padding: "11px", fontSize: 12.5, opacity: submitting ? 0.6 : 1 }}>
+          {submitting ? "Saving…" : "Submit"}
         </button>
       </form>
     </div>
@@ -943,7 +1656,88 @@ export default function SessionClient({ user }: { user: User }) {
   const [greeting,     setGreeting]     = useState("Welcome back");
   const [timeStr,      setTimeStr]      = useState("");
   const [dayStr,       setDayStr]       = useState("");
+  const [baseTZ,       setBaseTZ]       = useState<string>(() => {
+    if (typeof window === "undefined") return "Australia/Melbourne";
+    return localStorage.getItem("xtnl_tz") ?? "Australia/Melbourne";
+  });
+  const handleTZChange = useCallback((tz: string) => {
+    setBaseTZ(tz);
+    if (typeof window !== "undefined") localStorage.setItem("xtnl_tz", tz);
+  }, []);
   const [selId,        setSelId]        = useState<string | null>(null);
+
+  /* ── Toast notifications ─────────────────────────── */
+  const [toasts,   setToasts]  = useState<ToastMsg[]>([]);
+  const toastId = useRef(0);
+  const showToast = useCallback<ShowToast>((kind, text) => {
+    const id = ++toastId.current;
+    setToasts(prev => [...prev, { id, kind, text }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3800);
+  }, []);
+
+  /* ── Supabase data state ─────────────────────────── */
+  const [optimalRows,  setOptimalRows]  = useState<OptimalRow[]>([]);
+  const [liveRows,     setLiveRows]     = useState<LiveRow[]>([]);
+  const [commentRows,  setCommentRows]  = useState<CommentRow[]>([]);
+  const [loadingOpt,   setLoadingOpt]   = useState(true);
+  const [loadingLive,  setLoadingLive]  = useState(true);
+  const [loadingComm,  setLoadingComm]  = useState(true);
+
+  const fetchOptimal = useCallback(async () => {
+    setLoadingOpt(true);
+    try { const r = await fetch("/api/session/optimal-trades"); const j = await r.json(); setOptimalRows(j.rows ?? []); } catch {}
+    setLoadingOpt(false);
+  }, []);
+
+  const deleteOptimal = useCallback(async (id: string) => {
+    const res = await fetch("/api/session/optimal-trades", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) {
+      setOptimalRows(prev => prev.filter(r => r.optimal_trade_id !== id));
+      showToast("success", "Trade deleted");
+    } else {
+      const j = await res.json().catch(() => ({}));
+      showToast("error", j.error ?? "Delete failed");
+    }
+  }, [showToast]);
+
+  const deleteComment = useCallback(async (createdAt: string) => {
+    const res = await fetch("/api/session/comments", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ created_at: createdAt }),
+    });
+    if (res.ok) {
+      setCommentRows(prev => prev.filter(r => r.created_at !== createdAt));
+      showToast("success", "Comment deleted");
+    } else {
+      const j = await res.json().catch(() => ({}));
+      showToast("error", j.error ?? "Delete failed");
+    }
+  }, [showToast]);
+
+  const fetchLive = useCallback(async () => {
+    setLoadingLive(true);
+    try { const r = await fetch("/api/session/live-trades"); const j = await r.json(); setLiveRows(j.rows ?? []); } catch {}
+    setLoadingLive(false);
+  }, []);
+
+  const fetchComments = useCallback(async () => {
+    setLoadingComm(true);
+    try { const r = await fetch("/api/session/comments"); const j = await r.json(); setCommentRows(j.rows ?? []); } catch {}
+    setLoadingComm(false);
+  }, []);
+
+  const fetchJournal = useCallback(() => { fetchOptimal(); fetchComments(); }, [fetchOptimal, fetchComments]);
+
+  useEffect(() => {
+    fetchOptimal();
+    fetchLive();
+    fetchComments();
+  }, [fetchOptimal, fetchLive, fetchComments]);
 
   useEffect(() => {
     function tick() {
@@ -961,11 +1755,15 @@ export default function SessionClient({ user }: { user: User }) {
   /* In dev: override supersedes the time gate */
   const effectiveMode = IS_DEV && modeOverride !== null ? modeOverride : mode;
 
-  const selectedTradeId = selId ? (OPTIMAL.find(t => t.id === selId)?.tradeId || selId) : undefined;
+  /* Look up the trade_id UUID from the selected optimal row to pre-fill forms */
+  const selectedTradeId = selId
+    ? (optimalRows.find(t => t.optimal_trade_id === selId)?.trade_id ?? selId)
+    : undefined;
   const modeColor = effectiveMode === "analyst" ? "var(--amber)" : "var(--green)";
 
   return (
     <div style={{ minHeight: "100%", paddingBottom: 64 }}>
+      <Toaster toasts={toasts} />
       <div className="site-container" style={{ paddingTop: 32 }}>
 
         {/* ── PAGE HEADER ──────────────────────────────────── */}
@@ -1017,6 +1815,28 @@ export default function SessionClient({ user }: { user: User }) {
           </div>
         </div>
 
+        {/* ── TIMEZONE SELECTOR ────────────────────────────── */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "var(--ink-3)", textTransform: "uppercase", flexShrink: 0 }}>Base TZ</span>
+          <select
+            value={baseTZ}
+            onChange={e => handleTZChange(e.target.value)}
+            style={{
+              flex: 1, maxWidth: 280,
+              background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 4,
+              color: "var(--ink-1)", fontSize: 11.5, fontFamily: "var(--font-mono)",
+              padding: "5px 8px", cursor: "pointer", outline: "none",
+            }}
+          >
+            {TIMEZONES.map(z => (
+              <option key={z.value} value={z.value}>{z.label}  {tzOffset(z.value)}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)", flexShrink: 0 }}>
+            {nowInTZ(baseTZ).replace("T", " ")}
+          </span>
+        </div>
+
         <div style={{ height: 1, background: "var(--line)", marginBottom: 20 }} />
 
         {/* ── SESSION COUNTDOWN ────────────────────────────── */}
@@ -1030,13 +1850,13 @@ export default function SessionClient({ user }: { user: User }) {
         {effectiveMode === "analyst" && (
           <div className="session-2col">
             <div className="session-main">
-              <OptimalTable selected={selId} onSelect={id => setSelId(prev => prev === id ? null : id)} />
-              <LiveTable />
-              <JournalLog />
+              <OptimalTable rows={optimalRows} loading={loadingOpt} selected={selId} onSelect={id => setSelId(prev => prev === id ? null : id)} tz={baseTZ} onDelete={deleteOptimal} onRefresh={fetchOptimal} />
+              <LiveTable rows={liveRows} loading={loadingLive} tz={baseTZ} onRefresh={fetchLive} />
+              <JournalTimeline trades={optimalRows} tradingLoading={loadingOpt} comments={commentRows} commentsLoading={loadingComm} tz={baseTZ} analystMode={effectiveMode === "analyst"} onDeleteComment={deleteComment} onRefresh={fetchJournal} />
             </div>
             <div className="session-sidebar">
-              <RecordTradeForm selectedId={selId} />
-              <AddCommentForm tradeId={selectedTradeId} isAnalyst />
+              <RecordTradeForm selectedId={selId} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
+              <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
             </div>
           </div>
         )}
@@ -1046,11 +1866,11 @@ export default function SessionClient({ user }: { user: User }) {
         ════════════════════════════════════════════════════ */}
         {effectiveMode === "operator" && (
           <div className="session-2col">
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="session-main">
               <FrictionPanel f={FRICTION} />
             </div>
             <div className="session-sidebar session-sidebar-340">
-              <AddCommentForm fullWidth />
+              <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
             </div>
           </div>
         )}

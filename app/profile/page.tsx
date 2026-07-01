@@ -7,6 +7,6 @@ export const metadata: Metadata = { title: "Profile" };
 
 export default async function ProfilePage() {
   const session = await auth();
-  if (!session?.twoFactorVerified) redirect("/");
+  if (!session?.twoFactorVerified || session.error === "RefreshAccessTokenError") redirect("/");
   return <ProfileClient user={{ email: session.userEmail ?? "", name: session.userName ?? "" }} />;
 }

@@ -137,6 +137,7 @@ code, pre, .mono {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 6px;
+  min-width: 0;
 }
 
 .card-hover {
@@ -425,6 +426,7 @@ a { transition: color 0.15s, opacity 0.15s; }
 
 @media (max-width: 700px) {
   .session-2col             { flex-direction: column; }
+  .session-main             { width: 100%; }
   .session-sidebar,
   .session-sidebar-340      { width: 100%; position: static; }
 }
