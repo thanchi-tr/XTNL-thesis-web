@@ -6,6 +6,7 @@ import RDistributionChart from "@/components/RDistributionChart";
 import HourlyHeatmap from "@/components/HourlyHeatmap";
 import ProspectusSidebar from "@/components/prospectus/ProspectusSidebar";
 import Link from "next/link";
+import { auth } from "@/auth";
 
 export const metadata: Metadata = { title: "Institutional Prospectus" };
 
@@ -89,6 +90,54 @@ function FormulaGroup({ items }: { items: { label: string; latex: string }[] }) 
   );
 }
 
+/* ── Locked section gate ───────────────────────────────── */
+function LockedSection({ title, teaser }: { title: string; teaser: string }) {
+  return (
+    <div style={{
+      position: "relative",
+      border: "1px solid var(--line)",
+      borderLeft: "3px solid rgba(255,255,255,0.08)",
+      borderRadius: "0 6px 6px 0",
+      padding: "28px 28px 24px",
+      background: "var(--card)",
+      overflow: "hidden",
+    }}>
+      {/* Noise overlay */}
+      <div aria-hidden style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,255,255,0.012) 3px, rgba(255,255,255,0.012) 4px)",
+      }} />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden style={{ flexShrink: 0, opacity: 0.45 }}>
+          <rect x="2" y="6" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+          <path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+        <span className="mono" style={{ fontSize: 9.5, letterSpacing: "0.18em", color: "var(--ink-3)", textTransform: "uppercase" }}>
+          RESTRICTED — {title}
+        </span>
+      </div>
+
+      <p style={{ ...prose, color: "var(--ink-2)", marginBottom: 20, maxWidth: 580 }}>
+        {teaser}
+      </p>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <Link
+          href="/api/auth/signin"
+          className="btn btn-primary"
+          style={{ fontSize: 11, padding: "9px 18px" }}
+        >
+          Sign in to view full detail →
+        </Link>
+        <span style={{ fontSize: 11, color: "var(--ink-3)", fontStyle: "italic" }}>
+          Authorised investors only
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /* ── Sidebar sections definition ──────────────────────── */
 const SECTIONS = [
   { id: "s1",  n: "1",  title: "Thesis",              group: "Foundation" },
@@ -96,8 +145,8 @@ const SECTIONS = [
   { id: "s3",  n: "3",  title: "Statistical Edge",     group: "Evidence"   },
   { id: "s4",  n: "4",  title: "Adversarial Filters",  group: "Evidence"   },
   { id: "s5",  n: "5",  title: "WFO & 19:00 Vaccine",  group: "Evidence"   },
-  { id: "s6",  n: "6",  title: "HMM Oracle",           group: "Evidence"   },
-  { id: "s7",  n: "7",  title: "CVaR & Sizing",        group: "Evidence"   },
+  { id: "s6",  n: "6",  title: "Regime Detection",     group: "Evidence"   },
+  { id: "s7",  n: "7",  title: "Risk Allocation",      group: "Evidence"   },
   { id: "s8",  n: "8",  title: "Operator Architecture",group: "Operations" },
   { id: "s9",  n: "9",  title: "Capital Scaling",      group: "Operations" },
   { id: "s10", n: "10", title: "Simulation",           group: "Operations" },
@@ -156,7 +205,10 @@ const META = [
   { label: "Operational Locus",     value: "Clayton South, VIC, Australia" },
 ];
 
-export default function ProspectusPage() {
+export default async function ProspectusPage() {
+  const session = await auth();
+  const authed  = Boolean(session?.twoFactorVerified);
+
   return (
     <div className="site-container" style={{ paddingTop: 40, paddingBottom: 96 }}>
 
@@ -406,59 +458,77 @@ export default function ProspectusPage() {
           <HourlyHeatmap />
 
           {/* ══ §6 — HMM ════════════════════════════════════ */}
-          <S id="s6" n="6" title="HMM Regime Oracle" />
-          <p style={{ ...prose, marginBottom: 18 }}>
-            The system does not assume a stationary market. A Gaussian Hidden Markov Model (HMM)
-            continuously infers market regime from three observable features via Viterbi decoding.
-            A 95% self-loop sticky prior prevents noise-driven micro-regime-flipping.
-            Both regimes show positive expectancy — the oracle calibrates risk, it does not halt trading.
-          </p>
+          <S id="s6" n="6" title="Market Regime Detection Engine" />
+          {authed ? (
+            <>
+              <p style={{ ...prose, marginBottom: 18 }}>
+                The system does not assume a stationary market. A Gaussian Hidden Markov Model (HMM)
+                continuously infers market regime from three observable features via Viterbi decoding.
+                A 95% self-loop sticky prior prevents noise-driven micro-regime-flipping.
+                Both regimes show positive expectancy — the oracle calibrates risk, it does not halt trading.
+              </p>
 
-          <CodeBlock filename="src/action/market_context/abstract_infer_regime.py">{CODE_HMM}</CodeBlock>
+              <CodeBlock filename="src/action/market_context/abstract_infer_regime.py">{CODE_HMM}</CodeBlock>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginTop: 16 }}>
-            {[
-              { regime: "ALPHA_FLOW",    sqn: "3.210", n: "93",  e: "0.820 R", chip: "chip-green" },
-              { regime: "TOXIC_FATIGUE", sqn: "4.105", n: "215", e: "0.638 R", chip: "chip-amber" },
-            ].map(({ regime, sqn, n, e, chip }) => (
-              <div key={regime} className="card" style={{ padding: "16px 18px" }}>
-                <span className={`chip ${chip}`} style={{ marginBottom: 12 }}>{regime}</span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-                  {[["N", n], ["SQN", sqn], ["Expectancy", e]].map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{k}</span>
-                      <span className="mono" style={{ fontSize: 12, color: "var(--ink-0)", fontWeight: 600 }}>{v}</span>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginTop: 16 }}>
+                {[
+                  { regime: "ALPHA_FLOW",    sqn: "3.210", n: "93",  e: "0.820 R", chip: "chip-green" },
+                  { regime: "TOXIC_FATIGUE", sqn: "4.105", n: "215", e: "0.638 R", chip: "chip-amber" },
+                ].map(({ regime, sqn, n, e, chip }) => (
+                  <div key={regime} className="card" style={{ padding: "16px 18px" }}>
+                    <span className={`chip ${chip}`} style={{ marginBottom: 12 }}>{regime}</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                      {[["N", n], ["SQN", sqn], ["Expectancy", e]].map(([k, v]) => (
+                        <div key={k} style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{k}</span>
+                          <span className="mono" style={{ fontSize: 12, color: "var(--ink-0)", fontWeight: 600 }}>{v}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <LockedSection
+              title="Market Regime Detection Engine"
+              teaser="The framework incorporates a continuous market regime classifier that updates in real time as new execution data arrives. Rather than assuming the market behaves uniformly, the system continuously recalibrates risk posture to the inferred regime — without halting deployment. Both detected regimes carry statistically verifiable positive expectancy. Feature engineering methodology, model architecture, and per-regime performance breakdown are restricted to authenticated investors."
+            />
+          )}
 
           {/* ══ §7 — CVaR ═══════════════════════════════════ */}
-          <S id="s7" n="7" title="Tail-Risk Isolation — CVaR Position Sizing" />
-          <p style={{ ...prose, marginBottom: 18 }}>
-            Position sizing is derived entirely from the tail-risk distribution of the edge&apos;s
-            own historical outcomes. The{" "}
-            <code style={{ color: "var(--green)", fontFamily: "var(--font-mono), monospace", fontSize: 13 }}>
-              BlockBootstrapMCRiskEngine
-            </code>{" "}
-            runs 5,000 simulations using Circular Block Bootstrapping — preserving the
-            autocorrelation structure of losing streaks (critical for modelling tilt sequences).
-          </p>
+          <S id="s7" n="7" title="Dynamic Risk Allocation Engine" />
+          {authed ? (
+            <>
+              <p style={{ ...prose, marginBottom: 18 }}>
+                Position sizing is derived entirely from the tail-risk distribution of the edge&apos;s
+                own historical outcomes. The{" "}
+                <code style={{ color: "var(--green)", fontFamily: "var(--font-mono), monospace", fontSize: 13 }}>
+                  BlockBootstrapMCRiskEngine
+                </code>{" "}
+                runs 5,000 simulations using Circular Block Bootstrapping — preserving the
+                autocorrelation structure of losing streaks (critical for modelling tilt sequences).
+              </p>
 
-          <CodeBlock filename="src/analytics/risk/risk_engine.py — circular_block_bootstrap()">{CODE_CBB}</CodeBlock>
+              <CodeBlock filename="src/analytics/risk/risk_engine.py — circular_block_bootstrap()">{CODE_CBB}</CodeBlock>
 
-          <FormulaGroup items={[
-            { label: "CVaR (Expected Shortfall)",  latex: "\\text{CVaR}_{95} = \\mathbb{E}\\!\\left[\\,DD \\;\\middle|\\; DD \\le \\text{VaR}_{95}\\,\\right]" },
-            { label: "Position Size Derivation",   latex: "\\theta_{base} = \\frac{\\text{Target DD Limit}}{|\\text{CVaR}_{95}|} = \\frac{10\\%}{13.711\\,\\text{R}} \\approx 0.70\\%" },
-          ]} />
+              <FormulaGroup items={[
+                { label: "CVaR (Expected Shortfall)",  latex: "\\text{CVaR}_{95} = \\mathbb{E}\\!\\left[\\,DD \\;\\middle|\\; DD \\le \\text{VaR}_{95}\\,\\right]" },
+                { label: "Position Size Derivation",   latex: "\\theta_{base} = \\frac{\\text{Target DD Limit}}{|\\text{CVaR}_{95}|} = \\frac{10\\%}{13.711\\,\\text{R}} \\approx 0.70\\%" },
+              ]} />
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 8, marginTop: 4 }}>
-            <MetricCard label="MC 95% CVaR"      value="−13.711 R" color="red"   />
-            <MetricCard label="Recommend R (θ)"  value="0.70%"     color="blue"  sub="System-derived" />
-            <MetricCard label="Max DD Duration"   value="12 trades" color="blue"  sub="Primary core" />
-          </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 8, marginTop: 4 }}>
+                <MetricCard label="MC 95% CVaR"      value="−13.711 R" color="red"   />
+                <MetricCard label="Recommend R (θ)"  value="0.70%"     color="blue"  sub="System-derived" />
+                <MetricCard label="Max DD Duration"   value="12 trades" color="blue"  sub="Primary core" />
+              </div>
+            </>
+          ) : (
+            <LockedSection
+              title="Dynamic Risk Allocation Engine"
+              teaser="Position sizing is not set by fixed heuristics or operator discretion — it is derived analytically from the empirical tail-risk distribution of the edge's own historical outcomes. The engine accounts for autocorrelated losing sequences, a structural property that naïve sizing models systematically underweight. Full methodology, bootstrapping architecture, derived sizing parameters, and drawdown statistics are restricted to authenticated investors."
+            />
+          )}
 
           {/* ══ §8 — Operator ════════════════════════════════ */}
           <S id="s8" n="8" title="Operator Architecture — Removing Human Agency" />

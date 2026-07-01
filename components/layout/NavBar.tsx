@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import LoginModal from "./LoginModal";
+import XtnlLogo from "@/components/ui/XtnlLogo";
 
 const LINKS = [
   { href: "/",           label: "Overview",   authedOnly: false, hideWhenAuthed: false },
@@ -70,10 +71,11 @@ export default function NavBar() {
           position: "fixed", top: 0, left: 0, right: 0,
           height: "var(--nav-h)", zIndex: 100,
           background: scrolled ? "rgba(4,8,15,0.90)" : "transparent",
-          backdropFilter: scrolled ? "blur(16px) saturate(180%)" : "none",
-          WebkitBackdropFilter: scrolled ? "blur(16px) saturate(180%)" : "none",
-          borderBottom: `1px solid ${scrolled ? "var(--line)" : "transparent"}`,
-          transition: "background 0.35s ease, border-color 0.35s ease",
+          backdropFilter: scrolled ? "blur(18px) saturate(180%)" : "none",
+          WebkitBackdropFilter: scrolled ? "blur(18px) saturate(180%)" : "none",
+          borderBottom: `1px solid ${scrolled ? "rgba(0,204,122,0.1)" : "transparent"}`,
+          boxShadow: scrolled ? "0 4px 32px rgba(0,0,0,0.38)" : "none",
+          transition: "background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease",
         }}
       >
         <div
@@ -82,13 +84,7 @@ export default function NavBar() {
         >
           {/* ── Logo ──────────────────────────────────── */}
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flexShrink: 0 }}>
-            <svg width="20" height="20" viewBox="0 0 80 80" fill="none" aria-hidden>
-              <path d="M24,0 L0,0 L0,80 L24,80"  stroke="var(--ink-3)" strokeWidth="5" strokeLinecap="square"/>
-              <path d="M56,0 L80,0 L80,80 L56,80" stroke="var(--green)" strokeWidth="5" strokeLinecap="square"/>
-              <line x1="22" y1="22" x2="58" y2="58" stroke="var(--blue)"  strokeWidth="5" strokeLinecap="square"/>
-              <line x1="58" y1="22" x2="22" y2="58" stroke="var(--base)"  strokeWidth="9" strokeLinecap="square"/>
-              <line x1="58" y1="22" x2="22" y2="58" stroke="white"        strokeWidth="5" strokeLinecap="square"/>
-            </svg>
+            <XtnlLogo width="20" height="20" />
             <span className="mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.18em", color: "var(--ink-0)" }}>
               XTNL
             </span>

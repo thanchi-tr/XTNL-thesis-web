@@ -1,4 +1,5 @@
 import Link from "next/link";
+import XtnlLogo from "@/components/ui/XtnlLogo";
 
 const LINKS = [
   { href: "/",           label: "Overview" },
@@ -9,7 +10,7 @@ const LINKS = [
 
 export default function Footer() {
   return (
-    <footer style={{ borderTop: "1px solid var(--line)", marginTop: 96 }}>
+    <footer style={{ borderTop: "1px solid rgba(0,204,122,0.1)", marginTop: 96, position: "relative" }}>
       <div className="site-container" style={{ paddingTop: 40, paddingBottom: 40 }}>
         <div
           style={{
@@ -23,13 +24,7 @@ export default function Footer() {
           {/* Brand */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <svg width="18" height="18" viewBox="0 0 80 80" fill="none">
-                <path d="M24,0 L0,0 L0,80 L24,80" stroke="var(--ink-3)" strokeWidth="5" strokeLinecap="square"/>
-                <path d="M56,0 L80,0 L80,80 L56,80" stroke="var(--green)" strokeWidth="5" strokeLinecap="square"/>
-                <line x1="22" y1="22" x2="58" y2="58" stroke="var(--blue)" strokeWidth="5" strokeLinecap="square"/>
-                <line x1="58" y1="22" x2="22" y2="58" stroke="var(--base)" strokeWidth="9" strokeLinecap="square"/>
-                <line x1="58" y1="22" x2="22" y2="58" stroke="white" strokeWidth="5" strokeLinecap="square"/>
-              </svg>
+              <XtnlLogo width="18" height="18" />
               <span className="mono" style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.18em", color: "var(--ink-0)" }}>
                 XTNL SOVEREIGN TRUST
               </span>

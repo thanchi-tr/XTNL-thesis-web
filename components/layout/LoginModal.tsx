@@ -4,6 +4,7 @@ import {
   useState, useRef, useEffect, useCallback,
   FormEvent, KeyboardEvent,
 } from "react";
+import XtnlLogo from "@/components/ui/XtnlLogo";
 import { signIn, useSession } from "next-auth/react";
 
 /* ═══════════════════════════════════════════════════════════
@@ -133,13 +134,7 @@ function MsLogo() {
 function LogoBar() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
-      <svg width="16" height="16" viewBox="0 0 80 80" fill="none" aria-hidden>
-        <path d="M24,0 L0,0 L0,80 L24,80"  stroke="var(--ink-3)" strokeWidth="5" strokeLinecap="square"/>
-        <path d="M56,0 L80,0 L80,80 L56,80" stroke="var(--green)" strokeWidth="5" strokeLinecap="square"/>
-        <line x1="22" y1="22" x2="58" y2="58" stroke="var(--blue)"  strokeWidth="5" strokeLinecap="square"/>
-        <line x1="58" y1="22" x2="22" y2="58" stroke="var(--card)"  strokeWidth="9" strokeLinecap="square"/>
-        <line x1="58" y1="22" x2="22" y2="58" stroke="white"        strokeWidth="5" strokeLinecap="square"/>
-      </svg>
+      <XtnlLogo width="16" height="16" />
       <span className="mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", color: "var(--ink-0)" }}>
         XTNL
       </span>

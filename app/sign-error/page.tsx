@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import XtnlLogo from "@/components/ui/XtnlLogo";
 
 export const metadata: Metadata = { title: "Sign-in Error" };
 
@@ -79,13 +80,7 @@ export default async function SignErrorPage({
         >
           {/* XTNL logo */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 22 }}>
-            <svg width="15" height="15" viewBox="0 0 80 80" fill="none" aria-hidden>
-              <path d="M24,0 L0,0 L0,80 L24,80"  stroke="var(--ink-3)" strokeWidth="5" strokeLinecap="square"/>
-              <path d="M56,0 L80,0 L80,80 L56,80" stroke="var(--green)" strokeWidth="5" strokeLinecap="square"/>
-              <line x1="22" y1="22" x2="58" y2="58" stroke="var(--blue)"  strokeWidth="5" strokeLinecap="square"/>
-              <line x1="58" y1="22" x2="22" y2="58" stroke="var(--card)"  strokeWidth="9" strokeLinecap="square"/>
-              <line x1="58" y1="22" x2="22" y2="58" stroke="white"        strokeWidth="5" strokeLinecap="square"/>
-            </svg>
+            <XtnlLogo width="15" height="15" />
             <span className="mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", color: "var(--ink-0)" }}>
               XTNL
             </span>

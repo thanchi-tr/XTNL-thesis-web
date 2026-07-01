@@ -1,24 +1,30 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, AreaChart, Area,
+  BarChart, Bar, Cell,
 } from "recharts";
 import { formatMultiple, type SimParams } from "@/lib/simulation";
 import SliderControl from "@/components/ui/SliderControl";
 import { useSimulator } from "@/context/SimulatorContext";
 
-
+/* ─── Presets ──────────────────────────────────────────────── */
 const PRESETS = [
   { label: "Baseline",    icon: "◎", p: { operatorMeanEff: 0.82, edgeDecayPctPerQtr: 3,   baseRiskPct: 0.70 } },
   { label: "Pessimistic", icon: "↘", p: { operatorMeanEff: 0.70, edgeDecayPctPerQtr: 6,   baseRiskPct: 0.50 } },
   { label: "Optimistic",  icon: "↗", p: { operatorMeanEff: 0.92, edgeDecayPctPerQtr: 1.5, baseRiskPct: 0.85 } },
 ];
 
-/* ─────────────────────────────────────────────────────────
-   Sub-components
-   ───────────────────────────────────────────────────────── */
+/* ─── Module-level helpers ─────────────────────────────────── */
+const fmtEq = (v: number) =>
+  v >= 1e6  ? `${(v/1e6).toFixed(1)}M×`
+  : v >= 1000 ? `${(v/1000).toFixed(0)}K×`
+  : `${v.toFixed(2)}×`;
+
+/* ─── Sub-components ───────────────────────────────────────── */
 function SectionHead({ icon, title, sub }: { icon: string; title: string; sub?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
@@ -57,9 +63,8 @@ function StatCard({ label, value, accent = "#00cc7a", sub }: {
   );
 }
 
-function ChartTip({ active, payload, label }: {
-  active?: boolean; payload?: { value: number }[]; label?: number;
-}) {
+/* ─── Tooltips ─────────────────────────────────────────────── */
+function ChartTip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: number }) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{ background: "#1a2d45", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "10px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)" }}>
@@ -69,9 +74,30 @@ function ChartTip({ active, payload, label }: {
   );
 }
 
-function EffTip({ active, payload, label }: {
-  active?: boolean; payload?: { value: number; dataKey?: string }[]; label?: number;
-}) {
+function FanTip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number }[]; label?: number }) {
+  if (!active || !payload?.length) return null;
+  const get = (k: string) => payload.find(p => p.dataKey === k)?.value;
+  const rows: [string, number | undefined, string][] = [
+    ["P95", get("p95"), "#4d9cf5"],
+    ["P75", get("p75"), "rgba(0,204,122,0.8)"],
+    ["P50 Median", get("p50"), "#00cc7a"],
+    ["P25", get("p25"), "rgba(240,160,48,0.8)"],
+    ["P5",  get("p5"),  "#f03a57"],
+  ];
+  return (
+    <div style={{ background: "#1a2d45", border: "1px solid rgba(0,204,122,0.22)", borderRadius: 6, padding: "10px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)", minWidth: 168 }}>
+      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 7 }}>Week {label}</p>
+      {rows.map(([k, v, c]) => v !== undefined && (
+        <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 3 }}>
+          <span style={{ fontSize: 9, color: c }}>{k}</span>
+          <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>{fmtEq(v)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EffTip({ active, payload, label }: { active?: boolean; payload?: { value: number; dataKey?: string }[]; label?: number }) {
   if (!active || !payload?.length) return null;
   const eff = payload.find(p => p.dataKey === "eff")?.value ?? 0;
   const reg = payload.find(p => p.dataKey === "regime")?.value ?? 1;
@@ -93,21 +119,44 @@ function EffTip({ active, payload, label }: {
   );
 }
 
+function HistTip({ active, payload }: { active?: boolean; payload?: { payload: { label: string; count: number; isMedian: boolean } }[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{ background: "#1a2d45", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "8px 12px", fontFamily: "ui-monospace,monospace" }}>
+      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 3 }}>{d.label}</p>
+      <p style={{ fontSize: 13, color: d.isMedian ? "#00cc7a" : "#fff", fontWeight: 700 }}>
+        {d.count} paths{d.isMedian ? " ← median" : ""}
+      </p>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    Main component
    ═══════════════════════════════════════════════════════════ */
 export default function MonteCarloSimulator() {
   const { params: p, result: res, running, setParam, setParams, rerun } = useSimulator();
+  const { data: session } = useSession();
+  const authed = Boolean((session as any)?.twoFactorVerified);
 
-  const buildEqData = useCallback((paths: number[][], weeks: number) => {
-    const out: Record<string, number>[] = [];
-    for (let w = 0; w < weeks; w++) {
+  /* ── Spaghetti chart data (logged-out) — sampled for perf ── */
+  // 40 paths × ~65 x-points = ~2,600 SVG segments (vs 200 × 260 = 52,000)
+  const { spaghettiData, spaghettiKeys } = useMemo(() => {
+    if (!res || authed) return { spaghettiData: [], spaghettiKeys: [] };
+    const MAX_PATHS = 40;
+    const weekStep  = Math.max(1, Math.floor(p.weeks / 65));
+    const pathStep  = Math.max(1, Math.floor(res.paths.length / MAX_PATHS));
+    const sampled   = res.paths.filter((_, i) => i % pathStep === 0).slice(0, MAX_PATHS);
+    const keys      = sampled.map((_, i) => `p${i}`);
+    const data: Record<string, number>[] = [];
+    for (let w = 0; w < p.weeks; w += weekStep) {
       const pt: Record<string, number> = { week: w + 1 };
-      paths.forEach((path, i) => { if (path[w] !== undefined) pt[`p${i}`] = path[w]; });
-      out.push(pt);
+      sampled.forEach((path, i) => { if (path[w] !== undefined) pt[keys[i]] = path[w]; });
+      data.push(pt);
     }
-    return out;
-  }, []);
+    return { spaghettiData: data, spaghettiKeys: keys };
+  }, [res, p.weeks, authed]);
 
   const buildEffData = useCallback((effSamples: number[][], regSamples: number[][], weeks: number) => {
     const medEff = effSamples[Math.floor(effSamples.length / 2)] ?? effSamples[0];
@@ -119,25 +168,62 @@ export default function MonteCarloSimulator() {
     }));
   }, []);
 
-  // Chart data derived from context result — recomputed only when result or weeks changes
-  const eqData = useMemo(
-    () => res ? buildEqData(res.paths, p.weeks) : [],
-    [res, p.weeks, buildEqData]
-  );
-  const effData = useMemo(
-    () => res ? buildEffData(res.effPathSamples, res.regPathSamples, p.weeks) : [],
-    [res, p.weeks, buildEffData]
-  );
+  /* ── Percentile fan data (authed only) ────────────────── */
+  const fanData = useMemo(() => {
+    if (!res || !authed) return [];
+    return Array.from({ length: p.weeks }, (_, w) => {
+      const vals = res.paths.map(path => Math.max(0.01, path[w] ?? 1)).sort((a, b) => a - b);
+      const n = vals.length;
+      const q = (t: number) => vals[Math.min(Math.floor(n * t), n - 1)] ?? 1;
+      return { week: w + 1, p5: q(0.05), p25: q(0.25), p50: q(0.50), p75: q(0.75), p95: q(0.95) };
+    });
+  }, [res, p.weeks, authed]);
+
+  /* ── Terminal distribution histogram (authed only) ─────── */
+  const histData = useMemo(() => {
+    if (!res || !authed) return [];
+    const BINS = 18;
+    const vals = res.paths.map(path => Math.max(0.01, path[p.weeks - 1] ?? 1));
+    const sorted = [...vals].sort((a, b) => a - b);
+    const lo = sorted[0], hi = sorted[sorted.length - 1];
+    const range = (hi - lo) || 1;
+    const bins = Array.from({ length: BINS }, (_, i) => ({
+      label: fmtEq(lo + (i + 0.5) * (range / BINS)),
+      count: 0, isMedian: false,
+    }));
+    for (const v of vals) {
+      const idx = Math.min(Math.floor(((v - lo) / range) * BINS), BINS - 1);
+      bins[idx].count++;
+    }
+    const medIdx = Math.min(Math.floor(((res.medianTerminal - lo) / range) * BINS), BINS - 1);
+    if (bins[medIdx]) bins[medIdx].isMedian = true;
+    return bins;
+  }, [res, p.weeks, authed]);
+
+  /* ── Year-end milestones (authed only) ────────────────── */
+  const yearData = useMemo(() => {
+    if (!fanData.length) return [];
+    const maxYears = Math.min(Math.floor(p.weeks / 52), 10);
+    return Array.from({ length: maxYears }, (_, i) => {
+      const d = fanData[(i + 1) * 52 - 1];
+      if (!d) return null;
+      return { year: i + 1, p5: d.p5, p50: d.p50, p95: d.p95 };
+    }).filter(Boolean) as { year: number; p5: number; p50: number; p95: number }[];
+  }, [fanData, p.weeks]);
+
+  /* ── Derived values ───────────────────────────────────── */
+  const effData = useMemo(() => res ? buildEffData(res.effPathSamples, res.regPathSamples, p.weeks) : [], [res, p.weeks, buildEffData]);
 
   const update      = useCallback((key: keyof SimParams, val: number) => setParam(key, val), [setParam]);
   const applyPreset = (preset: Partial<SimParams>) => setParams({ ...p, ...preset });
-
-  const pathKeys = res ? res.paths.map((_, i) => `p${i}`) : [];
-  const yFmt     = (v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}K×` : `${v.toFixed(1)}×`;
-  const liveEff  = p.operatorMeanEff;
-  const liveReg  = res?.meanRegimePenalty ?? 1.0;
+  const yFmt         = (v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}K×` : `${v.toFixed(1)}×`;
+  const liveEff      = p.operatorMeanEff;
+  const liveReg      = res?.meanRegimePenalty ?? 1.0;
   const livePerfMult = liveEff < 0.40 ? 0 : liveEff < 0.50 ? 0.30 : liveEff < 0.80 ? 0.60 : liveEff >= 0.95 ? 1.18 : 1.0;
   const liveApplied  = (p.baseRiskPct * livePerfMult * liveReg * 0.95).toFixed(3);
+
+  /* ─── XAxis interval helper ─────────────────────────────── */
+  const xInterval = Math.floor(p.weeks / 8);
 
   return (
     <div className="card" style={{ overflow: "hidden", boxShadow: "var(--shadow-lg)" }}>
@@ -167,6 +253,11 @@ export default function MonteCarloSimulator() {
             {icon} {label}
           </button>
         ))}
+        {!authed && (
+          <span style={{ marginLeft: "auto", fontSize: 9, color: "rgba(142,163,190,0.38)", fontStyle: "italic" }}>
+            Preset-only mode
+          </span>
+        )}
       </div>
 
       <div className="sim-body">
@@ -176,13 +267,28 @@ export default function MonteCarloSimulator() {
             ══════════════════════════════════════════════ */}
         <div className="sim-controls" style={{ padding: "20px 18px", display: "flex", flexDirection: "column", gap: 24 }}>
 
+          {/* Lock notice for logged-out users */}
+          {!authed && (
+            <div style={{
+              padding: "10px 12px", borderRadius: 5, marginBottom: -8,
+              background: "rgba(0,0,0,0.28)", border: "1px solid rgba(255,255,255,0.06)",
+              display: "flex", alignItems: "flex-start", gap: 8,
+            }}>
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, marginTop: 2, opacity: 0.45 }}>
+                <rect x="2" y="6" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+                <path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              </svg>
+              <p style={{ fontSize: 10, color: "rgba(142,163,190,0.5)", lineHeight: 1.55 }}>
+                Parameters are view-only. Use presets above to switch scenarios.{" "}
+                <a href="/api/auth/signin" style={{ color: "rgba(0,204,122,0.7)", textDecoration: "none" }}>Sign in</a>
+                {" "}to adjust individual variables.
+              </p>
+            </div>
+          )}
+
           {/* ── Operator ─────────────────────────────── */}
           <div>
-            <SectionHead
-              icon="🧠"
-              title="Operator (OU Process)"
-              sub="Efficiency tracks a mean-reverting random walk: θ=0.35 (reversion), σ=7.5% (weekly volatility). Shocks persist ~3 weeks before normalising."
-            />
+            <SectionHead icon="🧠" title="Operator (OU Process)" sub="Efficiency tracks a mean-reverting random walk: θ=0.35 (reversion), σ=7.5% (weekly volatility). Shocks persist ~3 weeks before normalising." />
             <SliderControl
               label="Mean Efficiency μ_eff"
               value={p.operatorMeanEff}
@@ -190,6 +296,7 @@ export default function MonteCarloSimulator() {
               min={0.60} max={0.98} step={0.01}
               tooltip="Long-run mean the OU process reverts toward. Live system: 82.2%."
               onChange={(v) => update("operatorMeanEff", v)}
+              readOnly={!authed}
             />
             <div style={{ marginTop: 10, padding: "8px 10px", background: "rgba(0,204,122,0.04)", borderRadius: 4, border: "1px solid rgba(0,204,122,0.10)" }}>
               <InfoBadge label="OU reversion speed (θ)" value="0.35" />
@@ -202,52 +309,13 @@ export default function MonteCarloSimulator() {
 
           {/* ── Edge ─────────────────────────────────── */}
           <div>
-            <SectionHead
-              icon="🎯"
-              title="Edge Parameters"
-              sub="All trades simulated individually within each week — losing streak tracks per-trade. MC95 losing streak threshold = 12 trades (from live SESSION_FILTERED data)."
-            />
+            <SectionHead icon="🎯" title="Edge Parameters" sub="All trades simulated individually within each week — losing streak tracks per-trade. MC95 losing streak threshold = 12 trades (from live SESSION_FILTERED data)." />
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-              <SliderControl
-                label="Base Risk θ  (% of account)"
-                value={p.baseRiskPct}
-                displayValue={`${p.baseRiskPct.toFixed(2)}%`}
-                min={0.1} max={2.0} step={0.01}
-                tooltip="CVaR-derived position size per 1R trade. Multiplied by perf_mult × regime × 0.95 each week. Live: 0.70%."
-                onChange={(v) => update("baseRiskPct", v)}
-              />
-              <SliderControl
-                label="Expectancy μ  (R per trade)"
-                value={p.expPerTrade}
-                displayValue={`${p.expPerTrade.toFixed(3)} R`}
-                min={0.1} max={2.0} step={0.01}
-                tooltip="Mean R-multiple per trade. Erodes quarterly by edge decay. Live: 0.982 R."
-                onChange={(v) => update("expPerTrade", v)}
-              />
-              <SliderControl
-                label="Trades / Week"
-                value={p.tradesPerWeek}
-                displayValue={`${p.tradesPerWeek}`}
-                min={1} max={25} step={1}
-                tooltip="Validated entries per week. Each trade is simulated individually for accurate losing-streak tracking."
-                onChange={(v) => update("tradesPerWeek", v)}
-              />
-              <SliderControl
-                label="Volatility σ  (R per trade)"
-                value={p.volPerTrade}
-                displayValue={`${p.volPerTrade.toFixed(1)} R`}
-                min={0.5} max={10} step={0.1}
-                tooltip="Per-trade R std deviation. Higher = wider distribution of outcomes."
-                onChange={(v) => update("volPerTrade", v)}
-              />
-              <SliderControl
-                label="Edge Decay  (% per quarter)"
-                value={p.edgeDecayPctPerQtr}
-                displayValue={`${p.edgeDecayPctPerQtr.toFixed(1)}%`}
-                min={0} max={15} step={0.5}
-                tooltip="Expectancy erodes every 13 weeks as the market adapts to the edge."
-                onChange={(v) => update("edgeDecayPctPerQtr", v)}
-              />
+              <SliderControl label="Base Risk θ  (% of account)" value={p.baseRiskPct} displayValue={`${p.baseRiskPct.toFixed(2)}%`} min={0.1} max={2.0} step={0.01} tooltip="CVaR-derived position size per 1R trade. Live: 0.70%." onChange={(v) => update("baseRiskPct", v)} readOnly={!authed} />
+              <SliderControl label="Expectancy μ  (R per trade)" value={p.expPerTrade} displayValue={`${p.expPerTrade.toFixed(3)} R`} min={0.1} max={2.0} step={0.01} tooltip="Mean R-multiple per trade. Erodes quarterly by edge decay. Live: 0.982 R." onChange={(v) => update("expPerTrade", v)} readOnly={!authed} />
+              <SliderControl label="Trades / Week" value={p.tradesPerWeek} displayValue={`${p.tradesPerWeek}`} min={1} max={25} step={1} tooltip="Validated entries per week. Each trade is simulated individually for accurate losing-streak tracking." onChange={(v) => update("tradesPerWeek", v)} readOnly={!authed} />
+              <SliderControl label="Volatility σ  (R per trade)" value={p.volPerTrade} displayValue={`${p.volPerTrade.toFixed(1)} R`} min={0.5} max={10} step={0.1} tooltip="Per-trade R std deviation. Higher = wider distribution of outcomes." onChange={(v) => update("volPerTrade", v)} readOnly={!authed} />
+              <SliderControl label="Edge Decay  (% per quarter)" value={p.edgeDecayPctPerQtr} displayValue={`${p.edgeDecayPctPerQtr.toFixed(1)}%`} min={0} max={15} step={0.5} tooltip="Expectancy erodes every 13 weeks as the market adapts to the edge." onChange={(v) => update("edgeDecayPctPerQtr", v)} readOnly={!authed} />
             </div>
           </div>
 
@@ -255,19 +323,8 @@ export default function MonteCarloSimulator() {
 
           {/* ── Commission ───────────────────────────── */}
           <div>
-            <SectionHead
-              icon="💰"
-              title="Commission Distribution"
-              sub="Mirrors current_commission_generator.py. Gate: eff ≥ 88%. Commission deducted from equity each qualifying week after the start delay."
-            />
-            <SliderControl
-              label="Distribution Starts  (week)"
-              value={p.commissionStartWeek}
-              displayValue={`W${p.commissionStartWeek} (Yr ${Math.ceil(p.commissionStartWeek/52)})`}
-              min={0} max={260} step={4}
-              tooltip="Weeks before commission payments begin. Allows the account to build before extracting operator fees."
-              onChange={(v) => update("commissionStartWeek", v)}
-            />
+            <SectionHead icon="💰" title="Commission Distribution" sub="Mirrors current_commission_generator.py. Gate: eff ≥ 88%. Commission deducted from equity each qualifying week after the start delay." />
+            <SliderControl label="Distribution Starts  (week)" value={p.commissionStartWeek} displayValue={`W${p.commissionStartWeek} (Yr ${Math.ceil(p.commissionStartWeek/52)})`} min={0} max={260} step={4} tooltip="Weeks before commission payments begin." onChange={(v) => update("commissionStartWeek", v)} readOnly={!authed} />
             <div style={{ marginTop: 10, padding: "8px 10px", background: "rgba(0,204,122,0.04)", borderRadius: 4, border: "1px solid rgba(0,204,122,0.10)" }}>
               <InfoBadge label="Base rate" value="20% of recommend_r" />
               <InfoBadge label="Profit bonus" value="5% of realised_r (pos. weeks)" />
@@ -280,19 +337,8 @@ export default function MonteCarloSimulator() {
 
           {/* ── Capital Injection ────────────────────── */}
           <div>
-            <SectionHead
-              icon="💎"
-              title="Capital Injection"
-              sub="Mirrors memory_generator.py 4-week gate logic. Pool grows with excellence (1.20× volatility-shielded scaling). Resets to baseline on any disqualifying week."
-            />
-            <SliderControl
-              label="Frozen Pool  (% of initial cap)"
-              value={p.frozenPoolPct}
-              displayValue={p.frozenPoolPct === 0 ? "Off" : `${(p.frozenPoolPct*100).toFixed(0)}% / period`}
-              min={0} max={1.0} step={0.05}
-              tooltip="Capital injected each qualifying 4-week period. Pool grows with consecutive excellence streaks."
-              onChange={(v) => update("frozenPoolPct", v)}
-            />
+            <SectionHead icon="💎" title="Capital Injection" sub="Mirrors memory_generator.py 4-week gate logic. Pool grows with excellence (1.20× volatility-shielded scaling). Resets to baseline on any disqualifying week." />
+            <SliderControl label="Frozen Pool  (% of initial cap)" value={p.frozenPoolPct} displayValue={p.frozenPoolPct === 0 ? "Off" : `${(p.frozenPoolPct*100).toFixed(0)}% / period`} min={0} max={1.0} step={0.05} tooltip="Capital injected each qualifying 4-week period." onChange={(v) => update("frozenPoolPct", v)} readOnly={!authed} />
             {p.frozenPoolPct > 0 && (
               <div style={{ marginTop: 10, padding: "8px 10px", background: "rgba(0,204,122,0.04)", borderRadius: 4, border: "1px solid rgba(0,204,122,0.10)" }}>
                 <InfoBadge label="Period length" value="Every 4 weeks" />
@@ -310,30 +356,9 @@ export default function MonteCarloSimulator() {
           <div>
             <SectionHead icon="🛡️" title="Risk Controls" />
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-              <SliderControl
-                label="Tax Rate  (ATO annual)"
-                value={p.taxRatePct}
-                displayValue={`${p.taxRatePct.toFixed(0)}%`}
-                min={0} max={47} step={1}
-                tooltip="Applied to realised gains each year-end. 47% = ATO top marginal + 2% Medicare."
-                onChange={(v) => update("taxRatePct", v)}
-              />
-              <SliderControl
-                label="DD Halt  (% threshold)"
-                value={p.maxDDLimit}
-                displayValue={p.maxDDLimit === 0 ? "Off" : `-${p.maxDDLimit}%`}
-                min={0} max={60} step={5}
-                tooltip="Halt a simulation path if drawdown exceeds this percentage from peak."
-                onChange={(v) => update("maxDDLimit", v)}
-              />
-              <SliderControl
-                label="Horizon  (weeks)"
-                value={p.weeks}
-                displayValue={`${p.weeks}w · ${Math.round(p.weeks/52)}yr`}
-                min={52} max={520} step={1}
-                tooltip="Total simulation duration."
-                onChange={(v) => update("weeks", v)}
-              />
+              <SliderControl label="Tax Rate  (ATO annual)" value={p.taxRatePct} displayValue={`${p.taxRatePct.toFixed(0)}%`} min={0} max={47} step={1} tooltip="Applied to realised gains each year-end. 47% = ATO top marginal + 2% Medicare." onChange={(v) => update("taxRatePct", v)} readOnly={!authed} />
+              <SliderControl label="DD Halt  (% threshold)" value={p.maxDDLimit} displayValue={p.maxDDLimit === 0 ? "Off" : `-${p.maxDDLimit}%`} min={0} max={60} step={5} tooltip="Halt a simulation path if drawdown exceeds this percentage from peak." onChange={(v) => update("maxDDLimit", v)} readOnly={!authed} />
+              <SliderControl label="Horizon  (weeks)" value={p.weeks} displayValue={`${p.weeks}w · ${Math.round(p.weeks/52)}yr`} min={52} max={520} step={1} tooltip="Total simulation duration." onChange={(v) => update("weeks", v)} readOnly={!authed} />
             </div>
           </div>
         </div>
@@ -347,36 +372,89 @@ export default function MonteCarloSimulator() {
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
               <div>
-                <p className="panel-title">1,000-Iteration Equity Convergence</p>
-                <p className="label-xs" style={{ marginTop: 3 }}>
-                  Log scale · Post-commission · Post-tax · OU operator + regime-gated risk
-                </p>
+                {authed ? (
+                  <>
+                    <p className="panel-title">Percentile Fan — 1,000 Paths</p>
+                    <p className="label-xs" style={{ marginTop: 3 }}>
+                      Log scale · P5/P25/P50/P75/P95 bands · Post-tax · Post-commission
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="panel-title">1,000-Iteration Equity Convergence</p>
+                    <p className="label-xs" style={{ marginTop: 3 }}>
+                      Log scale · Post-commission · Post-tax · OU operator + regime-gated risk
+                    </p>
+                  </>
+                )}
               </div>
               <button className="btn btn-primary" style={{ fontSize: 10, padding: "7px 16px" }} onClick={rerun} disabled={running}>
                 {running ? "Running…" : "Re-Run ↻"}
               </button>
             </div>
 
-            <div style={{ height: 280, minHeight: 180 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={eqData}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                  <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10, fontFamily: "ui-monospace,monospace" }} tickFormatter={(v) => `W${v}`} interval={Math.floor(p.weeks/8)} />
-                  <YAxis scale="log" domain={["auto","auto"]} axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10, fontFamily: "ui-monospace,monospace" }} tickFormatter={yFmt} width={52} />
-                  <Tooltip content={<ChartTip />} cursor={{ stroke: "rgba(255,255,255,0.10)", strokeWidth: 1 }} />
-                  {p.commissionStartWeek > 0 && p.commissionStartWeek <= p.weeks && (
-                    <ReferenceLine x={p.commissionStartWeek} stroke="rgba(240,160,48,0.6)" strokeWidth={1} strokeDasharray="4 3"
-                      label={{ value: "Comm. starts", fill: "#f0a030", fontSize: 9, fontFamily: "ui-monospace,monospace", position: "insideTopLeft" }} />
-                  )}
-                  {pathKeys.map((key) => (
-                    <Line key={key} type="monotone" dataKey={key} stroke="rgba(0,204,122,0.07)" strokeWidth={1} dot={false} isAnimationActive={false} />
+            {/* Fan chart — authed */}
+            {authed && fanData.length > 0 && (
+              <>
+                {/* Legend */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginBottom: 8 }}>
+                  {[
+                    ["P95 (Bull)", "#4d9cf5", "4 3"],
+                    ["P75",        "rgba(0,204,122,0.7)", "3 2"],
+                    ["P50 Median", "#00cc7a", "none"],
+                    ["P25",        "rgba(240,160,48,0.7)", "3 2"],
+                    ["P5 (Bear)",  "#f03a57", "4 3"],
+                  ].map(([label, c]) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 18, height: 1.5, background: c, display: "block", borderRadius: 1 }} />
+                      <span style={{ fontSize: 9, color: "rgba(142,163,190,0.7)" }}>{label}</span>
+                    </div>
                   ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+                </div>
+                <div style={{ height: 300, minHeight: 200 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={fanData}>
+                      <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10, fontFamily: "ui-monospace,monospace" }} tickFormatter={(v) => `W${v}`} interval={xInterval} />
+                      <YAxis scale="log" domain={["auto","auto"]} axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10, fontFamily: "ui-monospace,monospace" }} tickFormatter={yFmt} width={52} />
+                      <Tooltip content={<FanTip />} cursor={{ stroke: "rgba(255,255,255,0.10)", strokeWidth: 1 }} />
+                      {p.commissionStartWeek > 0 && p.commissionStartWeek <= p.weeks && (
+                        <ReferenceLine x={p.commissionStartWeek} stroke="rgba(240,160,48,0.6)" strokeWidth={1} strokeDasharray="4 3"
+                          label={{ value: "Comm. starts", fill: "#f0a030", fontSize: 9, fontFamily: "ui-monospace,monospace", position: "insideTopLeft" }} />
+                      )}
+                      <Line dataKey="p95" stroke="#4d9cf5" strokeWidth={1} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                      <Line dataKey="p75" stroke="rgba(0,204,122,0.65)" strokeWidth={1} strokeDasharray="3 2" dot={false} isAnimationActive={false} />
+                      <Line dataKey="p50" stroke="#00cc7a" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                      <Line dataKey="p25" stroke="rgba(240,160,48,0.65)" strokeWidth={1} strokeDasharray="3 2" dot={false} isAnimationActive={false} />
+                      <Line dataKey="p5"  stroke="#f03a57" strokeWidth={1} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+
+            {/* Spaghetti chart — logged-out (40 sampled paths × 65 x-points) */}
+            {!authed && (
+              <div style={{ height: 280, minHeight: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={spaghettiData}>
+                    <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10, fontFamily: "ui-monospace,monospace" }} tickFormatter={(v) => `W${v}`} interval={Math.floor(spaghettiData.length / 8)} />
+                    <YAxis scale="log" domain={["auto","auto"]} axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10, fontFamily: "ui-monospace,monospace" }} tickFormatter={yFmt} width={52} />
+                    {p.commissionStartWeek > 0 && p.commissionStartWeek <= p.weeks && (
+                      <ReferenceLine x={p.commissionStartWeek} stroke="rgba(240,160,48,0.6)" strokeWidth={1} strokeDasharray="4 3"
+                        label={{ value: "Comm. starts", fill: "#f0a030", fontSize: 9, fontFamily: "ui-monospace,monospace", position: "insideTopLeft" }} />
+                    )}
+                    {spaghettiKeys.map((key) => (
+                      <Line key={key} type="monotone" dataKey={key} stroke="rgba(0,204,122,0.07)" strokeWidth={1} dot={false} isAnimationActive={false} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
-          {/* ── Efficiency + Regime chart ─────────────── */}
+          {/* ── Efficiency + Regime chart (same for both) ── */}
           <div>
             <p className="panel-title" style={{ marginBottom: 3 }}>
               Operator Efficiency + Regime Penalty — Median Path
@@ -395,7 +473,6 @@ export default function MonteCarloSimulator() {
                 ╌ regime_penalty (1.0 = no cut)
               </span>
             </div>
-
             <div style={{ height: 180 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={effData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
@@ -406,7 +483,7 @@ export default function MonteCarloSimulator() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                  <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10 }} tickFormatter={(v) => `W${v}`} interval={Math.floor(p.weeks/8)} />
+                  <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10 }} tickFormatter={(v) => `W${v}`} interval={xInterval} />
                   <YAxis domain={[0.35, 1.08]} axisLine={false} tickLine={false} tick={{ fill: "rgba(142,163,190,0.7)", fontSize: 10 }} tickFormatter={(v) => `${(v*100).toFixed(0)}%`} />
                   <Tooltip content={<EffTip />} cursor={{ stroke: "rgba(255,255,255,0.10)", strokeWidth: 1 }} />
                   <ReferenceLine y={0.95} stroke="#00e88c" strokeWidth={1} strokeDasharray="3 3" label={{ value: "Exc.", fill: "#00e88c", fontSize: 8, position: "insideTopRight" }} />
@@ -419,6 +496,59 @@ export default function MonteCarloSimulator() {
               </ResponsiveContainer>
             </div>
           </div>
+
+          {/* ── Terminal distribution histogram — authed ── */}
+          {authed && histData.length > 0 && (
+            <div>
+              <p className="panel-title" style={{ marginBottom: 3 }}>Terminal Wealth Distribution</p>
+              <p className="label-xs" style={{ marginBottom: 10 }}>
+                Frequency of final equity multiples across 200 sampled paths · Green bar = median bucket
+              </p>
+              <div style={{ height: 140 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={histData} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: "rgba(142,163,190,0.6)", fontSize: 7.5, fontFamily: "ui-monospace,monospace" }} axisLine={false} tickLine={false} interval={2} />
+                    <YAxis tick={{ fill: "rgba(142,163,190,0.6)", fontSize: 9 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<HistTip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                    <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+                      {histData.map((entry, i) => (
+                        <Cell key={i} fill={entry.isMedian ? "#00cc7a" : "rgba(0,204,122,0.22)"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* ── Year-by-year milestones — authed ──────── */}
+          {authed && yearData.length > 0 && (
+            <div>
+              <p className="panel-title" style={{ marginBottom: 8 }}>Year-End Milestones — P5 / Median / P95</p>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      {["Year", "P5 — Bear", "P50 — Median", "P95 — Bull"].map((h, i) => (
+                        <th key={h} className="mono" style={{ padding: "7px 12px", textAlign: i === 0 ? "left" : "right", fontSize: 9, letterSpacing: "0.10em", color: "var(--ink-2)", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yearData.map(({ year, p5, p50, p95 }) => (
+                      <tr key={year} style={{ borderBottom: "1px solid var(--line)" }}>
+                        <td className="mono" style={{ padding: "8px 12px", color: "var(--ink-2)" }}>Yr {year}</td>
+                        <td className="mono" style={{ padding: "8px 12px", color: "#f03a57", textAlign: "right" }}>{formatMultiple(p5)}×</td>
+                        <td className="mono" style={{ padding: "8px 12px", color: "#00cc7a", textAlign: "right", fontWeight: 700 }}>{formatMultiple(p50)}×</td>
+                        <td className="mono" style={{ padding: "8px 12px", color: "#4d9cf5", textAlign: "right" }}>{formatMultiple(p95)}×</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* ── Efficiency tier bar ────────────────────── */}
           {res && (
@@ -467,21 +597,11 @@ export default function MonteCarloSimulator() {
               <StatCard label="Worst DD"         value={`−${(res.worstMaxDD*100).toFixed(1)}%`}            accent="#f03a57" />
               <StatCard label="Mean Eff"         value={`${(res.meanMeanEff*100).toFixed(1)}%`}            accent="#f0a030" sub="avg operator eff" />
               <StatCard label="Avg Regime"       value={`${res.meanRegimePenalty.toFixed(3)}×`}            accent={res.meanRegimePenalty < 0.98 ? "#f03a57" : "#8ea3be"} sub="streak penalty" />
-              <StatCard
-                label="Total Comm. Paid"
-                value={res.meanTotalComm > 0 ? `${(res.meanTotalComm * 100).toFixed(2)}%` : "—"}
-                accent="#f0a030"
-                sub="of initial capital (all weeks)"
-              />
-              <StatCard
-                label="Avg Comm. / Week"
-                value={res.meanAvgCommPerWeek > 0 ? `${(res.meanAvgCommPerWeek * 100).toFixed(4)}%` : "—"}
-                accent="#f0a030"
-                sub="fraction of initial per week"
-              />
+              <StatCard label="Total Comm. Paid" value={res.meanTotalComm > 0 ? `${(res.meanTotalComm * 100).toFixed(2)}%` : "—"} accent="#f0a030" sub="of initial capital" />
+              <StatCard label="Avg Comm. / Week" value={res.meanAvgCommPerWeek > 0 ? `${(res.meanAvgCommPerWeek * 100).toFixed(4)}%` : "—"} accent="#f0a030" sub="fraction per week" />
               <StatCard label="Avg Injection"    value={res.meanTotalInj > 0 ? `${(res.meanTotalInj*100).toFixed(1)}%` : "—"} accent="#00cc7a" sub="of initial (received)" />
               <StatCard label="Inject Events"    value={res.meanInjEvents > 0 ? res.meanInjEvents.toFixed(1) : "—"} accent="#00cc7a" sub="qualifying 4-wk periods" />
-              <StatCard label="Ruin Rate"        value={`${res.pctRuined.toFixed(1)}%`}                   accent={res.pctRuined > 5 ? "#f03a57" : "#00cc7a"} />
+              <StatCard label="Ruin Rate"        value={`${res.pctRuined.toFixed(1)}%`} accent={res.pctRuined > 5 ? "#f03a57" : "#00cc7a"} />
             </div>
           )}
         </div>

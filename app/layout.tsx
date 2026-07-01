@@ -6,6 +6,7 @@ import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
 import SessionProvider          from "@/components/SessionProvider";
 import { SimulatorProvider }   from "@/context/SimulatorContext";
+import FounderWelcome          from "@/components/FounderWelcome";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </div>
             <Footer />
             <ScrollToTop />
+            <FounderWelcome />
           </SimulatorProvider>
         </SessionProvider>
       </body>

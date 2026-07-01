@@ -50,18 +50,25 @@ export default async function HomePage({
           overflow: "hidden",
         }}
       >
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            top: "-15%", left: "50%",
-            transform: "translateX(-50%)",
-            width: "min(800px, 100vw)",
-            height: 480,
-            background: "radial-gradient(ellipse at center, rgba(0,204,122,0.055) 0%, transparent 68%)",
-            pointerEvents: "none",
-          }}
-        />
+        {/* Ambient glow — wide upper bloom */}
+        <div aria-hidden style={{
+          position: "absolute",
+          top: 0, left: "50%",
+          transform: "translateX(-50%)",
+          width: "min(1600px, 160vw)",
+          height: "72vh",
+          background: "radial-gradient(ellipse at 50% -8%, rgba(0,204,122,0.072) 0%, rgba(0,185,255,0.022) 36%, transparent 66%)",
+          pointerEvents: "none",
+        }} />
+        {/* Dot grid — fades downward */}
+        <div aria-hidden style={{
+          position: "absolute", inset: 0,
+          backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.038) 1px, transparent 1px)",
+          backgroundSize: "36px 36px",
+          WebkitMaskImage: "radial-gradient(ellipse 88% 68% at 50% 0%, black 0%, transparent 100%)",
+          maskImage: "radial-gradient(ellipse 88% 68% at 50% 0%, black 0%, transparent 100%)",
+          pointerEvents: "none",
+        }} />
 
         <div className="site-container" style={{ paddingTop: 48, paddingBottom: 72 }}>
           <div style={{ maxWidth: 820 }}>
@@ -81,7 +88,7 @@ export default async function HomePage({
               }}
             >
               Building Legacy Through{" "}
-              <span style={{ color: "var(--green)" }}>Systematic Arbitrage.</span>
+              <span style={{ color: "var(--green)", textShadow: "0 0 48px rgba(0,204,122,0.32)" }}>Systematic Arbitrage.</span>
             </h1>
 
             <p
@@ -121,7 +128,7 @@ export default async function HomePage({
                 gap: "12px 40px",
                 marginTop: 60,
                 paddingTop: 36,
-                borderTop: "1px solid var(--line)",
+                borderTop: "1px solid rgba(0,204,122,0.14)",
               }}
             >
               {[

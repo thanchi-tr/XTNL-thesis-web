@@ -51,7 +51,10 @@ html {
 }
 
 body {
-  background: var(--base);
+  background-color: var(--base);
+  background-image:
+    radial-gradient(ellipse 120% 46% at 50% -4%, rgba(0,204,122,0.042) 0%, transparent 64%),
+    radial-gradient(ellipse 44% 32% at 90% 92%, rgba(0,130,255,0.016) 0%, transparent 50%);
   color: var(--ink-0);
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   font-size: 15px;
@@ -108,10 +111,11 @@ code, pre, .mono {
 .section-eyebrow {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;        /* reduced from 0.18em */
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--green);
   font-family: var(--font-mono), monospace;
+  text-shadow: 0 0 22px rgba(0,204,122,0.38);
 }
 
 /* Chart / panel title — title case, not all-caps */
@@ -134,10 +138,12 @@ code, pre, .mono {
    CARDS
    ═══════════════════════════════════════════════════════════ */
 .card {
-  background: var(--card);
+  background-color: var(--card);
+  background-image: linear-gradient(160deg, rgba(255,255,255,0.026) 0%, transparent 46%);
   border: 1px solid var(--line);
   border-radius: 6px;
   min-width: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055);
 }
 
 .card-hover {
@@ -145,9 +151,9 @@ code, pre, .mono {
   will-change: transform;
 }
 .card-hover:hover {
-  border-color: var(--line-hi) !important;
+  border-color: rgba(0,204,122,0.18) !important;
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px var(--green-06);
+  box-shadow: 0 14px 44px rgba(0,0,0,0.48), 0 0 0 1px rgba(0,204,122,0.07);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -159,8 +165,8 @@ code, pre, .mono {
   font-weight: 600; font-size: 12px; letter-spacing: 0.04em;
   transition: all 0.15s ease; white-space: nowrap;
 }
-.btn-primary  { background: var(--green); color: #000; padding: 11px 22px; }
-.btn-primary:hover:not(:disabled)  { background: var(--green-hi); box-shadow: 0 0 28px rgba(0,204,122,0.40); }
+.btn-primary  { background: linear-gradient(135deg, #00d880 0%, #00b86c 100%); color: #000; padding: 11px 22px; }
+.btn-primary:hover:not(:disabled)  { background: linear-gradient(135deg, #00f090 0%, #00cc7a 100%); box-shadow: 0 0 36px rgba(0,204,122,0.46), 0 4px 18px rgba(0,0,0,0.28); }
 .btn-secondary{ background: transparent; color: var(--ink-1); border: 1px solid var(--line-hi); padding: 10px 22px; }
 .btn-secondary:hover:not(:disabled){ border-color: var(--line-act); color: var(--ink-0); }
 .btn-ghost    { background: var(--sub); color: var(--ink-1); padding: 8px 16px; border: 1px solid var(--line); }
@@ -235,8 +241,8 @@ code, pre, .mono {
    ═══════════════════════════════════════════════════════════ */
 .status-bar {
   height: var(--bar-h);
-  background: #030609;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  background: linear-gradient(to right, #020508, #030710, #020508);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -379,6 +385,11 @@ input[type="range"]::-moz-range-thumb {
   background-size: 800px 100%;
   animation: shimmer 1.8s ease-in-out infinite;
   border-radius: 4px;
+}
+
+/* Chip refinement — glass shimmer */
+.chip {
+  backdrop-filter: blur(4px);
 }
 
 /* ═══════════════════════════════════════════════════════════
