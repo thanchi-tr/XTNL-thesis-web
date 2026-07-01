@@ -73,7 +73,7 @@ export default async function HomePage({
         <div className="site-container" style={{ paddingTop: 48, paddingBottom: 72 }}>
           <div style={{ maxWidth: 820 }}>
             <p className="section-eyebrow fade-up" style={{ marginBottom: 22 }}>
-              XTNL Sovereign Trust · Thesis Document
+              XTNL Solutions · Thesis Document
             </p>
 
             <h1

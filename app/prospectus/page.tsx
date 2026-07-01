@@ -195,7 +195,8 @@ const CODE_CBB = `<span style="color:#c792ea">def</span> <span style="color:#82b
     <span style="color:#f87171">return</span> np.concatenate(blocks)[:sample_size]`;
 
 const META = [
-  { label: "Entity",                value: "XTNL Sovereign Trust" },
+  { label: "Entity",                value: "XTNL Solutions" },
+  { label: "ABN",                   value: "96 412 697 885" },
   { label: "Execution System",      value: "v5.2.5 — Deterministic Firmware" },
   { label: "Market",                value: "Spot Foreign Exchange (EUR/USD)" },
   { label: "Primary Dataset",       value: "N = 106 · SESSION_FILTERED_OPTIMAL" },
@@ -221,7 +222,7 @@ export default async function ProspectusPage() {
 
       {/* ── Cover ───────────────────────────────────────────── */}
       <div style={{ marginBottom: 40 }}>
-        <p className="section-eyebrow" style={{ marginBottom: 14 }}>XTNL Sovereign Trust</p>
+        <p className="section-eyebrow" style={{ marginBottom: 14 }}>XTNL Solutions</p>
         <h1
           style={{
             fontSize: "clamp(26px, 4vw, 48px)",

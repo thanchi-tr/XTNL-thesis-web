@@ -12,7 +12,7 @@ const ERRORS: Record<string, { headline: string; detail: string }> = {
   },
   AccessDenied: {
     headline: "Access denied",
-    detail:   "Your account does not have permission to access XTNL Sovereign Trust. Authorised personnel only.",
+    detail:   "Your account does not have permission to access XTNL Solutions. Authorised personnel only.",
   },
   OAuthSignin: {
     headline: "Microsoft sign-in failed",
@@ -145,7 +145,7 @@ export default async function SignErrorPage({
 
         {/* Footer note */}
         <p style={{ marginTop: 16, fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6 }}>
-          Restricted access · XTNL Sovereign Trust
+          Restricted access · XTNL Solutions
         </p>
       </div>
     </main>

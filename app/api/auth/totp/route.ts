@@ -107,7 +107,7 @@ export async function GET() {
   /* First-time setup: generate QR */
   const secret   = getTotpSecret(session.userEmail);
   const label    = encodeURIComponent(session.userEmail);
-  const issuer   = encodeURIComponent("XTNL Sovereign Trust");
+  const issuer   = encodeURIComponent("XTNL Solutions");
   const otpauth  = `otpauth://totp/${issuer}:${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
   const qrDataUrl = await QRCode.toDataURL(otpauth, {
     width:  180,

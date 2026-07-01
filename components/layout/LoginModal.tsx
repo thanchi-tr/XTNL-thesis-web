@@ -142,7 +142,7 @@ function LogoBar() {
         fontSize: 7.5, letterSpacing: "0.10em", color: "var(--ink-3)",
         paddingLeft: 8, borderLeft: "1px solid var(--line)",
       }}>
-        SOVEREIGN TRUST
+        SOLUTIONS
       </span>
     </div>
   );
@@ -451,7 +451,7 @@ export default function LoginModal({
               )}
 
               <p style={{ marginTop: 20, fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6 }}>
-                Authorised personnel only · XTNL Sovereign Trust
+                Authorised personnel only · XTNL Solutions
               </p>
             </>
           )}

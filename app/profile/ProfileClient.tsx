@@ -74,7 +74,7 @@ export default function ProfileClient({ user }: { user: User }) {
             <Row label="Full Name"     value={user.name  || "—"} />
             <Row label="Email"         value={user.email || "—"} accent="var(--blue)" />
             <Row label="Role"          value="Operator / Analyst" />
-            <Row label="Entity"        value="XTNL Sovereign Trust" />
+            <Row label="Entity"        value="XTNL Solutions" />
             <Row label="System"        value="v5.2.5 Firmware · EUR/USD" accent="var(--ink-2)" />
           </Card>
 

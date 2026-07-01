@@ -26,7 +26,7 @@ export default function Footer() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <XtnlLogo width="18" height="18" />
               <span className="mono" style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.18em", color: "var(--ink-0)" }}>
-                XTNL SOVEREIGN TRUST
+                XTNL SOLUTIONS
               </span>
             </div>
             <p className="label-xs" style={{ color: "var(--ink-3)", marginTop: 4 }}>
@@ -73,6 +73,9 @@ export default function Footer() {
           </p>
           <p className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.04em" }}>
             © {new Date().getFullYear()} XTNL Solutions · xtnl-solutions.com · All rights reserved.
+          </p>
+          <p className="mono" style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.04em", opacity: 0.6 }}>
+            ABN 96 412 697 885
           </p>
         </div>
       </div>

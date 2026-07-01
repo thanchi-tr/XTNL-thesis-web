@@ -89,7 +89,7 @@ export default function NavBar() {
               XTNL
             </span>
             <span className="nav-desktop mono" style={{ fontSize: 9, letterSpacing: "0.10em", color: "var(--ink-3)", paddingLeft: 10, borderLeft: "1px solid var(--line)" }}>
-              SOVEREIGN TRUST
+              SOLUTIONS
             </span>
           </Link>
 

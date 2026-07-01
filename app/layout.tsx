@@ -22,8 +22,8 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL("https://xtnl-solutions.com"),
   title: {
-    default:  "XTNL Sovereign Trust",
-    template: "%s | XTNL",
+    default:  "XTNL Solutions",
+    template: "%s | XTNL Solutions",
   },
   description:
     "A 96.5% deterministic quantitative compounding engine for EUR/USD spot foreign exchange. Statistical edge SQN 4.253, validated across N=914 live transactions.",
@@ -31,18 +31,18 @@ export const metadata: Metadata = {
     "quantitative trading", "algorithmic trading", "forex", "EUR/USD",
     "systematic trading", "Monte Carlo", "risk management", "XTNL",
   ],
-  authors: [{ name: "XTNL Sovereign Trust", url: "mailto:xt@xtnl-solutions.com" }],
-  creator: "XTNL Sovereign Trust",
+  authors: [{ name: "XTNL Solutions", url: "mailto:xt@xtnl-solutions.com" }],
+  creator: "XTNL Solutions",
   openGraph: {
     type:        "website",
-    siteName:    "XTNL Sovereign Trust",
-    title:       "XTNL Sovereign Trust | Institutional Prospectus",
+    siteName:    "XTNL Solutions",
+    title:       "XTNL Solutions | Institutional Prospectus",
     description: "A 96.5% deterministic quantitative compounding engine for EUR/USD spot FX. SQN 4.253 · OOS Expectancy 0.904 R · Validated N=914.",
     locale:      "en_AU",
   },
   twitter: {
     card:        "summary",
-    title:       "XTNL Sovereign Trust",
+    title:       "XTNL Solutions",
     description: "Quantitative EUR/USD compounding engine. SQN 4.253 · STABLE · OOS validated.",
   },
   robots: { index: false, follow: false }, // private prospectus
