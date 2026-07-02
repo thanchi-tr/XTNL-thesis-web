@@ -345,9 +345,8 @@ export default function LoginModal({
         setPasskeyError("This device doesn't support passkeys. Use your authenticator code.");
       } else {
         setPasskeyError(
-          "Windows Hello setup failed. Make sure a PIN or fingerprint is configured in " +
-          "Windows Settings → Accounts → Sign-in options, then try again. " +
-          "Or use Microsoft Authenticator on your phone instead."
+          "Windows Hello setup failed. Your PC may not have a PIN or fingerprint configured " +
+          "(Settings → Accounts → Sign-in options). Use Microsoft Authenticator on your phone instead."
         );
       }
     } finally {
@@ -775,47 +774,18 @@ export default function LoginModal({
                     </div>
                   </div>
 
-                  {/* ── This device (Windows Hello) ── */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", color: "var(--ink-3)", margin: 0 }}>
-                      THIS DEVICE
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => handleBiometricSetup("platform")}
-                      disabled={passkeyLoading}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 12,
-                        width: "100%", padding: "12px 14px",
-                        background: "none", border: "1px solid var(--line-hi)",
-                        borderRadius: 8, cursor: passkeyLoading ? "not-allowed" : "pointer",
-                        transition: "border-color 0.15s", textAlign: "left",
-                      }}
-                      onMouseEnter={e => { if (!passkeyLoading) e.currentTarget.style.borderColor = "var(--line-act)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line-hi)"; }}
-                    >
-                      <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--ink-2)" }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                          <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-                          <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                        </svg>
-                      </span>
-                      <span style={{ flex: 1 }}>
-                        <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--ink-1)", lineHeight: 1.3 }}>
-                          Windows Hello / Touch ID
-                        </span>
-                        <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
-                          Fingerprint, Face, or PIN on this computer
-                        </span>
-                      </span>
-                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden style={{ color: "var(--ink-3)", flexShrink: 0 }}>
-                        <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </button>
-                  </div>
-
                   {passkeyError && (
-                    <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, marginTop: 4 }}>{passkeyError}</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.55, margin: 0 }}>{passkeyError}</p>
+                      <button
+                        type="button"
+                        onClick={() => { setPasskeyError(null); handleBiometricSetup("cross-platform"); }}
+                        className="btn btn-ghost"
+                        style={{ fontSize: 12, padding: "9px 14px", width: "100%" }}
+                      >
+                        Try Microsoft Authenticator on phone instead
+                      </button>
+                    </div>
                   )}
                 </>
               )}
