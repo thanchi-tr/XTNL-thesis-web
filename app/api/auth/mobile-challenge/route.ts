@@ -18,8 +18,8 @@ import type {
 
 /* ── Config ─────────────────────────────────────────────────── */
 const RP_NAME  = "XTNL Solutions";
-const RP_ID    = process.env.WEBAUTHN_RP_ID  ?? "localhost";
-const ORIGIN   = process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000";
+const RP_ID    = process.env.WEBAUTHN_RP_ID  ?? "xtnl-solutions.com";
+const ORIGIN   = process.env.WEBAUTHN_ORIGIN ?? "https://xtnl-solutions.com";
 const APP_BASE = ORIGIN;
 
 /* ── Credential store ────────────────────────────────────────── */

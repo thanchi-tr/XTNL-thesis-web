@@ -20,8 +20,8 @@ import type {
  * WEBAUTHN_ORIGIN   — full origin (e.g. "https://xtnl-solutions.com")
  * Both default to localhost for local development.              */
 const RP_NAME = "XTNL Solutions";
-const RP_ID   = process.env.WEBAUTHN_RP_ID  ?? "localhost";
-const ORIGIN  = process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000";
+const RP_ID   = process.env.WEBAUTHN_RP_ID  ?? "xtnl-solutions.com";
+const ORIGIN  = process.env.WEBAUTHN_ORIGIN ?? "https://xtnl-solutions.com";
 
 /* ── Credential store ─────────────────────────────────────────
  * Same file-based pattern as the TOTP route.
