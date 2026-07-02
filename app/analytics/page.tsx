@@ -7,6 +7,6 @@ export const metadata: Metadata = { title: "Analytics" };
 
 export default async function AnalyticsPage() {
   const session = await auth();
-  if (!session?.twoFactorVerified || session.error === "RefreshAccessTokenError") redirect("/");
+  if (!session?.twoFactorVerified) redirect("/");
   return <AnalyticsClient user={{ email: session.userEmail, name: session.userName }} />;
 }

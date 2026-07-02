@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^9.0.1",
+    "@simplewebauthn/server": "^9.0.3",
     "@supabase/supabase-js": "^2.110.0",
     "katex": "^0.16.22",
     "next": "^16.2.9",

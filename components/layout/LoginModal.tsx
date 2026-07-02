@@ -205,7 +205,21 @@ export default function LoginModal({
   const [msLoading,  setMsLoading]  = useState(false);
   const [msError,    setMsError]    = useState<string | null>(null);
   const [qrUrl,      setQrUrl]      = useState<string | null>(null);
-  const [totpLoading, setTotpLoading] = useState(false);
+  const [totpLoading,    setTotpLoading]    = useState(false);
+  const [passkeyStatus,  setPasskeyStatus]  = useState<"unknown" | "enrolled" | "none">("unknown");
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeyError,   setPasskeyError]   = useState<string | null>(null);
+  const [showCodeEntry,  setShowCodeEntry]  = useState(false);
+
+  /* Add-biometric panel */
+  const [showAddBiometric, setShowAddBiometric] = useState(false);
+
+  /* QR mobile-challenge flow */
+  const [showQr,       setShowQr]       = useState(false);
+  const [qrMobileUrl,  setQrMobileUrl]  = useState<string | null>(null);
+  const [qrToken,      setQrToken]      = useState<string | null>(null);
+  const [qrStatus,     setQrStatus]     = useState<"idle" | "loading" | "polling" | "verified" | "expired" | "error">("idle");
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* When session exists but 2FA not yet done → jump to totp step */
   useEffect(() => {
@@ -214,23 +228,25 @@ export default function LoginModal({
     }
   }, [session]);
 
-  /* On entering the totp step, fetch enrollment status + QR (first-timers only) */
+  /* On entering the totp step, fetch TOTP enrollment + passkey status in parallel */
   useEffect(() => {
     if (step !== "totp" || enrolled !== null) return;
     setTotpLoading(true);
-    fetch("/api/auth/totp")
-      .then(r => r.json())
-      .then((d: { enrolled: boolean; qrDataUrl?: string }) => {
-        setEnrolled(d.enrolled);
-        if (d.enrolled) {
-          /* Returning user — force code tab, no QR */
+    Promise.all([
+      fetch("/api/auth/totp").then(r => r.json())                        as Promise<{ enrolled: boolean; qrDataUrl?: string }>,
+      fetch("/api/auth/webauthn?action=status").then(r => r.json())      as Promise<{ hasPasskey: boolean }>,
+    ])
+      .then(([totp, wn]) => {
+        setEnrolled(totp.enrolled);
+        setPasskeyStatus(wn.hasPasskey ? "enrolled" : "none");
+        if (totp.enrolled) {
           setTab("code");
         } else {
-          /* First-timer — show QR tab and store QR URL */
           setTab("qr");
-          if (d.qrDataUrl) setQrUrl(d.qrDataUrl);
+          if (totp.qrDataUrl) setQrUrl(totp.qrDataUrl);
         }
       })
+      .catch(() => setPasskeyStatus("none"))
       .finally(() => setTotpLoading(false));
   }, [step, enrolled]);
 
@@ -257,12 +273,136 @@ export default function LoginModal({
         if (!session?.twoFactorVerified) setStep("sign-in");
         setOtp(""); setOtpError(false); setMsLoading(false); setOtpLoading(false);
         setMsError(null); setEnrolled(null); setQrUrl(null);
+        setPasskeyStatus("unknown"); setPasskeyLoading(false); setPasskeyError(null); setShowCodeEntry(false);
+        setShowAddBiometric(false);
+        setShowQr(false); setQrMobileUrl(null); setQrToken(null); setQrStatus("idle");
+        if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
       }, 300);
       return () => clearTimeout(t);
     }
   }, [open, session]);
 
   /* ── Actions ─────────────────────────────────────────── */
+  async function handleBiometricAuth() {
+    setPasskeyLoading(true);
+    setPasskeyError(null);
+    try {
+      const optRes = await fetch("/api/auth/webauthn?action=authenticate");
+      if (!optRes.ok) throw new Error("server");
+      const options = await optRes.json();
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+      const credential = await startAuthentication(options);
+      const res  = await fetch("/api/auth/webauthn?action=authenticate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credential),
+      });
+      const data = await res.json() as { verified: boolean };
+      if (data.verified) { await update({ twoFactorVerified: true }); onClose(); }
+      else setPasskeyError("Biometric verification failed. Use your code instead.");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("NotAllowed") || msg.includes("cancel") || msg.includes("abort"))
+        setPasskeyError("Biometric was cancelled. Try again or use your code.");
+      else
+        setPasskeyError("Biometric sign-in failed. Use your code instead.");
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }
+
+  async function handleBiometricSetup(attachment?: "cross-platform" | "platform") {
+    setPasskeyLoading(true);
+    setPasskeyError(null);
+    try {
+      const url = `/api/auth/webauthn?action=register${attachment ? `&attachment=${attachment}` : ""}`;
+      const optRes = await fetch(url);
+      if (!optRes.ok) throw new Error("server");
+      const options = await optRes.json();
+      const { startRegistration } = await import("@simplewebauthn/browser");
+      const credential = await startRegistration(options);
+      const res  = await fetch("/api/auth/webauthn?action=register", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credential),
+      });
+      const data = await res.json() as { verified: boolean };
+      if (data.verified) {
+        setPasskeyStatus("enrolled");
+        setShowAddBiometric(false);
+        setPasskeyError(null);
+        /* If not yet 2FA-verified, elevate now */
+        if (!session?.twoFactorVerified) { await update({ twoFactorVerified: true }); onClose(); }
+      } else {
+        setPasskeyError("Passkey setup failed. Please use your code to continue.");
+      }
+    } catch (e: unknown) {
+      const name = e instanceof DOMException ? e.name : "";
+      const msg  = e instanceof Error ? e.message : "";
+      if (name === "NotAllowedError" || msg.includes("cancel") || msg.includes("abort")) {
+        setPasskeyError("Setup cancelled. Try again when ready.");
+      } else if (name === "InvalidStateError") {
+        setPasskeyError("A passkey for this account already exists on this device.");
+      } else if (name === "NotSupportedError") {
+        setPasskeyError("This device doesn't support passkeys. Use your authenticator code.");
+      } else {
+        setPasskeyError(
+          "Windows Hello setup failed. Make sure a PIN or fingerprint is configured in " +
+          "Windows Settings → Accounts → Sign-in options, then try again. " +
+          "Or use Microsoft Authenticator on your phone instead."
+        );
+      }
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }
+
+  async function handleQrSignIn() {
+    setQrStatus("loading"); setQrMobileUrl(null); setQrToken(null);
+    if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
+    try {
+      const res  = await fetch("/api/auth/mobile-challenge", { method: "POST" });
+      const data = await res.json() as { token?: string; qrDataUrl?: string; error?: string };
+      if (!data.token || !data.qrDataUrl) {
+        setQrStatus("error");
+        return;
+      }
+      setQrToken(data.token);
+      setQrMobileUrl(data.qrDataUrl);
+      setQrStatus("polling");
+
+      /* Poll every 2.5 s for up to 5 min */
+      const token = data.token;
+      qrPollRef.current = setInterval(async () => {
+        try {
+          const pr   = await fetch(`/api/auth/mobile-challenge?token=${token}&action=status`);
+          const pd   = await pr.json() as { status: "pending" | "verified" | "expired" };
+          if (pd.status === "verified") {
+            clearInterval(qrPollRef.current!);
+            qrPollRef.current = null;
+            setQrStatus("verified");
+            await update({ twoFactorVerified: true });
+            onClose();
+          } else if (pd.status === "expired") {
+            clearInterval(qrPollRef.current!);
+            qrPollRef.current = null;
+            setQrStatus("expired");
+          }
+        } catch { /* network hiccup — keep polling */ }
+      }, 2500);
+
+      /* Stop polling after 5 min regardless */
+      setTimeout(() => {
+        if (qrPollRef.current) {
+          clearInterval(qrPollRef.current);
+          qrPollRef.current = null;
+          setQrStatus(s => s === "polling" ? "expired" : s);
+        }
+      }, 5 * 60_000);
+
+    } catch {
+      setQrStatus("error");
+    }
+  }
+
   async function handleMicrosoft() {
     setMsLoading(true);
     setMsError(null);
@@ -457,94 +597,530 @@ export default function LoginModal({
           )}
 
           {/* ══════════════════════════════════════════════
-              STEP 2 — TOTP 2FA
+              STEP 2 — 2FA (biometric or TOTP code)
           ══════════════════════════════════════════════ */}
           {step === "totp" && (
-            <form onSubmit={handleVerify} noValidate>
+            <>
+              {/* ── QR mobile-challenge view ── */}
+              {showQr && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
+                        setShowQr(false); setQrStatus("idle"); setQrMobileUrl(null); setQrToken(null);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2)", padding: 0 }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path d="M8 2L4 6l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Back
+                    </button>
+                    <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0 }}>
+                      Scan to sign in
+                    </p>
+                  </div>
+
+                  {(qrStatus === "loading") && (
+                    <div style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
+                      <Spinner size={22} />
+                    </div>
+                  )}
+
+                  {(qrStatus === "polling" || qrStatus === "verified") && qrMobileUrl && (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+                      {/* QR code */}
+                      <div style={{
+                        borderRadius: 10, padding: 10,
+                        background: "#04080f", border: "1px solid rgba(0,204,122,0.25)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        boxShadow: "0 0 18px rgba(0,204,122,0.1)",
+                      }}>
+                        <img
+                          src={qrMobileUrl}
+                          width={200} height={200}
+                          alt="Scan with your phone to sign in"
+                          style={{ display: "block", imageRendering: "pixelated", borderRadius: 4 }}
+                        />
+                      </div>
+
+                      {qrStatus === "polling" && (
+                        <>
+                          <p style={{ fontSize: 12, color: "var(--ink-2)", textAlign: "center", lineHeight: 1.6, margin: 0 }}>
+                            Open your phone&apos;s camera and scan this code.<br/>
+                            Tap <strong style={{ color: "var(--ink-1)" }}>Verify with biometric</strong> when prompted.
+                          </p>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Spinner size={12} />
+                            <span style={{ fontSize: 11, color: "var(--ink-3)" }}>Waiting for approval…</span>
+                          </div>
+                        </>
+                      )}
+
+                      {qrStatus === "verified" && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+                            <path d="M2.5 7l3.5 3.5L11.5 3" stroke="var(--green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          <span style={{ fontSize: 12, color: "var(--green)" }}>Verified — signing in…</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {qrStatus === "expired" && (
+                    <div style={{ textAlign: "center", padding: "16px 0" }}>
+                      <p style={{ fontSize: 13, color: "var(--ink-2)", marginBottom: 14 }}>QR code expired.</p>
+                      <button type="button" onClick={handleQrSignIn} className="btn btn-ghost" style={{ fontSize: 12, padding: "9px 18px" }}>
+                        Generate new QR
+                      </button>
+                    </div>
+                  )}
+
+                  {qrStatus === "error" && (
+                    <p style={{ fontSize: 12, color: "var(--red)", textAlign: "center", padding: "12px 0" }}>
+                      Could not create QR code. Make sure you have a passkey enrolled first.
+                    </p>
+                  )}
+
+                  <p style={{ marginTop: 18, fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6 }}>
+                    Valid for 5 minutes · scan once
+                  </p>
+                </>
+              )}
+
+              {/* ── Add biometric panel ── */}
+              {showAddBiometric && !showQr && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+                    <button
+                      type="button"
+                      onClick={() => { setShowAddBiometric(false); setPasskeyError(null); }}
+                      style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2)", padding: 0 }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path d="M8 2L4 6l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Back
+                    </button>
+                    <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0 }}>Add biometric device</p>
+                  </div>
+
+                  {/* ── Phone / Microsoft Authenticator ── */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", color: "var(--ink-3)", margin: 0 }}>
+                      RECOMMENDED
+                    </p>
+
+                    <div style={{
+                      border: "1px solid rgba(0,204,122,0.25)", borderRadius: 8,
+                      padding: "14px 16px", background: "rgba(0,204,122,0.04)",
+                      display: "flex", flexDirection: "column", gap: 12,
+                    }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                        <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--green)", marginTop: 2 }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                            <rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" strokeWidth="1.5"/>
+                            <circle cx="12" cy="17" r="1.2" fill="currentColor"/>
+                            <path d="M9 10a3 3 0 1 1 6 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                            <rect x="8" y="11" width="8" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+                          </svg>
+                        </span>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)", margin: "0 0 4px" }}>
+                            Microsoft Authenticator (phone)
+                          </p>
+                          <p style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.6, margin: 0 }}>
+                            Register your phone&apos;s fingerprint or Face ID via Microsoft Authenticator.
+                            Works for the QR sign-in flow.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Step-by-step guide */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 7, borderTop: "1px solid rgba(0,204,122,0.12)", paddingTop: 12 }}>
+                        {[
+                          { n: 1, text: "Click Register below — your browser opens a security dialog." },
+                          { n: 2, text: 'In the dialog, choose "Use a phone or tablet" or "Use another device".' },
+                          { n: 3, text: "A QR code appears in your browser. Open Microsoft Authenticator on your phone and scan it." },
+                          { n: 4, text: "Authenticator prompts you for Face ID or fingerprint. Approve it." },
+                          { n: 5, text: "Done — your phone is now registered as a biometric key." },
+                        ].map(({ n, text }) => (
+                          <div key={n} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                            <span style={{
+                              flexShrink: 0, width: 18, height: 18,
+                              borderRadius: "50%", background: "rgba(0,204,122,0.15)",
+                              border: "1px solid rgba(0,204,122,0.3)",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 10, fontWeight: 700, color: "var(--green)",
+                            }}>{n}</span>
+                            <p style={{ fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.55, margin: 0 }}>{text}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleBiometricSetup("cross-platform")}
+                        disabled={passkeyLoading}
+                        className="btn btn-primary"
+                        style={{ width: "100%", padding: "11px", fontSize: 13 }}
+                      >
+                        {passkeyLoading
+                          ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Waiting…</span>
+                          : "Register with Microsoft Authenticator"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── This device (Windows Hello) ── */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", color: "var(--ink-3)", margin: 0 }}>
+                      THIS DEVICE
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleBiometricSetup("platform")}
+                      disabled={passkeyLoading}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 12,
+                        width: "100%", padding: "12px 14px",
+                        background: "none", border: "1px solid var(--line-hi)",
+                        borderRadius: 8, cursor: passkeyLoading ? "not-allowed" : "pointer",
+                        transition: "border-color 0.15s", textAlign: "left",
+                      }}
+                      onMouseEnter={e => { if (!passkeyLoading) e.currentTarget.style.borderColor = "var(--line-act)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line-hi)"; }}
+                    >
+                      <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--ink-2)" }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                          <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </span>
+                      <span style={{ flex: 1 }}>
+                        <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--ink-1)", lineHeight: 1.3 }}>
+                          Windows Hello / Touch ID
+                        </span>
+                        <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+                          Fingerprint, Face, or PIN on this computer
+                        </span>
+                      </span>
+                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden style={{ color: "var(--ink-3)", flexShrink: 0 }}>
+                        <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                  </div>
+
+                  {passkeyError && (
+                    <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, marginTop: 4 }}>{passkeyError}</p>
+                  )}
+                </>
+              )}
+
+              {/* ── Normal 2FA view ── */}
+              {!showQr && !showAddBiometric && (
+                <>
               <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", marginBottom: 4 }}>
                 Verify your identity
               </p>
               <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 18 }}>
-                {enrolled === false
+                {passkeyStatus === "enrolled" && !showCodeEntry
+                  ? "Approve the sign-in biometrically from Microsoft Authenticator."
+                  : enrolled === false
                   ? "Set up Microsoft Authenticator to complete sign-in."
                   : "Enter your Microsoft Authenticator code to continue."}
               </p>
 
-              {/* ── Loading enrollment status ───────────── */}
+              {/* ── Loading ────────────────────────────── */}
               {totpLoading && (
                 <div style={{ display: "flex", justifyContent: "center", padding: "24px 0" }}>
                   <Spinner size={22} />
                 </div>
               )}
 
-              {/* ── First-time user: QR setup + code tabs ─ */}
-              {!totpLoading && enrolled === false && (
+              {!totpLoading && (
                 <>
-                  <Tabs active={tab} onChange={t => { setTab(t); setOtp(""); setOtpError(false); }} />
-
-                  {tab === "qr" && (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-                      <p style={{ fontSize: 12, color: "var(--ink-2)", textAlign: "center", lineHeight: 1.55 }}>
-                        Open Microsoft Authenticator → Add account → Scan QR code.
-                      </p>
-                      <div style={{
-                        background: "#fff", borderRadius: 8, padding: 10,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        width: 148, height: 148, flexShrink: 0,
-                      }}>
-                        {qrUrl ? (
-                          <img src={qrUrl} width={128} height={128} alt="Scan with Microsoft Authenticator" style={{ display: "block", imageRendering: "pixelated" }} />
-                        ) : (
-                          <span style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center" }}>QR unavailable</span>
-                        )}
-                      </div>
-                      <p style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.55 }}>
-                        After scanning, switch to{" "}
-                        <button type="button" onClick={() => setTab("code")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--green)", fontSize: 11, padding: 0 }}>
-                          Enter code
-                        </button>
-                        {" "}to complete setup.
-                      </p>
-                    </div>
-                  )}
-
-                  {tab === "code" && (
+                  {/* ══ A: passkey enrolled — show biometric button ══ */}
+                  {passkeyStatus === "enrolled" && !showCodeEntry && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>
-                        Enter the 6-digit code from Microsoft Authenticator to finish setup.
-                      </p>
-                      <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
-                      {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
-                      <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "12px", fontSize: 13, marginTop: 4 }}>
-                        {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Complete setup"}
+                      <button
+                        type="button"
+                        onClick={handleBiometricAuth}
+                        disabled={passkeyLoading}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 12,
+                          width: "100%", padding: "13px 16px",
+                          background: "rgba(0,204,122,0.08)", border: "1px solid rgba(0,204,122,0.30)",
+                          borderRadius: 7, cursor: passkeyLoading ? "not-allowed" : "pointer",
+                          transition: "border-color 0.15s, background 0.15s", textAlign: "left",
+                        }}
+                        onMouseEnter={e => { if (!passkeyLoading) { e.currentTarget.style.background = "rgba(0,204,122,0.14)"; e.currentTarget.style.borderColor = "rgba(0,204,122,0.55)"; } }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,204,122,0.08)"; e.currentTarget.style.borderColor = "rgba(0,204,122,0.30)"; }}
+                      >
+                        <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--green)" }}>
+                          {passkeyLoading ? <Spinner size={18} /> : (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                              <rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" strokeWidth="1.5"/>
+                              <circle cx="12" cy="17" r="1.2" fill="currentColor"/>
+                              <path d="M9 10a3 3 0 1 1 6 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                              <rect x="8" y="11" width="8" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+                            </svg>
+                          )}
+                        </span>
+                        <span style={{ flex: 1 }}>
+                          <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--green)", lineHeight: 1.3 }}>
+                            {passkeyLoading ? "Waiting for biometric…" : "Use Biometric Sign-in"}
+                          </span>
+                          <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+                            Microsoft Authenticator · Face ID / Fingerprint
+                          </span>
+                        </span>
                       </button>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
+                        <span style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.06em" }}>OR</span>
+                        <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => { setShowCodeEntry(true); setPasskeyError(null); }}
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          fontSize: 12, color: "var(--ink-2)", textAlign: "center",
+                          padding: "4px 0", textDecoration: "underline",
+                          textDecorationColor: "var(--line-hi)",
+                        }}
+                      >
+                        Use authenticator code instead
+                      </button>
+
+                      {/* QR code option for passkey-enrolled users */}
+                      <button
+                        type="button"
+                        onClick={() => { setShowQr(true); handleQrSignIn(); }}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          background: "none", border: "none", cursor: "pointer",
+                          fontSize: 11.5, color: "var(--ink-3)", padding: "2px 0",
+                          textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.1)",
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+                          <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                          <rect x="10" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                          <rect x="1" y="10" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                          <rect x="2.5" y="2.5" width="2" height="2" fill="currentColor"/>
+                          <rect x="11.5" y="2.5" width="2" height="2" fill="currentColor"/>
+                          <rect x="2.5" y="11.5" width="2" height="2" fill="currentColor"/>
+                          <path d="M10 10h2v2h-2zM12 12h2v2h-2zM10 14h2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+                        </svg>
+                        Sign in via QR code
+                      </button>
+
+                      {/* Add biometric device */}
+                      <button
+                        type="button"
+                        onClick={() => { setShowAddBiometric(true); setPasskeyError(null); }}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          background: "none", border: "none", cursor: "pointer",
+                          fontSize: 11.5, color: "var(--ink-3)", padding: "2px 0",
+                          textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.1)",
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+                          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M12 8v8M8 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                        Add another biometric device
+                      </button>
+                      {passkeyError && (
+                        <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, margin: 0 }}>{passkeyError}</p>
+                      )}
                     </div>
                   )}
+
+                  {/* ══ B: code entry — primary for TOTP-only, fallback for passkey users ══ */}
+                  {(passkeyStatus !== "enrolled" || showCodeEntry) && (
+                    <>
+                      {/* Back link when falling back from biometric */}
+                      {passkeyStatus === "enrolled" && showCodeEntry && (
+                        <button
+                          type="button"
+                          onClick={() => { setShowCodeEntry(false); setPasskeyError(null); }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 5,
+                            background: "none", border: "none", cursor: "pointer",
+                            fontSize: 11.5, color: "var(--ink-2)", padding: "0 0 14px 0",
+                          }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                            <path d="M8 2L4 6l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          Back to biometric
+                        </button>
+                      )}
+
+                      <form onSubmit={handleVerify} noValidate>
+                        {/* ── First-time TOTP setup ── */}
+                        {enrolled === false && (
+                          <>
+                            <Tabs active={tab} onChange={t => { setTab(t); setOtp(""); setOtpError(false); }} />
+
+                            {tab === "qr" && (
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+                                <p style={{ fontSize: 12, color: "var(--ink-2)", textAlign: "center", lineHeight: 1.55 }}>
+                                  Open Microsoft Authenticator → Add account → Scan QR code.
+                                </p>
+                                <div style={{
+                                  background: "#fff", borderRadius: 8, padding: 10,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  width: 148, height: 148, flexShrink: 0,
+                                }}>
+                                  {qrUrl ? (
+                                    <img src={qrUrl} width={128} height={128} alt="Scan with Microsoft Authenticator" style={{ display: "block", imageRendering: "pixelated" }} />
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center" }}>QR unavailable</span>
+                                  )}
+                                </div>
+                                <p style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.55 }}>
+                                  After scanning, switch to{" "}
+                                  <button type="button" onClick={() => setTab("code")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--green)", fontSize: 11, padding: 0 }}>
+                                    Enter code
+                                  </button>
+                                  {" "}to complete setup.
+                                </p>
+                              </div>
+                            )}
+
+                            {tab === "code" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>
+                                  Enter the 6-digit code from Microsoft Authenticator to finish setup.
+                                </p>
+                                <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
+                                {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
+                                <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "12px", fontSize: 13, marginTop: 4 }}>
+                                  {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Complete setup"}
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* ── Returning user TOTP ── */}
+                        {enrolled === true && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                            <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>
+                              Enter the 6-digit code shown in Microsoft Authenticator.
+                            </p>
+                            <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
+                            {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
+                            <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "12px", fontSize: 13, marginTop: 4 }}>
+                              {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Authenticate"}
+                            </button>
+                          </div>
+                        )}
+                      </form>
+
+                      {/* ── Offer biometric setup for users without a passkey ── */}
+                      {passkeyStatus === "none" && (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 12px" }}>
+                            <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
+                            <span style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.06em" }}>
+                              {enrolled ? "FASTER SIGN-IN" : "OR"}
+                            </span>
+                            <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowAddBiometric(true)}
+                            disabled={passkeyLoading}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              width: "100%", padding: "10px 14px",
+                              background: "none", border: "1px solid var(--line)",
+                              borderRadius: 7, cursor: passkeyLoading ? "not-allowed" : "pointer",
+                              transition: "border-color 0.15s", textAlign: "left",
+                            }}
+                            onMouseEnter={e => { if (!passkeyLoading) e.currentTarget.style.borderColor = "rgba(0,204,122,0.35)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; }}
+                          >
+                            <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--ink-2)" }}>
+                              {passkeyLoading ? <Spinner size={15} /> : (
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                  <rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" strokeWidth="1.5"/>
+                                  <path d="M9 10a3 3 0 1 1 6 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <rect x="8" y="11" width="8" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+                                </svg>
+                              )}
+                            </span>
+                            <span style={{ flex: 1 }}>
+                              <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--ink-1)", lineHeight: 1.3 }}>
+                                {passkeyLoading ? "Setting up…" : enrolled ? "Set up biometric sign-in" : "Use biometric instead"}
+                              </span>
+                              <span style={{ display: "block", fontSize: 10.5, color: "var(--ink-3)", marginTop: 1 }}>
+                                {enrolled ? "Skip codes on future sign-ins" : "No codes needed"} · Microsoft Authenticator
+                              </span>
+                            </span>
+                            {!passkeyLoading && (
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden style={{ color: "var(--ink-3)", flexShrink: 0 }}>
+                                <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </button>
+                          {passkeyError && (
+                            <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, marginTop: 8 }}>{passkeyError}</p>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {/* Footer */}
+                  <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                    {/* QR option for TOTP-only users (passkeyStatus === "none") */}
+                    {passkeyStatus === "none" && enrolled === true && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowQr(true); handleQrSignIn(); }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6,
+                          background: "none", border: "none", cursor: "pointer",
+                          fontSize: 11.5, color: "var(--ink-3)", padding: "2px 0",
+                          textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.1)",
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+                          <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                          <rect x="10" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                          <rect x="1" y="10" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+                          <rect x="2.5" y="2.5" width="2" height="2" fill="currentColor"/>
+                          <rect x="11.5" y="2.5" width="2" height="2" fill="currentColor"/>
+                          <rect x="2.5" y="11.5" width="2" height="2" fill="currentColor"/>
+                          <path d="M10 10h2v2h-2zM12 12h2v2h-2zM10 14h2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+                        </svg>
+                        Sign in via QR + fingerprint
+                      </button>
+                    )}
+                    <p style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6, margin: 0 }}>
+                      Need help?{" "}
+                      <a href="mailto:xt@xtnl-solutions.com" style={{ color: "var(--ink-2)", textDecoration: "none" }}>
+                        Contact administrator
+                      </a>
+                    </p>
+                  </div>
                 </>
               )}
-
-              {/* ── Returning user: code entry only ──────── */}
-              {!totpLoading && enrolled === true && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>
-                    Enter the 6-digit code shown in Microsoft Authenticator.
-                  </p>
-                  <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
-                  {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
-                  <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "12px", fontSize: 13, marginTop: 4 }}>
-                    {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Authenticate"}
-                  </button>
-                </div>
+                </>
               )}
-
-              {/* Footer */}
-              <p style={{ marginTop: 20, fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6 }}>
-                Need help?{" "}
-                <a href="mailto:xt@xtnl-solutions.com" style={{ color: "var(--ink-2)", textDecoration: "none" }}>
-                  Contact administrator
-                </a>
-              </p>
-            </form>
+            </>
           )}
         </div>
       </div>
