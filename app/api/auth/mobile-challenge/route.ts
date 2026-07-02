@@ -20,6 +20,7 @@ import type {
 const RP_NAME  = "XTNL Solutions";
 const RP_ID    = process.env.WEBAUTHN_RP_ID  ?? "xtnl-solutions.com";
 const ORIGIN   = process.env.WEBAUTHN_ORIGIN ?? "https://xtnl-solutions.com";
+const ORIGINS  = [ORIGIN, ORIGIN.replace("://", "://www.")];
 const APP_BASE = ORIGIN;
 
 /* ── Credential store ────────────────────────────────────────── */
@@ -249,7 +250,7 @@ export async function PATCH(req: NextRequest) {
       result = await verifyRegistrationResponse({
         response:                body,
         expectedChallenge:       entry.webauthnChallenge,
-        expectedOrigin:          ORIGIN,
+        expectedOrigin:          ORIGINS,
         expectedRPID:            RP_ID,
         requireUserVerification: true,
       });
@@ -288,7 +289,7 @@ export async function PATCH(req: NextRequest) {
     result = await verifyAuthenticationResponse({
       response:                body,
       expectedChallenge:       entry.webauthnChallenge,
-      expectedOrigin:          ORIGIN,
+      expectedOrigin:          ORIGINS,
       expectedRPID:            RP_ID,
       requireUserVerification: true,
       authenticator: {

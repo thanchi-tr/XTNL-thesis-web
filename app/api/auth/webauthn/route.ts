@@ -22,6 +22,7 @@ import type {
 const RP_NAME = "XTNL Solutions";
 const RP_ID   = process.env.WEBAUTHN_RP_ID  ?? "xtnl-solutions.com";
 const ORIGIN  = process.env.WEBAUTHN_ORIGIN ?? "https://xtnl-solutions.com";
+const ORIGINS = [ORIGIN, ORIGIN.replace("://", "://www.")];
 
 /* ── Credential store ─────────────────────────────────────────
  * Same file-based pattern as the TOTP route.
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
       result = await verifyRegistrationResponse({
         response:                body,
         expectedChallenge:       challenge,
-        expectedOrigin:          ORIGIN,
+        expectedOrigin:          ORIGINS,
         expectedRPID:            RP_ID,
         requireUserVerification: true,
       });
@@ -208,7 +209,7 @@ export async function POST(req: NextRequest) {
       result = await verifyAuthenticationResponse({
         response:                body,
         expectedChallenge:       challenge,
-        expectedOrigin:          ORIGIN,
+        expectedOrigin:          ORIGINS,
         expectedRPID:            RP_ID,
         requireUserVerification: true,
         authenticator: {
