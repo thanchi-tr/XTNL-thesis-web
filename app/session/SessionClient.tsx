@@ -465,15 +465,66 @@ function tzLocalToUTC(localStr: string, tz: string): string {
 }
 
 
+type SortCol = "id" | "r" | "entry" | "exit" | "tradeid" | null;
+type FilterResult = "all" | "win" | "loss" | "be";
+type FilterLinked = "all" | "linked" | "unlinked";
+
 function OptimalTable({ rows, loading, selected, onSelect, tz, onDelete, onRefresh }: {
   rows: OptimalRow[]; loading: boolean; selected: string | null;
   onSelect: (id: string) => void; tz: string;
   onDelete: (id: string) => Promise<void>; onRefresh?: () => void;
 }) {
-  const [hov,        setHov]        = useState<string | null>(null);
-  const [copiedKey,  setCopiedKey]  = useState<string | null>(null);
-  const [confirmId,  setConfirmId]  = useState<string | null>(null);
-  const [deleting,   setDeleting]   = useState(false);
+  const [hov,          setHov]          = useState<string | null>(null);
+  const [copiedKey,    setCopiedKey]    = useState<string | null>(null);
+  const [confirmId,    setConfirmId]    = useState<string | null>(null);
+  const [deleting,     setDeleting]     = useState(false);
+  const [showFilter,   setShowFilter]   = useState(false);
+  const [filterResult, setFilterResult] = useState<FilterResult>("all");
+  const [filterLinked, setFilterLinked] = useState<FilterLinked>("all");
+  const [sortCol,      setSortCol]      = useState<SortCol>(null);
+  const [sortDir,      setSortDir]      = useState<"asc" | "desc">("asc");
+
+  const filtersActive = filterResult !== "all" || filterLinked !== "all";
+
+  function toggleSort(col: NonNullable<SortCol>) {
+    if (sortCol === col) {
+      if (sortDir === "asc") { setSortDir("desc"); }
+      else { setSortCol(null); setSortDir("asc"); }
+    } else {
+      setSortCol(col); setSortDir("asc");
+    }
+  }
+
+  function SortIcon({ col }: { col: NonNullable<SortCol> }) {
+    const active = sortCol === col;
+    return (
+      <svg width="8" height="11" viewBox="0 0 8 11" fill="none" style={{ flexShrink: 0, marginLeft: 3 }}>
+        <path d="M4 1L6.5 4H1.5L4 1Z" fill={active && sortDir === "asc" ? "currentColor" : "var(--ink-3)"} opacity={active && sortDir === "asc" ? 1 : 0.4}/>
+        <path d="M4 10L1.5 7H6.5L4 10Z" fill={active && sortDir === "desc" ? "currentColor" : "var(--ink-3)"} opacity={active && sortDir === "desc" ? 1 : 0.4}/>
+      </svg>
+    );
+  }
+
+  const filteredRows = rows.filter(t => {
+    const be = Math.abs(t.result_r) <= 0.08;
+    if (filterResult === "win"  && (be || t.result_r <= 0)) return false;
+    if (filterResult === "loss" && (be || t.result_r >= 0)) return false;
+    if (filterResult === "be"   && !be)                     return false;
+    if (filterLinked === "linked"   && !t.trade_id)  return false;
+    if (filterLinked === "unlinked" && !!t.trade_id) return false;
+    return true;
+  });
+
+  const displayRows = sortCol ? [...filteredRows].sort((a, b) => {
+    let va: string | number = 0, vb: string | number = 0;
+    if      (sortCol === "r")       { va = a.result_r;                    vb = b.result_r; }
+    else if (sortCol === "entry")   { va = new Date(a.entry).getTime();   vb = new Date(b.entry).getTime(); }
+    else if (sortCol === "exit")    { va = new Date(a.exit).getTime();    vb = new Date(b.exit).getTime(); }
+    else if (sortCol === "tradeid") { va = a.trade_id ?? "";              vb = b.trade_id ?? ""; }
+    else                            { va = a.optimal_trade_id;            vb = b.optimal_trade_id; }
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
+  }) : filteredRows;
 
   function copy(key: string, text: string, e: React.MouseEvent) {
     if (!text || text === "—") return;
@@ -555,32 +606,86 @@ function OptimalTable({ rows, loading, selected, onSelect, tz, onDelete, onRefre
       )}
 
       <CardHeader eyebrow="Theoretical" eyebrowColor="var(--amber)" title="Optimal Sample"
-        badge={<span className="chip chip-muted">{rows.length} results</span>}
-        actions={<><IconBtn icon="filter"/><IconBtn icon="download"/><IconBtn icon="refresh" onClick={onRefresh}/></>}
+        badge={
+          <span className="chip chip-muted">
+            {filtersActive ? `${displayRows.length} / ${rows.length}` : `${rows.length}`} results
+          </span>
+        }
+        actions={<>
+          <IconBtn icon="filter" onClick={() => setShowFilter(o => !o)} />
+          <IconBtn icon="refresh" onClick={onRefresh} />
+        </>}
       />
+
+      {/* ── Filter bar ── */}
+      {showFilter && (
+        <div style={{ padding: "8px 16px 10px", borderBottom: "1px solid var(--line)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginRight: 2 }}>Result</span>
+          {(["all","win","loss","be"] as FilterResult[]).map(v => {
+            const active = filterResult === v;
+            return (
+              <button key={v} type="button" onClick={() => setFilterResult(v)} style={{
+                fontSize: 10, padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                background: active ? "rgba(77,156,245,0.14)" : "var(--sub)",
+                border: `1px solid ${active ? "rgba(77,156,245,0.4)" : "var(--line)"}`,
+                color: active ? "#4d9cf5" : "var(--ink-2)", fontWeight: active ? 700 : 400,
+              }}>
+                {v === "all" ? "All" : v === "win" ? "Win" : v === "loss" ? "Loss" : "B/E"}
+              </button>
+            );
+          })}
+          <span style={{ color: "var(--line-hi)", fontSize: 10, margin: "0 2px" }}>·</span>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginRight: 2 }}>Link</span>
+          {(["all","linked","unlinked"] as FilterLinked[]).map(v => {
+            const active = filterLinked === v;
+            return (
+              <button key={v} type="button" onClick={() => setFilterLinked(v)} style={{
+                fontSize: 10, padding: "2px 8px", borderRadius: 3, cursor: "pointer",
+                background: active ? "rgba(77,156,245,0.14)" : "var(--sub)",
+                border: `1px solid ${active ? "rgba(77,156,245,0.4)" : "var(--line)"}`,
+                color: active ? "#4d9cf5" : "var(--ink-2)", fontWeight: active ? 700 : 400,
+              }}>
+                {v === "all" ? "All" : v === "linked" ? "Linked" : "Unlinked"}
+              </button>
+            );
+          })}
+          {filtersActive && (
+            <button type="button" onClick={() => { setFilterResult("all"); setFilterLinked("all"); }}
+              style={{ marginLeft: "auto", fontSize: 9.5, color: "var(--ink-3)", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}>
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 420, width: "100%", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
           <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card)" }}>
             <tr>
-              {["ID","R","Entry","Exit","Trade ID",""].map((h, i) => (
-                <th key={i} style={{ ...TH, width: i === 5 ? 28 : undefined }}>
-                  {[0,2,3,4].includes(i) && h
-                    ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        {h}
-                        <svg width="9" height="9" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.4 }} aria-hidden>
-                          <rect x="4" y="1" width="7" height="8" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-                          <rect x="1" y="3" width="7" height="8" rx="1" stroke="currentColor" strokeWidth="1.2" fill="var(--card)"/>
-                        </svg>
-                      </span>
-                    : h}
+              {([
+                { label: "ID",       col: "id"      as SortCol },
+                { label: "R",        col: "r"       as SortCol },
+                { label: "Entry",    col: "entry"   as SortCol },
+                { label: "Exit",     col: "exit"    as SortCol },
+                { label: "Trade ID", col: "tradeid" as SortCol },
+                { label: "",         col: null },
+              ] as { label: string; col: SortCol }[]).map(({ label, col }, i) => (
+                <th key={i} style={{ ...TH, width: i === 5 ? 28 : undefined, cursor: col ? "pointer" : "default", userSelect: "none" as const }}
+                  onClick={col ? () => toggleSort(col as NonNullable<SortCol>) : undefined}>
+                  {label ? (
+                    <span style={{ display: "flex", alignItems: "center" }}>
+                      {label}
+                      {col && <SortIcon col={col as NonNullable<SortCol>} />}
+                    </span>
+                  ) : null}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No records</td></tr>}
-            {!loading && rows.map(t => {
+            {!loading && displayRows.length === 0 && <tr><td colSpan={6} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>{rows.length === 0 ? "No records" : "No matches"}</td></tr>}
+            {!loading && displayRows.map(t => {
               const id  = t.optimal_trade_id;
               const sel = selected === id;
               const bg  = sel ? "rgba(77,156,245,0.06)" : hov === id ? "var(--raised)" : "transparent";
@@ -738,9 +843,10 @@ function assignTradeCols(trades: OptimalRow[]): { trade: OptimalRow; col: number
   });
 }
 
-/* Trade bar — expands detail card on hover */
-function TLTrade({ trade, y1, y2, col, axisX, tz }: {
+/* Trade bar — expands detail card on hover; double-click pins it and scrolls to it */
+function TLTrade({ trade, y1, y2, col, axisX, tz, selected, onDoubleClick }: {
   trade: OptimalRow; y1: number; y2: number; col: number; axisX: number; tz: string;
+  selected?: boolean; onDoubleClick?: () => void;
 }) {
   const [hover, setHover] = useState(false);
   const be  = Math.abs(trade.result_r) <= 0.08;
@@ -751,27 +857,31 @@ function TLTrade({ trade, y1, y2, col, axisX, tz }: {
   const top = Math.min(y1, y2);
   const h   = Math.max(TL_MIN_BAR, Math.abs(y2 - y1));
   const x   = 8 + col * TL_COL_W;
+  const showCard = hover || selected;
 
   return (
     <div
-      style={{ position: "absolute", left: x, top, width: TL_COL_W - 2, zIndex: hover ? 30 : 1 }}
+      style={{ position: "absolute", left: x, top, width: TL_COL_W - 2, zIndex: showCard ? 30 : 1 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onDoubleClick={onDoubleClick}
     >
       {/* Bar */}
       <div style={{
         width: "100%", height: h, borderRadius: 3,
-        background: hover ? bgHi : bgLo,
-        borderTop:    `1px solid ${clr}${hover ? "88" : "44"}`,
-        borderRight:  `1px solid ${clr}${hover ? "88" : "44"}`,
-        borderBottom: `1px solid ${clr}${hover ? "88" : "44"}`,
+        background: showCard ? bgHi : bgLo,
+        borderTop:    `1px solid ${clr}${showCard ? "88" : "44"}`,
+        borderRight:  `1px solid ${clr}${showCard ? "88" : "44"}`,
+        borderBottom: `1px solid ${clr}${showCard ? "88" : "44"}`,
         borderLeft:   `3px solid ${clr}`,
+        outline: selected ? `2px solid ${clr}88` : "none",
+        outlineOffset: 1,
         transition: "background 0.12s, border-color 0.12s",
         cursor: "pointer",
       }} />
 
-      {/* Hover detail card — floats right of axis, constrained for mobile */}
-      {hover && (
+      {/* Detail card — shows on hover or when pinned via double-click */}
+      {showCard && (
         <div style={{
           position: "absolute",
           left: axisX - x + 10,
@@ -784,17 +894,20 @@ function TLTrade({ trade, y1, y2, col, axisX, tz }: {
           borderLeft:   `2px solid ${clr}`,
           borderRadius: 6,
           padding: "9px 13px",
-          boxShadow: "0 6px 28px rgba(0,0,0,0.40)",
+          boxShadow: selected ? `0 6px 28px rgba(0,0,0,0.50), 0 0 0 1px ${clr}33` : "0 6px 28px rgba(0,0,0,0.40)",
           width: "min(220px, calc(100vw - 80px))",
           pointerEvents: "none",
           whiteSpace: "normal",
           wordBreak: "break-word",
         }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", color: clr, marginBottom: 8 }}>
-            {be ? "◆ BREAKEVEN" : win ? "▲ WINNER" : "▼ LOSER"}
-            <span style={{ marginLeft: 10, fontSize: 13, fontFamily: "var(--font-mono)" }}>
-              {win ? "+" : ""}{trade.result_r}R
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", color: clr }}>
+              {be ? "◆ BREAKEVEN" : win ? "▲ WINNER" : "▼ LOSER"}
+              <span style={{ marginLeft: 10, fontSize: 13, fontFamily: "var(--font-mono)" }}>
+                {win ? "+" : ""}{trade.result_r}R
+              </span>
             </span>
+            {selected && <span style={{ marginLeft: "auto", fontSize: 8.5, color: clr, opacity: 0.65, letterSpacing: "0.05em" }}>● PINNED</span>}
           </div>
           <div style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-2)", lineHeight: 2 }}>
             <span style={{ color: "var(--ink-3)", display: "inline-block", width: 34 }}>Entry</span>
@@ -820,18 +933,31 @@ function TLTrade({ trade, y1, y2, col, axisX, tz }: {
 }
 
 /* Comment node — focus/blur managed by parent */
-function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, canDelete, onDelete }: {
+function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, canDelete, onDelete, planExpanded, onPlanExpandToggle }: {
   comment: CommentRow; top: number; axisX: number;
   focused: boolean; dimmed: boolean; tz: string;
   onFocus: () => void; onBlur: () => void;
   canDelete?: boolean; onDelete?: () => Promise<void>;
+  planExpanded?: boolean; onPlanExpandToggle?: () => void;
 }) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [deleting,    setDeleting]    = useState(false);
+  const [showConfirm,  setShowConfirm]  = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
+  const [copiedPlanId, setCopiedPlanId] = useState(false);
 
-  const analyst = comment.content.startsWith("Analyst comment:");
-  const text    = analyst ? comment.content.replace(/^Analyst comment:\s*/i, "") : comment.content;
-  const accent  = analyst ? "#f0a030" : "#4d9cf5";
+  const analyst     = comment.content.startsWith("Analyst comment:");
+  const isEntryPlan = comment.content.startsWith("entry_plan:");
+  let planData: {
+    id?: string;
+    immediate?: boolean;
+    entries?: { label: string; datetime: string; anchor: boolean }[];
+    anchor_reason?: string;
+    entry_time?: string;
+  } | null = null;
+  if (isEntryPlan) {
+    try { planData = JSON.parse(comment.content.replace(/^entry_plan:\s*/, "")); } catch {}
+  }
+  const text   = analyst ? comment.content.replace(/^Analyst comment:\s*/i, "") : comment.content;
+  const accent = analyst ? "#f0a030" : isEntryPlan ? "#00cc7a" : "#4d9cf5";
 
   const handleBlur = () => { if (!showConfirm) onBlur(); };
 
@@ -843,10 +969,12 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
     setShowConfirm(false);
   }
 
-  /* When focused the card becomes position:absolute so the outer anchor div
-     stays at its collapsed height — the expanded card floats above lower items
-     without displacing them. */
-  const cardExpanded = focused || showConfirm;
+  const cardExpanded = isEntryPlan
+    ? ((planExpanded ?? false) || showConfirm)
+    : (focused || showConfirm);
+
+  /* Entry plans never get dimmed by other items' hover */
+  const isDimmed = dimmed && !isEntryPlan;
 
   return (
     <div
@@ -854,13 +982,13 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
         position: "absolute", top, left: axisX + 10,
         width: `calc(100% - ${axisX + 18}px)`,
         zIndex: cardExpanded ? 20 : 1,
-        opacity: dimmed ? 0.25 : 1,
-        filter:  dimmed ? "blur(1.5px)" : "none",
+        opacity: isDimmed ? 0.25 : 1,
+        filter:  isDimmed ? "blur(1.5px)" : "none",
         transition: "opacity 0.18s, filter 0.18s",
         minHeight: 26,
       }}
-      onMouseEnter={onFocus}
-      onMouseLeave={handleBlur}
+      onMouseEnter={isEntryPlan ? undefined : onFocus}
+      onMouseLeave={isEntryPlan ? undefined : handleBlur}
     >
       {/* Axis dot */}
       <div style={{
@@ -869,31 +997,34 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
         background: cardExpanded ? accent : "var(--sub)",
         border: `2px solid ${accent}`,
         boxShadow: cardExpanded
-          ? `0 0 0 4px ${analyst ? "rgba(240,160,48,0.18)" : "rgba(77,156,245,0.18)"}`
+          ? `0 0 0 4px ${analyst ? "rgba(240,160,48,0.18)" : isEntryPlan ? "rgba(0,204,122,0.18)" : "rgba(77,156,245,0.18)"}`
           : "none",
         transition: "background 0.15s, box-shadow 0.15s",
       }} />
 
       {/* Card — floats above siblings when expanded */}
-      <div style={{
-        position: cardExpanded ? "absolute" as const : "relative" as const,
-        top: cardExpanded ? 0 : undefined,
-        left: cardExpanded ? 0 : undefined,
-        right: cardExpanded ? 0 : undefined,
-        zIndex: cardExpanded ? 30 : undefined,
-        background: cardExpanded ? "var(--card)" : "transparent",
-        borderTop:    `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
-        borderRight:  `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
-        borderBottom: `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
-        borderLeft:   `2px solid ${accent}`,
-        borderRadius: 5,
-        padding: cardExpanded ? "8px 12px" : "3px 10px",
-        transition: "background 0.15s, border-color 0.15s, box-shadow 0.15s",
-        boxShadow: cardExpanded ? "0 6px 28px rgba(0,0,0,0.38)" : "none",
-        minWidth: 0, width: "100%",
-        boxSizing: "border-box" as const,
-        overflow: "hidden",
-      }}>
+      <div
+        onClick={isEntryPlan ? onPlanExpandToggle : undefined}
+        style={{
+          position: (cardExpanded && !isEntryPlan) ? "absolute" as const : "relative" as const,
+          top: (cardExpanded && !isEntryPlan) ? 0 : undefined,
+          left: (cardExpanded && !isEntryPlan) ? 0 : undefined,
+          right: (cardExpanded && !isEntryPlan) ? 0 : undefined,
+          zIndex: cardExpanded ? 30 : undefined,
+          background: cardExpanded ? "var(--card)" : "transparent",
+          borderTop:    `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
+          borderRight:  `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
+          borderBottom: `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
+          borderLeft:   `2px solid ${accent}`,
+          borderRadius: 5,
+          padding: cardExpanded ? "8px 12px" : "3px 10px",
+          transition: "background 0.15s, border-color 0.15s, box-shadow 0.15s",
+          boxShadow: cardExpanded ? "0 6px 28px rgba(0,0,0,0.38)" : "none",
+          minWidth: 0, width: "100%",
+          boxSizing: "border-box" as const,
+          overflow: "hidden",
+          cursor: isEntryPlan ? "pointer" : "default",
+        }}>
 
         {!cardExpanded ? (
           /* ── Collapsed: single row — timestamp · text ── */
@@ -904,15 +1035,18 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
             }}>
               {fmtTz(comment.Entry, tz)}
             </span>
-            <span style={{
-              fontSize: 12, color: "var(--ink-1)",
-              overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
-              flex: 1, minWidth: 0,
-            }}>
-              {text}
-            </span>
-            {analyst && (
-              <span className="chip chip-amber" style={{ fontSize: 7.5, flexShrink: 0 }}>A</span>
+            {isEntryPlan ? (
+              <span style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 600, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
+                ⚡ Entry Plan{planData?.immediate ? " · Immediate" : ""}{planData?.entries?.length ? ` · ${planData.entries.length} entries` : ""}
+              </span>
+            ) : (
+              <span style={{ fontSize: 12, color: "var(--ink-1)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
+                {text}
+              </span>
+            )}
+            {analyst && <span className="chip chip-amber" style={{ fontSize: 7.5, flexShrink: 0 }}>A</span>}
+            {isEntryPlan && (
+              <span style={{ fontSize: 7.5, flexShrink: 0, background: "rgba(0,204,122,0.12)", border: "1px solid rgba(0,204,122,0.3)", borderRadius: 3, padding: "1px 4px", color: "var(--green)", letterSpacing: "0.04em" }}>EP</span>
             )}
           </div>
         ) : (
@@ -928,19 +1062,81 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
                 </span>
               )}
               {analyst && <span className="chip chip-amber" style={{ fontSize: 8, flexShrink: 0 }}>Analyst</span>}
-              {canDelete && analyst && !showConfirm && (
+              {canDelete && (analyst || isEntryPlan) && !showConfirm && (
                 <button type="button" onClick={e => { e.stopPropagation(); setShowConfirm(true); }}
                   style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0, opacity: 0.7 }}>
                   ×
                 </button>
               )}
             </div>
-            <p style={{
-              margin: 0, fontSize: 12.5, lineHeight: 1.65,
-              color: "var(--ink-0)", wordBreak: "break-word", overflowWrap: "break-word",
-            }}>
-              {text}
-            </p>
+
+            {/* ── Entry Plan formatted card ── */}
+            {isEntryPlan && planData ? (
+              <div style={{ marginTop: 2 }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", background: "rgba(0,204,122,0.12)", border: "1px solid rgba(0,204,122,0.3)", borderRadius: 3, padding: "2px 7px", color: "var(--green)" }}>⚡ ENTRY PLAN</span>
+                  {planData.immediate && <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", background: "rgba(77,156,245,0.10)", border: "1px solid rgba(77,156,245,0.25)", borderRadius: 3, padding: "2px 7px", color: "#4d9cf5" }}>IMMEDIATE</span>}
+                </div>
+                {planData.id && (
+                  <div style={{ marginBottom: 10 }}>
+                    <p style={{ margin: "0 0 3px", fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: "var(--ink-3)", textTransform: "uppercase" as const }}>Plan ID</p>
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(planData!.id!).catch(() => {});
+                        setCopiedPlanId(true);
+                        setTimeout(() => setCopiedPlanId(false), 1400);
+                      }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, width: "100%",
+                        padding: "5px 8px", borderRadius: 4, cursor: "copy",
+                        background: copiedPlanId ? "rgba(0,204,122,0.07)" : "rgba(255,255,255,0.025)",
+                        border: `1px solid ${copiedPlanId ? "rgba(0,204,122,0.28)" : "var(--line)"}`,
+                        transition: "background 0.15s, border-color 0.15s",
+                      }}
+                    >
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: copiedPlanId ? "var(--green)" : "var(--ink-2)", flex: 1, textAlign: "left", wordBreak: "break-all", letterSpacing: "0.03em" }}>
+                        {copiedPlanId ? "✓ copied to clipboard" : planData.id}
+                      </span>
+                      {!copiedPlanId && (
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.45 }}>
+                          <rect x="5" y="1" width="10" height="12" rx="1.5" stroke="var(--ink-2)" strokeWidth="1.5"/>
+                          <rect x="1" y="4" width="10" height="12" rx="1.5" stroke="var(--ink-2)" strokeWidth="1.5" fill="var(--card)"/>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
+                  {planData.entries?.map((entry, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 5, background: entry.anchor ? "rgba(0,204,122,0.07)" : "var(--sub)", border: `1px solid ${entry.anchor ? "rgba(0,204,122,0.3)" : "var(--line)"}` }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: entry.anchor ? "var(--green)" : "var(--ink-3)", width: 48, flexShrink: 0 }}>{entry.label}</span>
+                      <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: entry.anchor ? "var(--green)" : "var(--ink-1)", flex: 1 }}>{fmtTz(entry.datetime, tz)}</span>
+                      {entry.anchor && <span style={{ fontSize: 9, fontWeight: 700, background: "rgba(0,204,122,0.15)", border: "1px solid rgba(0,204,122,0.35)", borderRadius: 3, padding: "1px 6px", color: "var(--green)", flexShrink: 0 }}>⚓ ANCHOR</span>}
+                    </div>
+                  ))}
+                </div>
+                {planData.anchor_reason && (
+                  <div style={{ padding: "8px 10px", borderRadius: 5, background: "var(--sub)", border: "1px solid var(--line)", marginBottom: 8 }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", color: "var(--ink-3)", textTransform: "uppercase" as const }}>Anchor Rationale</p>
+                    <p style={{ margin: 0, fontSize: 12, color: "var(--ink-1)", lineHeight: 1.6 }}>{planData.anchor_reason}</p>
+                  </div>
+                )}
+                {planData.entry_time && (
+                  <p style={{ margin: 0, fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>
+                    Submitted: {fmtTz(planData.entry_time, tz)}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{
+                margin: 0, fontSize: 12.5, lineHeight: 1.65,
+                color: "var(--ink-0)", wordBreak: "break-word", overflowWrap: "break-word",
+              }}>
+                {text}
+              </p>
+            )}
             {showConfirm && (
               <div style={{ marginTop: 10, background: "var(--card)", border: "1px solid var(--line-hi)", borderRadius: 6, padding: "12px 14px" }}>
                 <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--ink-0)", fontWeight: 600 }}>Delete this comment?</p>
@@ -964,22 +1160,57 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
   );
 }
 
+/* Return UTC ms for Monday 00:00 of the current Melbourne week */
+function weekStartMs(): number {
+  const now  = new Date();
+  const melb = new Date(now.toLocaleString("en-US", { timeZone: "Australia/Melbourne" }));
+  const dow  = melb.getDay();                         // 0=Sun … 6=Sat
+  const daysFromMon = dow === 0 ? 6 : dow - 1;
+  const yr   = melb.getFullYear();
+  const mo   = String(melb.getMonth() + 1).padStart(2, "0");
+  const dy   = String(melb.getDate() - daysFromMon).padStart(2, "0");
+  return new Date(tzLocalToUTC(`${yr}-${mo}-${dy}T00:00`, "Australia/Melbourne")).getTime();
+}
+
 function JournalTimeline({
-  trades, tradingLoading, comments, commentsLoading, tz, analystMode, onDeleteComment, onRefresh,
+  trades, tradingLoading, comments, commentsLoading, tz, analystMode, operatorView, onDeleteComment, onRefresh,
 }: {
   trades: OptimalRow[];    tradingLoading: boolean;
   comments: CommentRow[];  commentsLoading: boolean; tz: string;
   analystMode?: boolean;
+  operatorView?: boolean;    /* operator mode: filter to this week + operator comments only */
   onDeleteComment?: (id: string) => Promise<void>;
   onRefresh?: () => void;
 }) {
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
+  const [expandedPlanIndices, setExpandedPlanIndices] = useState<Set<number>>(new Set());
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const loading = tradingLoading || commentsLoading;
+
+  const togglePlan = (idx: number) =>
+    setExpandedPlanIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+
+  /* ── Operator view filters ── */
+  const weekMs = operatorView ? weekStartMs() : 0;
+  const visibleComments = operatorView
+    ? comments.filter(c =>
+        !c.content.startsWith("Analyst comment:") &&
+        new Date(c.Entry).getTime() >= weekMs
+      )
+    : comments;
+  const visibleTrades = operatorView
+    ? trades.filter(t => new Date(t.entry).getTime() >= weekMs)
+    : trades;
 
   /* ── collect all key timestamps for non-linear scale ── */
   const keyMs: number[] = [
-    ...trades.flatMap(t => [new Date(t.entry).getTime(), new Date(t.exit).getTime()]),
-    ...comments.map(c => new Date(c.Entry).getTime()),
+    ...visibleTrades.flatMap(t => [new Date(t.entry).getTime(), new Date(t.exit).getTime()]),
+    ...visibleComments.map(c => new Date(c.Entry).getTime()),
   ].filter(n => !isNaN(n));
 
   const hasData = keyMs.length > 0;
@@ -999,23 +1230,35 @@ function JournalTimeline({
   const toYMs  = (ms: number)  => totalPx + TL_PAD - yAt(ms, yPts);
 
   /* ── trade layout ────────────────────────────────────── */
-  const placed  = assignTradeCols(trades);
+  const placed  = assignTradeCols(visibleTrades);
   const numCols = placed.length ? Math.max(...placed.map(p => p.col)) + 1 : 1;
   const AXIS_X  = TL_LEFT_ZONE + numCols * TL_COL_W;
 
   /* ── comment positions with collision avoidance ─────── */
+  const PLAN_EXTRA = 300; // extra canvas px when an entry plan is expanded
   const commentTops: number[] = (() => {
-    const raw = comments.map((c, i) => ({ i, y: toY(c.Entry) - 12 }));
+    const raw = visibleComments.map((c, i) => ({ i, y: toY(c.Entry) - 12 }));
     raw.sort((a, b) => a.y - b.y);
-    const out = comments.map(c => toY(c.Entry) - 12);
+    const out = visibleComments.map(c => toY(c.Entry) - 12);
     let prevY = -Infinity;
     for (const { i, y } of raw) {
       const placed = Math.max(y, prevY + 40);
       out[i] = placed;
       prevY = placed;
     }
+    // Second pass: push comments below expanded entry plans down
+    let extra = 0;
+    for (const { i } of raw) {
+      out[i] += extra;
+      if (expandedPlanIndices.has(i) && visibleComments[i].content.startsWith("entry_plan:")) {
+        extra += PLAN_EXTRA;
+      }
+    }
     return out;
   })();
+  const totalExtra = [...expandedPlanIndices].reduce(
+    (sum, idx) => visibleComments[idx]?.content.startsWith("entry_plan:") ? sum + PLAN_EXTRA : sum, 0
+  );
 
   /* ── midnight day ticks ──────────────────────────────── */
   const ticks: { label: string; y: number }[] = [];
@@ -1038,19 +1281,19 @@ function JournalTimeline({
       <CardHeader
         title="Session Journal"
         badge={!loading && hasData
-          ? <span className="chip chip-muted">{trades.length} trades · {comments.length} comments · last 2w</span>
+          ? <span className="chip chip-muted">{visibleTrades.length} trades · {visibleComments.length} comments · {operatorView ? "this week" : "last 2w"}</span>
           : undefined}
         actions={<IconBtn icon="refresh" onClick={onRefresh} />}
       />
-      <div style={{ overflowY: "auto", maxHeight: 560, overflowX: "hidden", width: "100%", padding: "16px 0" }}>
+      <div ref={scrollRef} style={{ overflowY: "auto", maxHeight: 560, overflowX: "hidden", width: "100%", padding: "16px 0" }}>
         {loading && (
           <div style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</div>
         )}
         {!loading && !hasData && (
-          <div style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No data in the last 2 weeks</div>
+          <div style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>{operatorView ? "No data this week" : "No data in the last 2 weeks"}</div>
         )}
         {!loading && hasData && (
-          <div style={{ position: "relative", width: "100%", height: totalPx + TL_PAD, minHeight: 280, overflow: "hidden" }}>
+          <div style={{ position: "relative", width: "100%", height: totalPx + TL_PAD + totalExtra, minHeight: 280, overflow: "hidden" }}>
 
             {/* Axis */}
             <div style={{ position: "absolute", left: AXIS_X, top: 0, bottom: 0, width: 2, background: "var(--line-hi)", borderRadius: 1 }} />
@@ -1085,20 +1328,34 @@ function JournalTimeline({
             ))}
 
             {/* Trade bars */}
-            {placed.map(({ trade, col }) => (
-              <TLTrade
-                key={trade.optimal_trade_id}
-                trade={trade}
-                y1={toY(trade.entry)}
-                y2={toY(trade.exit)}
-                col={col}
-                axisX={AXIS_X}
-                tz={tz}
-              />
-            ))}
+            {placed.map(({ trade, col }) => {
+              const tradeTop = Math.min(toY(trade.entry), toY(trade.exit));
+              return (
+                <TLTrade
+                  key={trade.optimal_trade_id}
+                  trade={trade}
+                  y1={toY(trade.entry)}
+                  y2={toY(trade.exit)}
+                  col={col}
+                  axisX={AXIS_X}
+                  tz={tz}
+                  selected={selectedTradeId === trade.optimal_trade_id}
+                  onDoubleClick={() => {
+                    const isNowSelected = selectedTradeId !== trade.optimal_trade_id;
+                    setSelectedTradeId(isNowSelected ? trade.optimal_trade_id : null);
+                    if (isNowSelected && scrollRef.current) {
+                      scrollRef.current.scrollTo({
+                        top: Math.max(0, tradeTop - 200),
+                        behavior: "smooth",
+                      });
+                    }
+                  }}
+                />
+              );
+            })}
 
             {/* Comment nodes */}
-            {comments.map((c, i) => (
+            {visibleComments.map((c, i) => (
               <TLComment
                 key={c.id ?? i}
                 comment={c}
@@ -1111,6 +1368,8 @@ function JournalTimeline({
                 onBlur={() => setFocusedIdx(null)}
                 canDelete={analystMode}
                 onDelete={onDeleteComment ? () => onDeleteComment(c.created_at) : undefined}
+                planExpanded={expandedPlanIndices.has(i)}
+                onPlanExpandToggle={() => togglePlan(i)}
               />
             ))}
 
@@ -1351,6 +1610,184 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
         <button type="submit" className="btn btn-primary" disabled={!content.trim() || submitting} style={{ width: "100%", padding: "11px", fontSize: 12.5, opacity: submitting ? 0.6 : 1 }}>
           {submitting ? "Saving…" : "Submit"}
         </button>
+      </form>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ENTRY CHECKLIST FORM  —  Operator mode only
+   Not immediate → 3 fields: Skip Anchor 1 · Skip Anchor 2 · Target Anchor
+   Immediate     → 2 fields: Skip Anchor 1 · Target Anchor
+   Last field is always the Target Anchor (anchor: true in JSON).
+═══════════════════════════════════════════════════════════ */
+function EntryChecklistForm({ baseTZ, onSuccess, showToast }: {
+  baseTZ: string; onSuccess?: () => void; showToast: ShowToast;
+}) {
+  const [isImmediate,  setIsImmediate]  = useState(false);
+  /* Always keep 3 datetime slots; show 2 or 3 based on toggle */
+  const [dts,          setDts]          = useState<string[]>(() => [
+    nowInTZ(baseTZ), nowInTZ(baseTZ), nowInTZ(baseTZ),
+  ]);
+  const [anchorReason, setAnchorReason] = useState("");
+  const [submitting,   setSubmitting]   = useState(false);
+  const [lastErr,      setLastErr]      = useState<string | null>(null);
+
+  /* Immediate: 2 entries [Skip Anchor 1, Target Anchor]
+     Not immediate: 3 entries [Skip Anchor 1, Skip Anchor 2, Target Anchor] */
+  const count  = isImmediate ? 2 : 3;
+  const labels = isImmediate
+    ? ["Skip Anchor 1", "Target Anchor"]
+    : ["Skip Anchor 1", "Skip Anchor 2", "Target Anchor"];
+
+  function setDt(idx: number, val: string) {
+    setDts(prev => prev.map((d, i) => i === idx ? val : d));
+  }
+
+  function reset() {
+    setIsImmediate(false);
+    setDts([nowInTZ(baseTZ), nowInTZ(baseTZ), nowInTZ(baseTZ)]);
+    setAnchorReason("");
+    setLastErr(null);
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setLastErr(null);
+
+    const plan = {
+      id:           crypto.randomUUID(),
+      immediate:    isImmediate,
+      entries:      Array.from({ length: count }, (_, i) => ({
+        label:    labels[i],
+        datetime: tzLocalToUTC(dts[i], baseTZ),
+        anchor:   i === count - 1,   // last entry is always Target Anchor
+      })),
+      anchor_reason: anchorReason.trim(),
+      entry_time:    new Date().toISOString(),
+    };
+
+    try {
+      const res = await fetch("/api/session/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content:    `entry_plan: ${JSON.stringify(plan)}`,
+          created_at: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        const msg = j.error ?? `Server error ${res.status}`;
+        setLastErr(msg); showToast("error", msg);
+      } else {
+        showToast("success", "Entry plan submitted");
+        reset();
+        onSuccess?.();
+      }
+    } catch {
+      const msg = "Network error — plan not saved";
+      setLastErr(msg); showToast("error", msg);
+    }
+    setSubmitting(false);
+  }
+
+  return (
+    <div className="card" style={{ overflow: "hidden" }}>
+      <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M3 4h10M3 8h7M3 12h4" stroke="var(--green)" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>Entry Checklist</span>
+      </div>
+
+      <form onSubmit={submit} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+
+        {/* Immediate checkbox */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }} onClick={() => setIsImmediate(o => !o)}>
+          <div style={{
+            width: 17, height: 17, borderRadius: 4, flexShrink: 0,
+            background: isImmediate ? "rgba(0,204,122,0.2)" : "var(--sub)",
+            border: `1.5px solid ${isImmediate ? "rgba(0,204,122,0.6)" : "var(--line-hi)"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "background 0.15s, border-color 0.15s",
+          }}>
+            {isImmediate && (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+                <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="var(--green)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </div>
+          <span style={{ fontSize: 13.5, fontWeight: 700, color: isImmediate ? "var(--green)" : "var(--ink-1)", letterSpacing: "-0.01em" }}>
+            Immediate
+          </span>
+          <span style={{ fontSize: 10, color: "var(--ink-3)", fontStyle: "italic" }}>
+            {isImmediate ? "2 fields" : "3 fields"}
+          </span>
+        </div>
+
+        {/* Entry datetime fields — always shown */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {Array.from({ length: count }, (_, i) => {
+            const isTarget = i === count - 1;
+            return (
+              <div key={i} style={{
+                padding: "10px 12px", borderRadius: 6,
+                background: isTarget ? "rgba(0,204,122,0.05)" : "var(--sub)",
+                border: `1px solid ${isTarget ? "rgba(0,204,122,0.32)" : "var(--line-hi)"}`,
+              }}>
+                <div style={{ marginBottom: 7 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" as const, color: isTarget ? "var(--green)" : "var(--ink-2)" }}>
+                    {labels[i]}
+                    {isTarget && (
+                      <span style={{ marginLeft: 7, fontSize: 9, background: "rgba(0,204,122,0.15)", border: "1px solid rgba(0,204,122,0.3)", borderRadius: 3, padding: "1px 5px", color: "var(--green)", fontWeight: 700 }}>
+                        ⚓ ANCHOR
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <input
+                  type="datetime-local" style={INP} value={dts[i]}
+                  onChange={e => setDt(i, e.target.value)}
+                  onPaste={ev => {
+                    const parsed = parseFlexDatetime(ev.clipboardData.getData("text"));
+                    if (parsed) { ev.preventDefault(); setDt(i, parsed); }
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Anchor rationale */}
+        <div>
+          <label style={LBL}>Anchor Choice Rationale</label>
+          <textarea
+            style={{ ...INP, minHeight: 72, resize: "vertical" }}
+            placeholder="Explain why this level is the target anchor…"
+            value={anchorReason}
+            onChange={e => setAnchorReason(e.target.value)}
+          />
+        </div>
+
+        {lastErr && (
+          <div style={{ display: "flex", gap: 8, padding: "9px 11px", borderRadius: 5, background: "rgba(240,58,87,0.08)", border: "1px solid rgba(240,58,87,0.25)" }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="8" cy="8" r="7" stroke="#f03a57" strokeWidth="1.3"/><path d="M8 5v3.5M8 10.5h.01" stroke="#f03a57" strokeWidth="1.4" strokeLinecap="round"/></svg>
+            <span style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5 }}>{lastErr}</span>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={reset}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 5, background: "var(--sub)", border: "1px solid var(--line-hi)", color: "var(--ink-1)", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>
+            Reset
+          </button>
+          <button type="submit" disabled={submitting} className="btn btn-primary"
+            style={{ flex: 2, padding: "10px 0", fontSize: 12.5, opacity: submitting ? 0.6 : 1 }}>
+            {submitting ? "Submitting…" : "Submit Plan"}
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -1664,7 +2101,9 @@ export default function SessionClient({ user }: { user: User }) {
     setBaseTZ(tz);
     if (typeof window !== "undefined") localStorage.setItem("xtnl_tz", tz);
   }, []);
-  const [selId,        setSelId]        = useState<string | null>(null);
+  const [selId,          setSelId]          = useState<string | null>(null);
+  const [showChecklist,  setShowChecklist]  = useState(false);
+  const [opMainView,     setOpMainView]     = useState<"mirror" | "journal">("mirror");
 
   /* ── Toast notifications ─────────────────────────── */
   const [toasts,   setToasts]  = useState<ToastMsg[]>([]);
@@ -1832,7 +2271,7 @@ export default function SessionClient({ user }: { user: User }) {
               <option key={z.value} value={z.value}>{z.label}  {tzOffset(z.value)}</option>
             ))}
           </select>
-          <span style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)", flexShrink: 0 }}>
+          <span suppressHydrationWarning style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)", flexShrink: 0 }}>
             {nowInTZ(baseTZ).replace("T", " ")}
           </span>
         </div>
@@ -1866,10 +2305,72 @@ export default function SessionClient({ user }: { user: User }) {
         ════════════════════════════════════════════════════ */}
         {effectiveMode === "operator" && (
           <div className="session-2col">
+
+            {/* ── Main panel ── */}
             <div className="session-main">
-              <FrictionPanel f={FRICTION} />
+
+              {/* Tab strip */}
+              <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 28 }}>
+                {(["mirror", "journal"] as const).map(view => {
+                  const active = opMainView === view;
+                  return (
+                    <button key={view} type="button" onClick={() => setOpMainView(view)} style={{
+                      padding: "9px 20px", border: "none", background: "none",
+                      borderBottom: `2px solid ${active ? "var(--green)" : "transparent"}`,
+                      marginBottom: -1,
+                      color: active ? "var(--ink-0)" : "var(--ink-3)",
+                      fontSize: 12.5, fontWeight: active ? 700 : 400,
+                      letterSpacing: "0.015em", cursor: "pointer",
+                      transition: "color 0.15s, border-color 0.15s",
+                    }}>
+                      {view === "mirror" ? "Mirror · LLM Audit" : "Session Journal"}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {opMainView === "mirror"  && <FrictionPanel f={FRICTION} />}
+              {opMainView === "journal" && (
+                <JournalTimeline
+                  trades={optimalRows} tradingLoading={loadingOpt}
+                  comments={commentRows} commentsLoading={loadingComm}
+                  tz={baseTZ} operatorView onRefresh={fetchJournal}
+                />
+              )}
             </div>
+
+            {/* ── Sidebar: always visible regardless of main tab ── */}
             <div className="session-sidebar session-sidebar-340">
+
+              {/* Entry Checklist toggle */}
+              <button
+                type="button"
+                onClick={() => setShowChecklist(o => !o)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 9, width: "100%",
+                  padding: "10px 14px", borderRadius: 6, border: "none",
+                  background: showChecklist ? "rgba(0,204,122,0.07)" : "var(--sub)",
+                  outline: `1px solid ${showChecklist ? "rgba(0,204,122,0.25)" : "var(--line-hi)"}`,
+                  cursor: "pointer", textAlign: "left" as const,
+                  transition: "background 0.15s, outline-color 0.15s",
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <path d="M3 4h10M3 8h7M3 12h4" stroke={showChecklist ? "var(--green)" : "var(--ink-3)"} strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 600, color: showChecklist ? "var(--green)" : "var(--ink-1)", flex: 1, letterSpacing: "0.01em" }}>
+                  Entry Checklist
+                </span>
+                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden
+                  style={{ transition: "transform 0.2s", transform: showChecklist ? "rotate(180deg)" : "none", color: "var(--ink-3)", flexShrink: 0 }}>
+                  <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              {showChecklist && (
+                <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchComments} showToast={showToast} />
+              )}
+
               <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
             </div>
           </div>
