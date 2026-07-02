@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 
 /* ─── Types ─────────────────────────────────────────────── */
 
@@ -1687,65 +1687,595 @@ function SummaryPanel({ sections }: { sections: Section[] }) {
   );
 }
 
+/* ─── Decision panel ─────────────────────────────────────── */
+
+function DecisionPanel({ m, sections }: { m: InferredMetrics; sections: Section[] }) {
+  const isFail = m.status.includes("FAIL");
+  const isRisk = !isFail && (m.status.includes("RISK") || m.status.includes("REDUCE") || m.status.includes("CAUTION") || m.status.includes("Bleed"));
+  const statusColor   = isFail ? "var(--red)" : isRisk ? "var(--amber)" : "var(--green)";
+  const bgAlpha       = isFail ? "rgba(240,58,87,0.07)"  : isRisk ? "rgba(240,160,48,0.07)"  : "rgba(0,204,122,0.07)";
+  const borderAlpha   = isFail ? "rgba(240,58,87,0.22)"  : isRisk ? "rgba(240,160,48,0.22)"  : "rgba(0,204,122,0.22)";
+
+  const parts   = m.status.split(" - ");
+  const primary = sections.find(s => s.label === "Session Filtered") ?? sections[0];
+  const live    = sections.find(s => s.label === "Live Session");
+
+  const zItems: Array<{ label: string; value: number; tip: string }> = [
+    { label: "Z CURR→LONG", value: m.zCurrentToLong, tip: "Current session performance vs long-run system" },
+    { label: "Z WEEK→SYS",  value: m.zWeekToSystem,  tip: "This week cumulative vs long-run mean" },
+    { label: "Z ACTUAL SYS",value: m.zActualSystem,   tip: "Realised R vs long-run expectation" },
+  ];
+
+  return (
+    <div style={{ background: bgAlpha, border: `1px solid ${borderAlpha}`, borderRadius: 10, padding: "22px 24px", marginBottom: 24 }}>
+
+      {/* ── Row 1: verdict + recommend R ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
+        <div>
+          <div className="mono" style={{ fontSize: 8, letterSpacing: "0.16em", color: statusColor, marginBottom: 6, opacity: 0.75 }}>SYSTEM DECISION</div>
+          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: statusColor, letterSpacing: "0.04em", lineHeight: 1 }}>
+            {parts[0]}
+          </div>
+          {parts[1] && (
+            <div className="mono" style={{ fontSize: 11, color: statusColor, opacity: 0.65, marginTop: 5, letterSpacing: "0.04em" }}>
+              {parts[1].replace(/_/g, " ")}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ textAlign: "right" }}>
+            <div className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)", marginBottom: 5 }}>RECOMMEND R</div>
+            <div className="mono" style={{ fontSize: 30, fontWeight: 800, color: m.recommendR > 0 ? "var(--green)" : "var(--amber)", lineHeight: 1 }}>
+              {m.recommendR.toFixed(3)}
+            </div>
+            <div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", marginTop: 4 }}>per trade</div>
+          </div>
+          {primary && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+              <div>
+                <div className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)", marginBottom: 3 }}>SYS HEALTH</div>
+                <HealthBadge health={primary.health} />
+              </div>
+              {live && (
+                <div>
+                  <div className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)", marginBottom: 3 }}>LIVE HEALTH</div>
+                  <HealthBadge health={live.health} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Row 2: Z-scores ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+        {zItems.map(({ label, value, tip }) => {
+          const pos  = value >= 0;
+          const mag  = Math.abs(value);
+          const col  = mag > 1.5 ? (pos ? "var(--green)" : "var(--red)") : mag > 0.5 ? (pos ? "var(--ink-1)" : "var(--amber)") : "var(--ink-2)";
+          return (
+            <div key={label} title={tip} style={{ background: "rgba(0,0,0,0.18)", borderRadius: 6, padding: "10px 12px" }}>
+              <div className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)", marginBottom: 4 }}>{label}</div>
+              <div className="mono" style={{ fontSize: 19, fontWeight: 700, color: col, lineHeight: 1 }}>
+                {pos ? "+" : ""}{value.toFixed(3)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Row 3: execution quality ── */}
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", paddingTop: 14, borderTop: `1px solid ${borderAlpha}` }}>
+        {[
+          { label: "REALISED R",   value: fmt(m.realisedR, 2),    color: "var(--green)" },
+          { label: "PERFECT R",    value: fmt(m.perfectExecuteR, 2), color: "var(--ink-2)" },
+          { label: "CAPTURE",      value: fmt(m.captureRate, 3),   color: m.captureRate >= 0.8 ? "var(--green)" : "var(--amber)" },
+          { label: "EFFICIENCY",   value: fmt(m.efficiencyRating, 3), color: m.efficiencyRating >= 0.8 ? "var(--green)" : "var(--amber)" },
+          { label: "BAD TRADE %",  value: `${(m.badTradePct * 100).toFixed(1)}%`, color: m.badTradePct > 0.3 ? "var(--red)" : "var(--ink-2)" },
+          { label: "MISSED / BAD", value: String(m.missedOrBadTrades), color: m.missedOrBadTrades > 0 ? "var(--red)" : "var(--ink-2)" },
+        ].map(({ label, value, color }) => (
+          <div key={label}>
+            <div className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)", marginBottom: 3 }}>{label}</div>
+            <div className="mono" style={{ fontSize: 13, fontWeight: 700, color }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Snapshot table (all subsystems at a glance) ─────────── */
+
+function SnapshotTable({
+  sections, activeSection, onSelect,
+}: { sections: Section[]; activeSection: string; onSelect: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <div style={{ ...CARD, marginBottom: 24 }}>
+      <button
+        onClick={() => setExpanded(o => !o)}
+        style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", padding: 0, width: "100%", marginBottom: expanded ? 12 : 0 }}
+      >
+        <span className="mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--ink-3)" }}>ALL SUBSYSTEMS</span>
+        <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)" }}>{sections.length} sets</span>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-3)" }}>{expanded ? "▲" : "▼"}</span>
+      </button>
+      {expanded && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }} className="mono">
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                {["Subsystem", "Health", "n", "SQN", "RSQN-W", "Expect.", "95CI↓", "WFO", "Rec R", "Vel 24h"].map(h => (
+                  <th key={h} style={{ padding: "5px 9px", textAlign: h === "Subsystem" ? "left" : "right", color: "var(--ink-3)", fontWeight: 600, fontSize: 9, letterSpacing: "0.07em", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sections.map((s, i) => {
+                const active = activeSection === s.id;
+                const hcol   = healthColor(s.health);
+                return (
+                  <tr
+                    key={s.id}
+                    onClick={() => onSelect(s.id)}
+                    style={{
+                      background: active ? "var(--raised)" : i % 2 === 0 ? "transparent" : ROW_ALT,
+                      cursor: "pointer", transition: "background 0.12s",
+                      borderLeft: `3px solid ${active ? hcol : "transparent"}`,
+                    }}
+                  >
+                    <td style={{ padding: "6px 9px", color: active ? "var(--ink-0)" : "var(--ink-1)", fontWeight: active ? 700 : 400, whiteSpace: "nowrap" }}>{s.label}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "right" }}><HealthBadge health={s.health} /></td>
+                    <td style={{ padding: "6px 9px", textAlign: "right", color: "var(--ink-3)" }}>{s.core.sampleSize}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "right", color: s.core.sqn > 2 ? "var(--green)" : s.core.sqn > 0 ? "var(--ink-1)" : "var(--red)" }}>{fmt(s.core.sqn)}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "right", color: s.secondary.rollingSqnWeighted > 2 ? "var(--green)" : s.secondary.rollingSqnWeighted > 0 ? "var(--ink-1)" : "var(--red)" }}>{fmt(s.secondary.rollingSqnWeighted)}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "right", color: s.core.expectancyMean > 0 ? "var(--ink-1)" : "var(--red)" }}>{fmt(s.core.expectancyMean)}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "right", color: s.core.baseline95CiLower > 0 ? "var(--green)" : "var(--red)" }}>{fmt(s.core.baseline95CiLower)}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "right" }}><WfoBadge status={s.wfoStatus} /></td>
+                    <td style={{ padding: "6px 9px", textAlign: "right", color: s.recommendR > 0 ? "var(--green)" : "var(--amber)", fontWeight: 600 }}>{fmt(s.recommendR, 4)}</td>
+                    <td style={{ padding: "6px 9px", textAlign: "right", color: "var(--blue)" }}>{fmt(s.rVelocity24h, 2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Session Builder ─────────────────────────────────────── */
+
+function SessionBuilder({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
+  const keys = Object.keys(hourly);
+  const [dataset,  setDataset]  = useState(keys[0] ?? "");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const rows    = useMemo(() => hourly[dataset] ?? [], [hourly, dataset]);
+  const hourMap = useMemo(() => new Map(rows.map(r => [r.hour, r])), [rows]);
+
+  /* Default: select positive-expectancy hours whenever the dataset changes */
+  useEffect(() => {
+    setSelected(new Set(rows.filter(r => r.expectancy > 0).map(r => r.hour)));
+  }, [rows]);
+
+  const toggle = useCallback((h: number) => setSelected(prev => {
+    const n = new Set(prev); n.has(h) ? n.delete(h) : n.add(h); return n;
+  }), []);
+
+  /* Aggregates for selected hours */
+  const sessionRows      = useMemo(() => rows.filter(r => selected.has(r.hour)), [rows, selected]);
+  const sessionCount     = useMemo(() => sessionRows.reduce((s, r) => s + r.count, 0), [sessionRows]);
+  const sessionExpect    = useMemo(() =>
+    sessionCount > 0 ? sessionRows.reduce((s, r) => s + r.expectancy * r.count, 0) / sessionCount : 0,
+    [sessionRows, sessionCount]);
+  const sessionWinRate   = useMemo(() =>
+    sessionCount > 0 ? sessionRows.reduce((s, r) => s + r.winRate * r.count, 0) / sessionCount : 0,
+    [sessionRows, sessionCount]);
+  const sessionTotalR    = useMemo(() =>
+    sessionRows.reduce((s, r) => s + r.expectancy * r.count, 0), [sessionRows]);
+
+  /* Cumulative R trajectory across 24 h (step-function: only selected hours contribute) */
+  const chartData = useMemo(() => {
+    let cum = 0;
+    return Array.from({ length: 24 }, (_, h) => {
+      const row   = hourMap.get(h) ?? null;
+      const inSel = selected.has(h) && !!row;
+      if (inSel && row) cum += row.expectancy;
+      return { h, row, inSel, cum };
+    });
+  }, [hourMap, selected]);
+
+  /* SVG chart scales */
+  const allExp = rows.map(r => r.expectancy);
+  const maxExp = allExp.length ? Math.max(0.01, ...allExp) : 1;
+  const minExp = allExp.length ? Math.min(-0.01, ...allExp) : -1;
+  const cums   = chartData.map(d => d.cum);
+  const maxCum = Math.max(0.01, ...cums);
+  const minCum = Math.min(-0.01, ...cums);
+
+  const W = 720, H = 260, PL = 8, PR = 52, PT = 16, PB = 32;
+  const iW = W - PL - PR, iH = H - PT - PB;
+  const bW = iW / 24;
+  const BAR_FRAC = 0.58, DIV = 10;
+  const barH  = iH * BAR_FRAC;
+  const cumH  = iH - barH - DIV;
+  const eRange = Math.max(0.01, maxExp - minExp);
+  const barZeroY = PT + (maxExp / eRange) * barH;
+  const cumTop   = PT + barH + DIV;
+  const cRange   = Math.max(0.01, maxCum - minCum);
+
+  function eToY(v: number)   { return PT + (1 - (v - minExp) / eRange) * barH; }
+  function cumToY(v: number) { return cumTop + cumH - ((v - minCum) / cRange) * cumH; }
+
+  const linePts = chartData
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${(PL + i * bW + bW / 2).toFixed(1)} ${cumToY(d.cum).toFixed(1)}`)
+    .join(" ");
+
+  const finalCum = cums[23] ?? 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* Row 1: Dataset tabs + quick-select filters */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        {/* Dataset tabs */}
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", flex: 1 }}>
+          {keys.map(k => (
+            <button key={k} onClick={() => setDataset(k)} className="mono"
+              style={{ padding: "5px 12px", borderRadius: 5, cursor: "pointer",
+                fontSize: 9, letterSpacing: "0.07em",
+                background: dataset === k ? "rgba(77,156,245,0.12)" : "transparent",
+                border: `1px solid ${dataset === k ? "rgba(77,156,245,0.35)" : "var(--line)"}`,
+                color: dataset === k ? "#4d9cf5" : "var(--ink-3)",
+                transition: "all 0.12s",
+              }}>
+              {k.replace(/_/g, " ").replace("full optimal sample", "").trim() || k}
+            </button>
+          ))}
+        </div>
+        {/* Quick-select */}
+        <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
+          <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em" }}>FILTER</span>
+          {([
+            ["+ Expect.", () => setSelected(new Set(rows.filter(r => r.expectancy > 0).map(r => r.hour)))],
+            ["|t| ≥ 1.5",  () => setSelected(new Set(rows.filter(r => Math.abs(r.tStat ?? 0) >= 1.5).map(r => r.hour)))],
+            ["All",        () => setSelected(new Set(rows.map(r => r.hour)))],
+            ["Clear",      () => setSelected(new Set<number>())],
+          ] as [string, () => void][]).map(([label, fn]) => (
+            <button key={label} onClick={fn}
+              style={{ padding: "4px 10px", borderRadius: 4, background: "var(--sub)",
+                border: "1px solid var(--line)", color: "var(--ink-2)", fontSize: 10, cursor: "pointer",
+                transition: "background 0.12s",
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="mono" style={{ fontSize: 8.5, color: "var(--ink-3)", flexShrink: 0 }}>
+          {selected.size}/{rows.length} hrs · {sessionCount} trades
+        </span>
+      </div>
+
+      {/* Row 2: Session stat summary */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+        {([
+          ["HOURS",        String(selected.size),                                                      "var(--ink-0)"],
+          ["TRADES (n)",   String(sessionCount),                                                       "var(--ink-1)"],
+          ["WTD EXPECT.",  `${sessionExpect >= 0 ? "+" : ""}${sessionExpect.toFixed(3)} R`,            sessionExpect  > 0 ? "var(--green)" : "var(--red)"],
+          ["WTD WIN RATE", `${sessionWinRate.toFixed(1)}%`,                                            sessionWinRate > 50 ? "var(--green)" : "var(--amber)"],
+          ["PROJECTED ∑R", `${sessionTotalR >= 0 ? "+" : ""}${sessionTotalR.toFixed(2)}`,             sessionTotalR  > 0 ? "var(--green)" : "var(--red)"],
+        ] as [string, string, string][]).map(([label, value, color]) => (
+          <div key={label} style={{ background: "var(--raised)", border: "1px solid var(--line)", borderRadius: 7, padding: "12px 14px" }}>
+            <div className="mono" style={{ fontSize: 7.5, letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 6 }}>{label}</div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Row 3: Artifact — Expectancy bars + cumulative R trajectory */}
+      <div style={{ background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, overflow: "hidden" }}>
+        {/* Chart legend header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "12px 16px 6px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: "#00cc7a88" }} />
+            <span className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)" }}>HOURLY EXPECTANCY</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="20" height="4" viewBox="0 0 20 4"><line x1="0" y1="2" x2="20" y2="2" stroke="#4d9cf5" strokeWidth="2"/><circle cx="10" cy="2" r="2.5" fill="#4d9cf5"/></svg>
+            <span className="mono" style={{ fontSize: 8, color: "rgba(77,156,245,0.7)", letterSpacing: "0.08em" }}>CUMULATIVE R — SELECTED HOURS</span>
+          </div>
+          <span className="mono" style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: finalCum >= 0 ? "var(--green)" : "var(--red)" }}>
+            ∑R {finalCum >= 0 ? "+" : ""}{finalCum.toFixed(2)}
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+
+          {/* Background grid */}
+          <line x1={PL} y1={barZeroY} x2={PL + iW} y2={barZeroY}
+            stroke="rgba(255,255,255,0.12)" strokeWidth={0.8} />
+          <line x1={PL} y1={cumTop + cumH / 2} x2={PL + iW} y2={cumTop + cumH / 2}
+            stroke="rgba(77,156,245,0.08)" strokeWidth={0.5} />
+          <line x1={PL} y1={cumToY(0)} x2={PL + iW} y2={cumToY(0)}
+            stroke="rgba(77,156,245,0.22)" strokeWidth={0.8} strokeDasharray="3,4" />
+
+          {/* Zone separator */}
+          <line x1={PL} y1={cumTop - DIV / 2} x2={PL + iW} y2={cumTop - DIV / 2}
+            stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
+
+          {/* Bars (expectancy per hour) */}
+          {chartData.map(({ h, row, inSel }) => {
+            if (!row) return null;
+            const pos  = row.expectancy >= 0;
+            const col  = pos ? "#00cc7a" : "#f03a57";
+            const y0   = barZeroY;
+            const y1   = eToY(row.expectancy);
+            return (
+              <rect key={h}
+                x={PL + h * bW + 1.5} y={Math.min(y0, y1)}
+                width={Math.max(1, bW - 3)} height={Math.abs(y1 - y0)}
+                fill={`${col}${inSel ? "cc" : "1a"}`}
+                stroke={inSel ? `${col}55` : "none"} strokeWidth={0.5}
+                rx={1}
+              />
+            );
+          })}
+
+          {/* Cumulative R area fill */}
+          <defs>
+            <linearGradient id="cumFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4d9cf5" stopOpacity={0.18} />
+              <stop offset="100%" stopColor="#4d9cf5" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {(() => {
+            const pts = chartData.map((d, i) => `${(PL + i * bW + bW / 2).toFixed(1)},${cumToY(d.cum).toFixed(1)}`).join(" ");
+            const lastX = (PL + 23 * bW + bW / 2).toFixed(1);
+            const fillPath = `M ${PL + bW / 2} ${cumToY(0)} L ${pts.split(" ").map((p, i) => (i === 0 ? "L " : "") + p).join(" L ")} L ${lastX} ${cumToY(0)} Z`;
+            return <path d={fillPath} fill="url(#cumFill)" />;
+          })()}
+
+          {/* Cumulative R line */}
+          <path d={linePts} fill="none" stroke="#4d9cf5" strokeWidth={2}
+            strokeLinejoin="round" strokeLinecap="round" />
+
+          {/* Dots at contributing hours */}
+          {chartData.filter(d => d.inSel).map(d => (
+            <circle key={d.h}
+              cx={PL + d.h * bW + bW / 2} cy={cumToY(d.cum)}
+              r={3} fill="#4d9cf5" stroke="rgba(4,8,15,0.9)" strokeWidth={1.5} />
+          ))}
+
+          {/* X-axis labels */}
+          {[0, 4, 8, 12, 16, 20, 23].map(h => (
+            <text key={h} x={PL + h * bW + bW / 2} y={H - PB + 13}
+              textAnchor="middle" fontSize={8.5} fill="rgba(255,255,255,0.3)" fontFamily="monospace">
+              {String(h).padStart(2, "0")}
+            </text>
+          ))}
+
+          {/* Y-axis labels */}
+          <text x={W - PR + 6} y={PT + 9} textAnchor="start" fontSize={7.5}
+            fill="rgba(255,255,255,0.25)" fontFamily="monospace">{maxExp.toFixed(2)}</text>
+          <text x={W - PR + 6} y={barZeroY + 3.5} textAnchor="start" fontSize={7.5}
+            fill="rgba(255,255,255,0.18)" fontFamily="monospace">0.00</text>
+          <text x={W - PR + 6} y={Math.max(cumTop + 12, Math.min(H - PB - 4, cumToY(finalCum) + 4))} textAnchor="start" fontSize={8}
+            fill={finalCum >= 0 ? "rgba(0,204,122,0.85)" : "rgba(240,58,87,0.85)"} fontFamily="monospace" fontWeight="bold">
+            {finalCum >= 0 ? "+" : ""}{finalCum.toFixed(2)}R
+          </text>
+        </svg>
+      </div>
+
+      {/* Row 4: Hour grid — 12 cols × 2 rows with AM/PM labels */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {/* AM row label */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em", minWidth: 28 }}>AM</span>
+          <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 5 }}>
+          {Array.from({ length: 12 }, (_, h) => {
+            const row   = hourMap.get(h);
+            const inSel = selected.has(h);
+            const pos   = row ? row.expectancy > 0 : false;
+            const sig   = row && row.tStat !== null && Math.abs(row.tStat) >= 1.5;
+            const col   = row ? (pos ? "#00cc7a" : "#f03a57") : "#555";
+            return (
+              <button key={h} onClick={() => row && toggle(h)}
+                style={{
+                  background: inSel && row ? `${col}18` : "rgba(255,255,255,0.025)",
+                  border: `1px solid ${inSel && row ? col + "50" : "rgba(255,255,255,0.07)"}`,
+                  borderTop: inSel && row ? `2px solid ${col}` : "2px solid transparent",
+                  borderRadius: 6, padding: "10px 6px 8px",
+                  cursor: row ? "pointer" : "default",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                  opacity: row ? 1 : 0.3,
+                  boxShadow: sig && inSel ? `0 0 0 1px ${col}50` : "none",
+                  transition: "background 0.15s, border-color 0.15s",
+                }}>
+                <span className="mono" style={{ fontSize: 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
+                  {String(h).padStart(2, "0")}h
+                </span>
+                {row ? (
+                  <>
+                    <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
+                      {row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(2)}
+                    </span>
+                    <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>
+                    {sig ? (
+                      <span style={{ fontSize: 7.5, color: col, fontFamily: "var(--font-mono)", fontWeight: 700, letterSpacing: "0.04em" }}>★ sig</span>
+                    ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>}
+                  </>
+                ) : (
+                  <span style={{ fontSize: 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {/* PM row label */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+          <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em", minWidth: 28 }}>PM</span>
+          <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 5 }}>
+          {Array.from({ length: 12 }, (_, i) => {
+            const h   = i + 12;
+            const row   = hourMap.get(h);
+            const inSel = selected.has(h);
+            const pos   = row ? row.expectancy > 0 : false;
+            const sig   = row && row.tStat !== null && Math.abs(row.tStat) >= 1.5;
+            const col   = row ? (pos ? "#00cc7a" : "#f03a57") : "#555";
+            return (
+              <button key={h} onClick={() => row && toggle(h)}
+                style={{
+                  background: inSel && row ? `${col}18` : "rgba(255,255,255,0.025)",
+                  border: `1px solid ${inSel && row ? col + "50" : "rgba(255,255,255,0.07)"}`,
+                  borderTop: inSel && row ? `2px solid ${col}` : "2px solid transparent",
+                  borderRadius: 6, padding: "10px 6px 8px",
+                  cursor: row ? "pointer" : "default",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                  opacity: row ? 1 : 0.3,
+                  boxShadow: sig && inSel ? `0 0 0 1px ${col}50` : "none",
+                  transition: "background 0.15s, border-color 0.15s",
+                }}>
+                <span className="mono" style={{ fontSize: 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
+                  {String(h).padStart(2, "0")}h
+                </span>
+                {row ? (
+                  <>
+                    <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
+                      {row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(2)}
+                    </span>
+                    <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>
+                    {sig ? (
+                      <span style={{ fontSize: 7.5, color: col, fontFamily: "var(--font-mono)", fontWeight: 700, letterSpacing: "0.04em" }}>★ sig</span>
+                    ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>}
+                  </>
+                ) : (
+                  <span style={{ fontSize: 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Row 5: Top hours ranked */}
+      {sessionRows.length > 0 && (
+        <div style={{ background: "var(--raised)", border: "1px solid var(--line)", borderRadius: 7, padding: "14px 16px" }}>
+          <div className="mono" style={{ fontSize: 8, letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 12 }}>TOP HOURS BY EXPECTANCY</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px 24px" }}>
+            {[...sessionRows]
+              .sort((a, b) => b.expectancy - a.expectancy)
+              .slice(0, 8)
+              .map(r => (
+                <div key={r.hour} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)", minWidth: 32 }}>{String(r.hour).padStart(2, "0")}h</span>
+                  <div style={{ flex: 1, background: "var(--card)", borderRadius: 2, height: 8, overflow: "hidden" }}>
+                    <div style={{ width: `${Math.min(100, Math.abs(r.expectancy) / maxExp * 100)}%`, height: "100%", background: r.expectancy > 0 ? "var(--green)" : "var(--red)", opacity: 0.75, borderRadius: 2 }} />
+                  </div>
+                  <span className="mono" style={{ fontSize: 11, color: r.expectancy > 0 ? "var(--green)" : "var(--red)", minWidth: 52, textAlign: "right" }}>
+                    {r.expectancy >= 0 ? "+" : ""}{r.expectancy.toFixed(3)}
+                  </span>
+                  <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)", minWidth: 32 }}>n={r.count}</span>
+                  {r.tStat !== null && <span className="mono" style={{ fontSize: 8, color: Math.abs(r.tStat) >= 1.5 ? "var(--green)" : "var(--ink-3)" }}>t={r.tStat.toFixed(2)}</span>}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main client ─────────────────────────────────────────── */
 
-const SESSION_KEY = "xtnl_analytics_raw";
+const SESSION_KEY = "xtnl_analytics_custom";
+
+type DataSource = "live" | "custom";
+type LiveStatus  = "idle" | "loading" | "loaded" | "error";
+interface LiveMeta { filename: string; reportDate: string; fetchedAt?: string }
 
 export default function AnalyticsClient({ user }: { user: { email?: string; name?: string } }) {
-  const [raw, setRaw] = useState(() =>
-    typeof window !== "undefined" ? (sessionStorage.getItem(SESSION_KEY) ?? DEFAULT_RAW) : DEFAULT_RAW
-  );
-  const [report, setReport] = useState<ParsedReport | null>(null);
-  const [activeSection, setActiveSection] = useState<string>("");
-  const [activeHourly, setActiveHourly] = useState<string>("");
-  const [inputOpen, setInputOpen] = useState(true);
-  const [parseError, setParseError] = useState("");
-  const [sessionRestored, setSessionRestored] = useState(false);
+  const [dataSource, setDataSource] = useState<DataSource>("live");
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>("idle");
+  const [liveError,  setLiveError]  = useState<string | null>(null);
+  const [liveMeta,   setLiveMeta]   = useState<LiveMeta | null>(null);
 
-  /* Persist raw text to sessionStorage whenever it changes */
+  const [raw,           setRaw]           = useState(() =>
+    typeof window !== "undefined" ? (sessionStorage.getItem(SESSION_KEY) ?? "") : ""
+  );
+  const [report,        setReport]        = useState<ParsedReport | null>(null);
+  const [activeSection, setActiveSection] = useState<string>("");
+  const [activeHourly,  setActiveHourly]  = useState<string>("");
+  const [inputOpen,          setInputOpen]          = useState(true);
+  const [parseError,         setParseError]         = useState("");
+  const [sessionBuilderOpen, setSessionBuilderOpen] = useState(false);
+
+  /* Close Session Builder on Escape */
   useEffect(() => {
+    if (!sessionBuilderOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSessionBuilderOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sessionBuilderOpen]);
+
+  /* Persist custom raw text to sessionStorage only when in custom mode */
+  useEffect(() => {
+    if (dataSource !== "custom") return;
     if (raw) sessionStorage.setItem(SESSION_KEY, raw);
     else sessionStorage.removeItem(SESSION_KEY);
-  }, [raw]);
+  }, [raw, dataSource]);
 
-  /* Auto-parse once on mount: prefer saved session data, fall back to default */
-  useEffect(() => {
-    const saved = sessionStorage.getItem(SESSION_KEY);
-    const toparse = saved ?? DEFAULT_RAW;
-    if (!toparse) return;
+  const applyRaw = useCallback((text: string): boolean => {
     try {
-      const parsed = parseReport(toparse);
+      const parsed = parseReport(text);
       if (parsed.sections.length || parsed.inferred) {
         setReport(parsed);
         setActiveSection(parsed.sections[0]?.id ?? "inferred");
         setActiveHourly(Object.keys(parsed.hourly)[0] ?? "");
-        setInputOpen(false);
-        if (saved) setSessionRestored(true);
+        return true;
       }
-    } catch { /* silently skip — user can re-paste */ }
+    } catch { /* ignore */ }
+    return false;
+  }, []);
+
+  const fetchLive = useCallback(async () => {
+    setLiveStatus("loading");
+    setLiveError(null);
+    try {
+      const res = await fetch("/api/data/report");
+      const j   = await res.json() as { content?: string; filename?: string; reportDate?: string; fetchedAt?: string; error?: string };
+      if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`);
+      if (!j.content) throw new Error("Empty response from server");
+      applyRaw(j.content);
+      setLiveMeta({ filename: j.filename ?? "", reportDate: j.reportDate ?? "", fetchedAt: j.fetchedAt });
+      setLiveStatus("loaded");
+      setInputOpen(false);
+    } catch (e) {
+      setLiveError(e instanceof Error ? e.message : String(e));
+      setLiveStatus("error");
+    }
+  }, [applyRaw]);
+
+  /* Always fetch the live report on mount */
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally run once on mount
+  useEffect(() => { void fetchLive(); }, []);
 
   const handleParse = useCallback(() => {
     setParseError("");
-    try {
-      const parsed = parseReport(raw);
-      if (!parsed.sections.length && !parsed.inferred) {
-        setParseError("Could not parse any sections — check report format.");
-        return;
-      }
-      setReport(parsed);
-      setActiveSection(parsed.sections[0]?.id ?? "inferred");
-      const hourlyKeys = Object.keys(parsed.hourly);
-      setActiveHourly(hourlyKeys[0] ?? "");
+    if (!applyRaw(raw)) {
+      setParseError("Could not parse any sections — check report format.");
+    } else {
       setInputOpen(false);
-    } catch (e) {
-      setParseError("Parse error: " + (e instanceof Error ? e.message : String(e)));
     }
-  }, [raw]);
+  }, [raw, applyRaw]);
 
   const currentSection = report?.sections.find(s => s.id === activeSection);
-  const hourlyKeys = report ? Object.keys(report.hourly) : [];
+  const hourlyKeys     = report ? Object.keys(report.hourly) : [];
 
   return (
     <div style={{ paddingTop: "calc(var(--nav-h) + 28px)", minHeight: "100vh", background: "var(--base)" }}>
@@ -1764,64 +2294,150 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
           <div style={{ height: 1, background: "var(--line)" }} />
         </div>
 
-        {/* Input panel */}
+        {/* Data source panel */}
         <div style={{ ...CARD, marginBottom: 24 }}>
           <button
             onClick={() => setInputOpen(o => !o)}
             style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", padding: 0, width: "100%", marginBottom: inputOpen ? 14 : 0 }}
           >
-            <span className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-2)" }}>REPORT INPUT</span>
-            {report && <span className="mono" style={{ fontSize: 9, color: "var(--green)" }}>● {report.sections.length} sections parsed</span>}
-            {sessionRestored && !inputOpen && (
-              <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)" }}>session memory</span>
+            <span className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-2)" }}>DATA SOURCE</span>
+            {dataSource === "live" && liveStatus === "loaded" && liveMeta && report && (
+              <span className="mono" style={{ fontSize: 9, color: "var(--green)" }}>● LIVE · w/c {liveMeta.reportDate} · {report.sections.length} sections</span>
+            )}
+            {dataSource === "live" && liveStatus === "loading" && (
+              <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)" }}>● loading…</span>
+            )}
+            {dataSource === "live" && liveStatus === "error" && (
+              <span className="mono" style={{ fontSize: 9, color: "var(--red)" }}>● error</span>
+            )}
+            {dataSource === "custom" && report && (
+              <span className="mono" style={{ fontSize: 9, color: "var(--blue)" }}>CUSTOM · {report.sections.length} sections</span>
             )}
             <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-3)" }}>{inputOpen ? "▲" : "▼"}</span>
           </button>
 
           {inputOpen && (
             <>
-              <textarea
-                value={raw}
-                onChange={e => setRaw(e.target.value)}
-                placeholder={"Paste full system report here…"}
-                spellCheck={false}
-                style={{
-                  width: "100%", height: 180,
-                  background: "var(--raised)", border: "1px solid var(--line)",
-                  borderRadius: 6, padding: "10px 12px", resize: "vertical",
-                  color: "var(--ink-1)", fontSize: 11, fontFamily: "var(--font-mono), monospace",
-                  outline: "none",
-                }}
-              />
-              {parseError && (
-                <p className="mono" style={{ fontSize: 11, color: "var(--red)", marginTop: 6 }}>{parseError}</p>
-              )}
-              <div className="analytics-btn-row">
-                <button
-                  onClick={handleParse}
-                  disabled={!raw.trim()}
-                  className="btn btn-primary"
-                  style={{ fontSize: 11, padding: "7px 20px", opacity: raw.trim() ? 1 : 0.4 }}
-                >
-                  Parse Report
-                </button>
-                {report && (
+              {/* Source tabs */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
+                {(["live", "custom"] as DataSource[]).map(src => (
                   <button
+                    key={src}
                     onClick={() => {
-                      setReport(null);
-                      setRaw("");
-                      setInputOpen(true);
-                      setSessionRestored(false);
-                      setParseError("");
-                      sessionStorage.removeItem(SESSION_KEY);
+                      setDataSource(src);
+                      if (src === "live" && liveStatus === "error") void fetchLive();
+                      if (src === "custom") setRaw(sessionStorage.getItem(SESSION_KEY) ?? "");
                     }}
-                    className="btn btn-ghost"
-                    style={{ fontSize: 11, padding: "7px 14px" }}
+                    className="mono"
+                    style={{
+                      padding: "5px 12px", borderRadius: 5, cursor: "pointer",
+                      background: dataSource === src ? "var(--raised)" : "transparent",
+                      border: `1px solid ${dataSource === src ? "var(--line-hi)" : "var(--line)"}`,
+                      color: dataSource === src ? "var(--ink-0)" : "var(--ink-3)",
+                      fontSize: 10, letterSpacing: "0.08em",
+                    }}
                   >
-                    Reset
+                    {src === "live" ? "LIVE REPORT" : "CUSTOM INPUT"}
                   </button>
-                )}
+                ))}
               </div>
+
+              {/* Live source panel */}
+              {dataSource === "live" && (
+                <div>
+                  {liveStatus === "loading" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--ink-3)", fontSize: 12, padding: "8px 0" }}>
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, animation: "spin 1.1s linear infinite" }}>
+                        <path d="M13 8A5 5 0 1 1 8 3h3.5M11.5 3v3.5H8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                      Fetching live report from OneDrive…
+                    </div>
+                  )}
+                  {liveStatus === "error" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <p className="mono" style={{ margin: 0, fontSize: 11, color: "var(--red)" }}>Failed: {liveError}</p>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => void fetchLive()} style={{ padding: "5px 12px", borderRadius: 4, background: "var(--sub)", border: "1px solid var(--line-hi)", color: "var(--ink-1)", fontSize: 11, cursor: "pointer" }}>
+                          Retry
+                        </button>
+                        <button
+                          onClick={() => { setDataSource("custom"); setRaw(sessionStorage.getItem(SESSION_KEY) ?? ""); }}
+                          style={{ padding: "5px 12px", borderRadius: 4, background: "var(--sub)", border: "1px solid rgba(77,156,245,0.3)", color: "#4d9cf5", fontSize: 11, cursor: "pointer" }}
+                        >
+                          Use Custom Input
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {liveStatus === "loaded" && liveMeta && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)", background: "var(--sub)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px" }}>
+                        OneDrive · Reports / {liveMeta.filename}
+                      </span>
+                      {liveMeta.fetchedAt && (
+                        <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)" }}>
+                          cached {new Date(liveMeta.fetchedAt).toLocaleString("en-AU", { timeZone: "Australia/Melbourne", dateStyle: "short", timeStyle: "short" })}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => void fetchLive()}
+                        style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 4, background: "var(--sub)", border: "1px solid var(--line-hi)", color: "var(--ink-2)", fontSize: 10, cursor: "pointer" }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M13 8A5 5 0 1 1 8 3h3.5M11.5 3v3.5H8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        Refresh
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Custom input panel */}
+              {dataSource === "custom" && (
+                <>
+                  <textarea
+                    value={raw}
+                    onChange={e => setRaw(e.target.value)}
+                    placeholder={"Paste full system report here…"}
+                    spellCheck={false}
+                    style={{
+                      width: "100%", height: 180,
+                      background: "var(--raised)", border: "1px solid var(--line)",
+                      borderRadius: 6, padding: "10px 12px", resize: "vertical",
+                      color: "var(--ink-1)", fontSize: 11, fontFamily: "var(--font-mono), monospace",
+                      outline: "none",
+                    }}
+                  />
+                  {parseError && (
+                    <p className="mono" style={{ fontSize: 11, color: "var(--red)", marginTop: 6 }}>{parseError}</p>
+                  )}
+                  <div className="analytics-btn-row">
+                    <button
+                      onClick={handleParse}
+                      disabled={!raw.trim()}
+                      className="btn btn-primary"
+                      style={{ fontSize: 11, padding: "7px 20px", opacity: raw.trim() ? 1 : 0.4 }}
+                    >
+                      Parse Report
+                    </button>
+                    {report && (
+                      <button
+                        onClick={() => {
+                          setReport(null);
+                          setRaw("");
+                          setInputOpen(true);
+                          setParseError("");
+                          sessionStorage.removeItem(SESSION_KEY);
+                        }}
+                        className="btn btn-ghost"
+                        style={{ fontSize: 11, padding: "7px 14px" }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -1829,20 +2445,21 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
         {/* Results */}
         {report && (
           <>
-            {/* Summary */}
-            <SummaryPanel sections={report.sections} />
-
-            {/* Inferred metrics banner */}
+            {/* ── Decision panel — top priority: what to do now ── */}
             {report.inferred && (
-              <div style={{ ...CARD, marginBottom: 24, borderColor: report.inferred.status.includes("RISK") ? "var(--amber)" : "var(--line)" }}>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-2)", marginBottom: 12 }}>INFERRED METRICS</div>
-                <InferredCard m={report.inferred} />
-              </div>
+              <DecisionPanel m={report.inferred} sections={report.sections} />
             )}
 
-            {/* Two-column layout: sidebar + detail */}
+            {/* ── Snapshot — all subsystems at a glance ── */}
+            <SnapshotTable
+              sections={report.sections}
+              activeSection={activeSection}
+              onSelect={id => { setActiveSection(id); setInputOpen(false); }}
+            />
+
+            {/* ── Detail drill-down ── */}
             <div className="analytics-2col">
-              {/* Sidebar — vertical list on desktop, horizontal pill-strip on mobile */}
+              {/* Sidebar */}
               <div className="analytics-nav">
                 {report.sections.map(s => (
                   <button
@@ -1863,6 +2480,55 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: healthColor(s.health), flexShrink: 0 }} />
                   </button>
                 ))}
+
+                {/* Inferred in sidebar */}
+                {report.inferred && (
+                  <>
+                    <div style={{ height: 1, background: "var(--line)", margin: "8px 0" }} />
+                    <button
+                      onClick={() => setActiveSection("__inferred__")}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        background: activeSection === "__inferred__" ? "var(--raised)" : "transparent",
+                        border: `1px solid ${activeSection === "__inferred__" ? "var(--line-hi)" : "transparent"}`,
+                        borderRadius: 6, padding: "7px 10px", cursor: "pointer",
+                        textAlign: "left", whiteSpace: "nowrap", flexShrink: 0,
+                      }}
+                    >
+                      <span className="mono" style={{ fontSize: 10, color: activeSection === "__inferred__" ? "var(--ink-0)" : "var(--ink-2)", letterSpacing: "0.04em" }}>
+                        Inferred
+                      </span>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: report.inferred.status.includes("FAIL") ? "var(--red)" : report.inferred.status.includes("RISK") || report.inferred.status.includes("REDUCE") ? "var(--amber)" : "var(--green)", flexShrink: 0 }} />
+                    </button>
+                  </>
+                )}
+
+                {/* Session Builder — opens modal */}
+                {Object.keys(report.hourly).length > 0 && (
+                  <>
+                    <div style={{ height: 1, background: "var(--line)", margin: "8px 0" }} />
+                    <button
+                      onClick={() => setSessionBuilderOpen(true)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        background: "transparent",
+                        border: "1px solid transparent",
+                        borderRadius: 6, padding: "7px 10px", cursor: "pointer",
+                        textAlign: "left", whiteSpace: "nowrap", flexShrink: 0,
+                        transition: "background 0.12s",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--raised)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <span className="mono" style={{ fontSize: 10, color: "var(--blue)", letterSpacing: "0.04em" }}>
+                        Session Builder
+                      </span>
+                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, opacity: 0.6 }}>
+                        <path d="M2 2h6v6M8 2L2 8" stroke="var(--blue)" strokeWidth="1.3" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+                  </>
+                )}
 
                 {hourlyKeys.length > 0 && (
                   <>
@@ -1888,9 +2554,14 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
                 )}
               </div>
 
-              {/* Detail */}
+              {/* Detail panel */}
               <div style={CARD}>
-                {activeSection === "__hourly__" && activeHourly && report.hourly[activeHourly] ? (
+                {activeSection === "__inferred__" && report.inferred ? (
+                  <>
+                    <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-2)", marginBottom: 14 }}>INFERRED METRICS</div>
+                    <InferredCard m={report.inferred} />
+                  </>
+                ) : activeSection === "__hourly__" && activeHourly && report.hourly[activeHourly] ? (
                   <>
                     <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-2)", marginBottom: 14 }}>
                       HOURLY R — {activeHourly.replace(/_/g, " ").toUpperCase()}
@@ -1908,13 +2579,68 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
                     <SectionDetail s={currentSection} />
                   </>
                 ) : (
-                  <p style={{ color: "var(--ink-3)", fontSize: 12 }}>Select a section from the left.</p>
+                  <p style={{ color: "var(--ink-3)", fontSize: 12 }}>Select a section from the sidebar to drill down.</p>
                 )}
               </div>
             </div>
           </>
         )}
       </div>
+
+      {/* ── Session Builder modal ── */}
+      {sessionBuilderOpen && report && Object.keys(report.hourly).length > 0 && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
+          onClick={() => setSessionBuilderOpen(false)}
+        >
+          {/* Backdrop */}
+          <div style={{ position: "absolute", inset: 0, background: "rgba(4,8,15,0.88)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }} />
+
+          {/* Modal */}
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: "relative", zIndex: 1,
+              background: "var(--card)",
+              border: "1px solid var(--line-hi)",
+              borderRadius: 12,
+              width: "min(1160px, 96vw)",
+              height: "92vh",
+              display: "flex", flexDirection: "column",
+              boxShadow: "0 32px 96px rgba(0,0,0,0.8)",
+            }}
+          >
+            {/* Modal header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span className="mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", color: "var(--ink-1)" }}>SESSION BUILDER</span>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--blue)", display: "inline-block", boxShadow: "0 0 6px rgba(77,156,245,0.6)" }} />
+                <span className="mono" style={{ fontSize: 8.5, letterSpacing: "0.12em", color: "var(--ink-3)" }}>HOURLY EDGE ANALYSIS</span>
+              </div>
+              <button
+                onClick={() => setSessionBuilderOpen(false)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, padding: "5px 10px",
+                  background: "none", border: "1px solid var(--line)", borderRadius: 5,
+                  cursor: "pointer", color: "var(--ink-3)", transition: "border-color 0.15s, color 0.15s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--line-hi)"; e.currentTarget.style.color = "var(--ink-1)"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.color = "var(--ink-3)"; }}
+              >
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                  <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+                <span className="mono" style={{ fontSize: 9, letterSpacing: "0.10em" }}>ESC</span>
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
+              <SessionBuilder hourly={report.hourly} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

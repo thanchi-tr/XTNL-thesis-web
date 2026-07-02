@@ -11,7 +11,7 @@ const LINKS = [
   { href: "/",           label: "Overview",   authedOnly: false, hideWhenAuthed: false },
   { href: "/prospectus", label: "Prospectus", authedOnly: false, hideWhenAuthed: false },
   { href: "/model",      label: "Simulator",  authedOnly: false, hideWhenAuthed: true  },
-  { href: "/data",       label: "Data",       authedOnly: false, hideWhenAuthed: false },
+  { href: "/data",       label: "Data",       authedOnly: true,  hideWhenAuthed: false },
   { href: "/session",    label: "Session",    authedOnly: true,  hideWhenAuthed: false },
   { href: "/analytics",  label: "Analytics",  authedOnly: true,  hideWhenAuthed: false },
 ];

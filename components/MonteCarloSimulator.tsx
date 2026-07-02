@@ -132,6 +132,19 @@ function HistTip({ active, payload }: { active?: boolean; payload?: { payload: {
   );
 }
 
+function DDHistTip({ active, payload }: { active?: boolean; payload?: { payload: { label: string; count: number; isMean: boolean } }[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{ background: "#1a2d45", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "8px 12px", fontFamily: "ui-monospace,monospace" }}>
+      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 3 }}>Max DD ~{d.label}</p>
+      <p style={{ fontSize: 13, color: d.isMean ? "#f03a57" : "#fff", fontWeight: 700 }}>
+        {d.count} paths{d.isMean ? " ← mean" : ""}
+      </p>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    Main component
    ═══════════════════════════════════════════════════════════ */
@@ -210,6 +223,65 @@ export default function MonteCarloSimulator() {
       return { year: i + 1, p5: d.p5, p50: d.p50, p95: d.p95 };
     }).filter(Boolean) as { year: number; p5: number; p50: number; p95: number }[];
   }, [fanData, p.weeks]);
+
+  /* ── Analyst metrics (authed only) ───────────────────── */
+  const analystMetrics = useMemo(() => {
+    if (!res || !authed || !fanData.length) return null;
+    const years       = p.weeks / 52;
+    const annualCAGR  = Math.pow(Math.max(0.001, res.medianTerminal), 1 / years) - 1;
+    const calmar      = res.meanMaxDD > 0 ? annualCAGR / res.meanMaxDD : 99;
+    const edgeHalfLifeQtr = p.edgeDecayPctPerQtr > 0.01
+      ? Math.log(0.5) / Math.log(1 - p.edgeDecayPctPerQtr / 100)
+      : Infinity;
+    const m2  = fanData.findIndex(d => d.p50 >= 2);
+    const m5  = fanData.findIndex(d => d.p50 >= 5);
+    const m10 = fanData.findIndex(d => d.p50 >= 10);
+    const constraint =
+      p.edgeDecayPctPerQtr > 5                                          ? "Edge decay" :
+      res.effStats.pctCritical + res.effStats.pctHalted > 15            ? "Operator efficiency" :
+      res.regimeStats.pctHaircut + res.regimeStats.pctToxic > 20        ? "Regime clustering" :
+      res.pctRuined > 10                                                 ? "Capital ruin risk" : null;
+    const verdict =
+      res.pctRuined > 20   ? "UNVIABLE"      :
+      res.pctRuined > 10   ? "HIGH RISK"     :
+      calmar < 0.5         ? "WEAK RISK-ADJ" :
+      calmar > 1.5 && res.pctRuined < 5 ? "VIABLE" : "MARGINAL";
+    const verdictColor =
+      verdict === "VIABLE"      ? "#00cc7a" :
+      verdict === "UNVIABLE"    ? "#f03a57" :
+      verdict === "HIGH RISK"   ? "#f03a57" : "#f0a030";
+    return { annualCAGR, calmar, edgeHalfLifeQtr, m2, m5, m10, constraint, verdict, verdictColor };
+  }, [res, authed, fanData, p]);
+
+  /* ── DD histogram from 200 sampled paths (authed only) ─ */
+  const ddHistData = useMemo(() => {
+    if (!res || !authed) return [];
+    const BINS = 14;
+    const dds = res.paths.map(path => {
+      let peak = 1, maxDD = 0;
+      for (const eq of path) {
+        if (eq > peak) peak = eq;
+        const dd = peak > 0 ? (peak - eq) / peak : 0;
+        if (dd > maxDD) maxDD = dd;
+      }
+      return maxDD * 100;
+    });
+    const sorted = [...dds].sort((a, b) => a - b);
+    const lo = Math.max(0, sorted[0] ?? 0);
+    const hi = sorted[sorted.length - 1] ?? 100;
+    const range = Math.max(1, hi - lo);
+    const bins = Array.from({ length: BINS }, (_, i) => ({
+      label: `${(lo + (i + 0.5) * range / BINS).toFixed(0)}%`,
+      count: 0, isMean: false,
+    }));
+    for (const dd of dds) {
+      const idx = Math.min(Math.floor(((dd - lo) / range) * BINS), BINS - 1);
+      if (bins[idx]) bins[idx].count++;
+    }
+    const meanIdx = Math.min(Math.floor(((res.meanMaxDD * 100 - lo) / range) * BINS), BINS - 1);
+    if (bins[meanIdx]) bins[meanIdx].isMean = true;
+    return bins;
+  }, [res, authed]);
 
   /* ── Derived values ───────────────────────────────────── */
   const effData = useMemo(() => res ? buildEffData(res.effPathSamples, res.regPathSamples, p.weeks) : [], [res, p.weeks, buildEffData]);
@@ -368,6 +440,73 @@ export default function MonteCarloSimulator() {
             ══════════════════════════════════════════════ */}
         <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
 
+          {/* ── Analyst Verdict (authed) ──────────────── */}
+          {authed && analystMetrics && (
+            <div style={{
+              background: "rgba(0,0,0,0.28)",
+              border: `1px solid ${analystMetrics.verdictColor}25`,
+              borderLeft: `3px solid ${analystMetrics.verdictColor}`,
+              borderRadius: 7, padding: "14px 18px",
+            }}>
+              {/* Row 1: verdict + key risk-adj metrics */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap", marginBottom: 14 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 90 }}>
+                  <span className="label-xs">SYSTEM VERDICT</span>
+                  <span className="mono" style={{ fontSize: 16, fontWeight: 800, color: analystMetrics.verdictColor, lineHeight: 1 }}>
+                    {analystMetrics.verdict}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 20, flexWrap: "wrap", flex: 1 }}>
+                  {([
+                    ["P50 CAGR",       `${(analystMetrics.annualCAGR * 100).toFixed(1)}%`,  "#00cc7a"],
+                    ["CALMAR",         analystMetrics.calmar >= 99 ? "∞" : analystMetrics.calmar.toFixed(2), analystMetrics.calmar > 1.5 ? "#00cc7a" : analystMetrics.calmar > 0.8 ? "#f0a030" : "#f03a57"],
+                    ["EDGE HALF-LIFE", analystMetrics.edgeHalfLifeQtr === Infinity ? "stable" : `${analystMetrics.edgeHalfLifeQtr.toFixed(0)} qtrs`, analystMetrics.edgeHalfLifeQtr < 20 ? "#f03a57" : analystMetrics.edgeHalfLifeQtr < 40 ? "#f0a030" : "#8ea3be"],
+                    ["RUIN RATE",      `${res!.pctRuined.toFixed(1)}%`, res!.pctRuined > 10 ? "#f03a57" : res!.pctRuined > 5 ? "#f0a030" : "#00cc7a"],
+                    ["WORST P50 DD",   `−${(res!.meanMaxDD * 100).toFixed(1)}%`, res!.meanMaxDD > 0.4 ? "#f03a57" : res!.meanMaxDD > 0.2 ? "#f0a030" : "#00cc7a"],
+                  ] as [string, string, string][]).map(([label, value, color]) => (
+                    <div key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      <span className="label-xs">{label}</span>
+                      <span className="mono" style={{ fontSize: 13, fontWeight: 700, color, lineHeight: 1 }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Row 2: P50 time-to-milestone */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: analystMetrics.constraint ? 10 : 0, padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                <span className="label-xs" style={{ marginRight: 6 }}>P50 MILESTONE</span>
+                {([
+                  ["2×",  analystMetrics.m2],
+                  ["5×",  analystMetrics.m5],
+                  ["10×", analystMetrics.m10],
+                ] as [string, number][]).map(([label, wk]) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 4 }}>
+                    <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--ink-1)" }}>{label}</span>
+                    <span className="mono" style={{ fontSize: 10, color: wk === -1 ? "rgba(142,163,190,0.35)" : "#4d9cf5" }}>
+                      {wk === -1 ? "not reached" : `W${wk + 1} · Yr ${((wk + 1) / 52).toFixed(1)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Row 3: binding constraint */}
+              {analystMetrics.constraint && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                  <span className="label-xs">BINDING CONSTRAINT</span>
+                  <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: "#f0a030", letterSpacing: "0.06em" }}>
+                    {analystMetrics.constraint}
+                  </span>
+                  <span style={{ fontSize: 10, color: "rgba(142,163,190,0.5)" }}>
+                    {analystMetrics.constraint === "Edge decay"          && "— expectancy eroding faster than compounding can absorb"}
+                    {analystMetrics.constraint === "Operator efficiency" && "— excessive time spent in reduced/critical tier"}
+                    {analystMetrics.constraint === "Regime clustering"   && "— losing-streak haircuts consuming significant risk capacity"}
+                    {analystMetrics.constraint === "Capital ruin risk"   && "— ruin probability above acceptable threshold"}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Equity chart ──────────────────────────── */}
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
@@ -522,6 +661,31 @@ export default function MonteCarloSimulator() {
             </div>
           )}
 
+          {/* ── DD distribution — authed ─────────────── */}
+          {authed && ddHistData.length > 0 && (
+            <div>
+              <p className="panel-title" style={{ marginBottom: 3 }}>Max Drawdown Distribution</p>
+              <p className="label-xs" style={{ marginBottom: 10 }}>
+                Per-path peak-to-trough DD across 200 sampled paths · Red bar = mean DD
+              </p>
+              <div style={{ height: 130 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ddHistData} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: "rgba(142,163,190,0.6)", fontSize: 7.5, fontFamily: "ui-monospace,monospace" }} axisLine={false} tickLine={false} interval={1} />
+                    <YAxis tick={{ fill: "rgba(142,163,190,0.6)", fontSize: 9 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<DDHistTip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                    <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+                      {ddHistData.map((entry, i) => (
+                        <Cell key={i} fill={entry.isMean ? "#f03a57" : "rgba(240,58,87,0.25)"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
           {/* ── Year-by-year milestones — authed ──────── */}
           {authed && yearData.length > 0 && (
             <div>
@@ -602,6 +766,11 @@ export default function MonteCarloSimulator() {
               <StatCard label="Avg Injection"    value={res.meanTotalInj > 0 ? `${(res.meanTotalInj*100).toFixed(1)}%` : "—"} accent="#00cc7a" sub="of initial (received)" />
               <StatCard label="Inject Events"    value={res.meanInjEvents > 0 ? res.meanInjEvents.toFixed(1) : "—"} accent="#00cc7a" sub="qualifying 4-wk periods" />
               <StatCard label="Ruin Rate"        value={`${res.pctRuined.toFixed(1)}%`} accent={res.pctRuined > 5 ? "#f03a57" : "#00cc7a"} />
+              {authed && analystMetrics && <>
+                <StatCard label="Calmar Ratio"    value={analystMetrics.calmar >= 99 ? "∞" : analystMetrics.calmar.toFixed(2)} accent={analystMetrics.calmar > 1.5 ? "#00cc7a" : analystMetrics.calmar > 0.8 ? "#f0a030" : "#f03a57"} sub="CAGR / mean max DD" />
+                <StatCard label="P50 CAGR"        value={`${(analystMetrics.annualCAGR * 100).toFixed(1)}%`} accent="#00cc7a" sub="annualised median" />
+                <StatCard label="Edge Half-Life"  value={analystMetrics.edgeHalfLifeQtr === Infinity ? "stable" : `${analystMetrics.edgeHalfLifeQtr.toFixed(0)} qtrs`} accent={analystMetrics.edgeHalfLifeQtr < 20 ? "#f03a57" : analystMetrics.edgeHalfLifeQtr < 40 ? "#f0a030" : "#8ea3be"} sub="qtrs to halve expectancy" />
+              </>}
             </div>
           )}
         </div>

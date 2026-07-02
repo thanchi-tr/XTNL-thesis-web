@@ -10,6 +10,16 @@ function getAuthedSession(session: Session | null): AuthedSession | null {
   return s?.twoFactorVerified ? s : null;
 }
 
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+function isValidIso(s: string): boolean {
+  return ISO_RE.test(s) && !isNaN(Date.parse(s));
+}
+
+function isFiniteInRange(v: unknown, min: number, max: number): v is number {
+  return typeof v === "number" && isFinite(v) && v >= min && v <= max;
+}
+
 /* GET — optimal trades, newest first */
 export async function GET() {
   try {
@@ -28,12 +38,12 @@ export async function GET() {
 
     if (error) {
       console.error("[optimal-trades GET]", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Failed to load trades." }, { status: 500 });
     }
     return NextResponse.json({ rows: data ?? [] });
   } catch (e) {
     console.error("[optimal-trades GET] unexpected", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
 
@@ -46,19 +56,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json() as {
-      trade_id?:  string;
-      result_r:   number;
-      entry:      string;
-      exit:       string;
-      exempt_r?:  number;
-      is_exempt?: boolean;
+      trade_id?:  unknown;
+      result_r:   unknown;
+      entry:      unknown;
+      exit:       unknown;
+      exempt_r?:  unknown;
+      is_exempt?: unknown;
     };
+
+    // result_r: required finite number in [-50, 50]
+    if (!isFiniteInRange(body.result_r, -50, 50))
+      return NextResponse.json({ error: "result_r must be a number between -50 and 50" }, { status: 400 });
+
+    // entry: required valid ISO 8601
+    if (typeof body.entry !== "string" || !isValidIso(body.entry))
+      return NextResponse.json({ error: "entry must be a valid ISO 8601 timestamp" }, { status: 400 });
+
+    // exit: required valid ISO 8601
+    if (typeof body.exit !== "string" || !isValidIso(body.exit))
+      return NextResponse.json({ error: "exit must be a valid ISO 8601 timestamp" }, { status: 400 });
+
+    // trade_id: optional string, max 64 chars
+    const tradeId = body.trade_id != null ? String(body.trade_id).slice(0, 64) : null;
 
     const userId = OPERATOR_USER_ID
       ?? (authed.user as { id?: string } | undefined)?.id;
 
     const row: Record<string, unknown> = {
-      trade_id:   body.trade_id || null,
+      trade_id:   tradeId,
       result_r:   body.result_r,
       entry:      body.entry,
       exit:       body.exit,
@@ -74,14 +99,16 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("[optimal-trades POST] supabase error", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Failed to save trade." }, { status: 500 });
     }
     if (!data) {
-      return NextResponse.json({ error: "Insert returned no data — check table name and RLS" }, { status: 500 });
+      console.error("[optimal-trades POST] insert returned no data");
+      return NextResponse.json({ error: "Failed to save trade." }, { status: 500 });
     }
 
-    /* Insert exempt records if flagged — one exempt_r row + one exempt_count row */
-    if (body.is_exempt && body.exempt_r !== undefined && body.exempt_r !== 0) {
+    /* Insert exempt records if flagged */
+    const isExempt = body.is_exempt === true;
+    if (isExempt && isFiniteInRange(body.exempt_r, -50, 50) && body.exempt_r !== 0) {
       const today = new Date().toISOString().split("T")[0];
       const base  = (extra: object): Record<string, unknown> => ({
         optimal_trade_id: data.optimal_trade_id,
@@ -99,7 +126,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ row: data }, { status: 201 });
   } catch (e) {
     console.error("[optimal-trades POST] unexpected", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }
 
@@ -110,24 +137,25 @@ export async function DELETE(req: Request) {
     if (!getAuthedSession(session))
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id } = await req.json() as { id: string };
-    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+    const body = await req.json() as { id?: unknown };
+    if (typeof body.id !== "string" || !body.id)
+      return NextResponse.json({ error: "id required" }, { status: 400 });
 
     /* Remove related exempts first (FK constraint) */
-    await supabase.from("exempts").delete().eq("optimal_trade_id", id);
+    await supabase.from("exempts").delete().eq("optimal_trade_id", body.id);
 
     const { error } = await supabase
       .from("theoretical_optimal_trades")
       .delete()
-      .eq("optimal_trade_id", id);
+      .eq("optimal_trade_id", body.id);
 
     if (error) {
       console.error("[optimal-trades DELETE]", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Failed to delete trade." }, { status: 500 });
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[optimal-trades DELETE] unexpected", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
   }
 }

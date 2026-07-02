@@ -3,6 +3,7 @@ import { auth }                      from "@/auth";
 import { createHmac, createHash }    from "crypto";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join }                      from "path";
+import { checkRateLimit }            from "@/lib/rateLimit";
 import QRCode                        from "qrcode";
 
 /* ── Enrollment store ───────────────────────────────────────
@@ -120,11 +121,20 @@ export async function GET() {
 
 /* ── POST /api/auth/totp ────────────────────────────────────
  * Verifies the 6-digit code. On first valid verify, marks
- * the user as enrolled so QR is never shown again.           */
+ * the user as enrolled so QR is never shown again.
+ * Rate-limited to 5 attempts per 15 minutes per user.        */
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.userEmail) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rl = checkRateLimit(`totp:${session.userEmail}`, 5, 15 * 60 * 1000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
   }
 
   const body = await req.json() as { code?: string };

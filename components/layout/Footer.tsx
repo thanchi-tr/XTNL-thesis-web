@@ -3,6 +3,7 @@ import XtnlLogo from "@/components/ui/XtnlLogo";
 
 const LINKS = [
   { href: "/",           label: "Overview" },
+  { href: "/about",      label: "About" },
   { href: "/prospectus", label: "Prospectus" },
   { href: "/model",      label: "Simulator" },
   { href: "/data",       label: "Data" },
