@@ -7,18 +7,22 @@ import QRCode                             from "qrcode";
 import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import type {
   AuthenticationResponseJSON,
+  RegistrationResponseJSON,
   AuthenticatorTransportFuture,
 } from "@simplewebauthn/types";
 
 /* ── Config ─────────────────────────────────────────────────── */
+const RP_NAME  = "XTNL Solutions";
 const RP_ID    = process.env.WEBAUTHN_RP_ID  ?? "localhost";
 const ORIGIN   = process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000";
-const APP_BASE = ORIGIN; // same origin for the mobile page URL
+const APP_BASE = ORIGIN;
 
-/* ── Credential store (shared with webauthn route) ──────────── */
+/* ── Credential store ────────────────────────────────────────── */
 const DATA_DIR   = process.env.VERCEL ? "/tmp/xtnl-data" : join(process.cwd(), "data");
 const CREDS_FILE = join(DATA_DIR, "webauthn-credentials.json");
 
@@ -45,15 +49,18 @@ async function writeCredStore(s: CredStore) {
   await writeFile(CREDS_FILE, JSON.stringify(s, null, 2), "utf-8");
 }
 
-/* ── Mobile challenge store ──────────────────────────────────── */
+/* ── Mobile token store ──────────────────────────────────────── */
+type TokenType = "auth" | "register";
+
 interface ChallengeEntry {
-  userHash:       string;
+  type:              TokenType;
+  userHash:          string;
+  userEmail:         string;
   webauthnChallenge: string;
-  status:         "pending" | "verified";
-  expiresAt:      number;
+  status:            "pending" | "verified";
+  expiresAt:         number;
 }
 
-/* In-memory map — simple, no disk persistence needed (5 min TTL) */
 const mobileTokens = new Map<string, ChallengeEntry>();
 
 function pruneExpired() {
@@ -63,23 +70,71 @@ function pruneExpired() {
   }
 }
 
+async function makeQR(url: string) {
+  return QRCode.toDataURL(url, {
+    width: 220, margin: 1,
+    color: { dark: "#00cc7a", light: "#04080f" },
+    errorCorrectionLevel: "M",
+  });
+}
+
 /* ═══════════════════════════════════════════════════════════════
-   POST /api/auth/mobile-challenge
-   Desktop (authenticated session) → issues token + QR data URL
+   POST /api/auth/mobile-challenge?type=auth|register
+   Desktop (authenticated) → issues token + QR data URL
    ═══════════════════════════════════════════════════════════════ */
-export async function POST() {
+export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.userEmail)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const hash  = emailHash(session.userEmail);
-  const store = await readCredStore();
-  const creds = store.credentials[hash] ?? [];
+  const type    = (req.nextUrl.searchParams.get("type") ?? "auth") as TokenType;
+  const hash    = emailHash(session.userEmail);
+  const store   = await readCredStore();
+  const creds   = store.credentials[hash] ?? [];
 
+  pruneExpired();
+
+  /* ── Register: issue a phone-registration QR ── */
+  if (type === "register") {
+    const options = await generateRegistrationOptions({
+      rpName:          RP_NAME,
+      rpID:            RP_ID,
+      userID:          hash.slice(0, 32),
+      userName:        session.userEmail,
+      userDisplayName: session.userName || session.userEmail,
+      attestationType: "none",
+      excludeCredentials: creds.map(c => ({
+        id:         Buffer.from(c.id, "base64url"),
+        transports: c.transports,
+        type:       "public-key" as const,
+      })),
+      authenticatorSelection: {
+        /* platform → phone's own biometric (Face ID / fingerprint) */
+        authenticatorAttachment: "platform",
+        residentKey:             "discouraged",
+        userVerification:        "required",
+      },
+    });
+
+    const token = randomBytes(24).toString("base64url");
+    mobileTokens.set(token, {
+      type:              "register",
+      userHash:          hash,
+      userEmail:         session.userEmail,
+      webauthnChallenge: options.challenge,
+      status:            "pending",
+      expiresAt:         Date.now() + 5 * 60_000,
+    });
+
+    const mobileUrl = `${APP_BASE}/auth/mobile-register?t=${token}`;
+    const qrDataUrl = await makeQR(mobileUrl);
+    return NextResponse.json({ token, qrDataUrl, expiresIn: 300 });
+  }
+
+  /* ── Auth: issue a phone sign-in QR ── */
   if (creds.length === 0)
     return NextResponse.json({ error: "No passkey registered for this account" }, { status: 400 });
 
-  /* Generate WebAuthn options so they're ready when mobile arrives */
   const options = await generateAuthenticationOptions({
     rpID:             RP_ID,
     userVerification: "required",
@@ -91,27 +146,22 @@ export async function POST() {
   });
 
   const token = randomBytes(24).toString("base64url");
-  pruneExpired();
   mobileTokens.set(token, {
+    type:              "auth",
     userHash:          hash,
+    userEmail:         session.userEmail,
     webauthnChallenge: options.challenge,
     status:            "pending",
     expiresAt:         Date.now() + 5 * 60_000,
   });
 
   const mobileUrl = `${APP_BASE}/auth/mobile?t=${token}`;
-  const qrDataUrl = await QRCode.toDataURL(mobileUrl, {
-    width:          220,
-    margin:         1,
-    color:          { dark: "#00cc7a", light: "#04080f" },
-    errorCorrectionLevel: "M",
-  });
-
+  const qrDataUrl = await makeQR(mobileUrl);
   return NextResponse.json({ token, qrDataUrl, expiresIn: 300 });
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   GET /api/auth/mobile-challenge?token=T&action=status|options
+   GET /api/auth/mobile-challenge?token=T&action=status|options|reg-options
    ═══════════════════════════════════════════════════════════════ */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -123,15 +173,14 @@ export async function GET(req: NextRequest) {
 
   const entry = mobileTokens.get(token);
   if (!entry || entry.expiresAt < Date.now()) {
-    mobileTokens.delete(token ?? "");
+    if (token) mobileTokens.delete(token);
     return NextResponse.json({ status: "expired" });
   }
 
-  /* Desktop polls for status */
   if (action === "status")
     return NextResponse.json({ status: entry.status });
 
-  /* Mobile fetches WebAuthn options */
+  /* Mobile fetches auth options */
   if (action === "options") {
     const store = await readCredStore();
     const creds = store.credentials[entry.userHash] ?? [];
@@ -144,7 +193,32 @@ export async function GET(req: NextRequest) {
         type:       "public-key" as const,
       })),
     });
-    /* Overwrite challenge so mobile uses same one */
+    entry.webauthnChallenge = options.challenge;
+    return NextResponse.json(options);
+  }
+
+  /* Mobile fetches registration options */
+  if (action === "reg-options") {
+    const store = await readCredStore();
+    const creds = store.credentials[entry.userHash] ?? [];
+    const options = await generateRegistrationOptions({
+      rpName:          RP_NAME,
+      rpID:            RP_ID,
+      userID:          entry.userHash.slice(0, 32),
+      userName:        entry.userEmail,
+      userDisplayName: entry.userEmail,
+      attestationType: "none",
+      excludeCredentials: creds.map(c => ({
+        id:         Buffer.from(c.id, "base64url"),
+        transports: c.transports,
+        type:       "public-key" as const,
+      })),
+      authenticatorSelection: {
+        authenticatorAttachment: "platform",
+        residentKey:             "discouraged",
+        userVerification:        "required",
+      },
+    });
     entry.webauthnChallenge = options.challenge;
     return NextResponse.json(options);
   }
@@ -154,7 +228,7 @@ export async function GET(req: NextRequest) {
 
 /* ═══════════════════════════════════════════════════════════════
    PATCH /api/auth/mobile-challenge?token=T
-   Mobile → posts signed WebAuthn assertion, marks token verified
+   Mobile → submits WebAuthn response, marks token verified
    ═══════════════════════════════════════════════════════════════ */
 export async function PATCH(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
@@ -165,9 +239,45 @@ export async function PATCH(req: NextRequest) {
   if (!entry || entry.expiresAt < Date.now())
     return NextResponse.json({ error: "Token expired" }, { status: 400 });
 
-  const body  = await req.json() as AuthenticationResponseJSON;
   const store = await readCredStore();
-  const creds = store.credentials[entry.userHash] ?? [];
+
+  /* ── Registration verification ── */
+  if (entry.type === "register") {
+    const body = await req.json() as RegistrationResponseJSON;
+    let result;
+    try {
+      result = await verifyRegistrationResponse({
+        response:                body,
+        expectedChallenge:       entry.webauthnChallenge,
+        expectedOrigin:          ORIGIN,
+        expectedRPID:            RP_ID,
+        requireUserVerification: true,
+      });
+    } catch (e) {
+      return NextResponse.json({ error: String(e) }, { status: 400 });
+    }
+
+    if (!result.verified || !result.registrationInfo)
+      return NextResponse.json({ verified: false });
+
+    const { credentialID, credentialPublicKey, counter } = result.registrationInfo;
+    if (!store.credentials[entry.userHash]) store.credentials[entry.userHash] = [];
+
+    store.credentials[entry.userHash].push({
+      id:         Buffer.from(credentialID).toString("base64url"),
+      publicKey:  Buffer.from(credentialPublicKey).toString("base64"),
+      counter,
+      transports: (body.response.transports ?? ["internal"]) as AuthenticatorTransportFuture[],
+    });
+
+    await writeCredStore(store);
+    entry.status = "verified";
+    return NextResponse.json({ verified: true });
+  }
+
+  /* ── Authentication verification ── */
+  const body   = await req.json() as AuthenticationResponseJSON;
+  const creds  = store.credentials[entry.userHash] ?? [];
   const stored = creds.find(c => c.id === body.id);
 
   if (!stored)
@@ -195,10 +305,8 @@ export async function PATCH(req: NextRequest) {
   if (!result.verified)
     return NextResponse.json({ verified: false });
 
-  /* Update counter + mark token verified */
   stored.counter = result.authenticationInfo.newCounter;
   await writeCredStore(store);
   entry.status = "verified";
-
   return NextResponse.json({ verified: true });
 }

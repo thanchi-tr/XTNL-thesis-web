@@ -213,6 +213,10 @@ export default function LoginModal({
 
   /* Add-biometric panel */
   const [showAddBiometric, setShowAddBiometric] = useState(false);
+  const [regQrUrl,    setRegQrUrl]    = useState<string | null>(null);
+  const [regQrToken,  setRegQrToken]  = useState<string | null>(null);
+  const [regQrStatus, setRegQrStatus] = useState<"idle"|"loading"|"polling"|"verified"|"expired"|"error">("idle");
+  const regQrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* QR mobile-challenge flow */
   const [showQr,       setShowQr]       = useState(false);
@@ -275,6 +279,8 @@ export default function LoginModal({
         setMsError(null); setEnrolled(null); setQrUrl(null);
         setPasskeyStatus("unknown"); setPasskeyLoading(false); setPasskeyError(null); setShowCodeEntry(false);
         setShowAddBiometric(false);
+        setRegQrUrl(null); setRegQrToken(null); setRegQrStatus("idle");
+        if (regQrPollRef.current) { clearInterval(regQrPollRef.current); regQrPollRef.current = null; }
         setShowQr(false); setQrMobileUrl(null); setQrToken(null); setQrStatus("idle");
         if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
       }, 300);
@@ -310,7 +316,45 @@ export default function LoginModal({
     }
   }
 
+  async function handlePhoneRegisterQr() {
+    setRegQrStatus("loading"); setRegQrUrl(null); setRegQrToken(null); setPasskeyError(null);
+    if (regQrPollRef.current) { clearInterval(regQrPollRef.current); regQrPollRef.current = null; }
+    try {
+      const res  = await fetch("/api/auth/mobile-challenge?type=register", { method: "POST" });
+      const data = await res.json() as { token?: string; qrDataUrl?: string; error?: string };
+      if (!data.token || !data.qrDataUrl) { setRegQrStatus("error"); return; }
+      setRegQrToken(data.token); setRegQrUrl(data.qrDataUrl); setRegQrStatus("polling");
+
+      const token = data.token;
+      regQrPollRef.current = setInterval(async () => {
+        try {
+          const pr = await fetch(`/api/auth/mobile-challenge?token=${token}&action=status`);
+          const pd = await pr.json() as { status: "pending" | "verified" | "expired" };
+          if (pd.status === "verified") {
+            clearInterval(regQrPollRef.current!); regQrPollRef.current = null;
+            setRegQrStatus("verified"); setPasskeyStatus("enrolled");
+            /* Auto-close after 1.5 s so the user sees the success state */
+            setTimeout(() => { setShowAddBiometric(false); setRegQrStatus("idle"); }, 1500);
+          } else if (pd.status === "expired") {
+            clearInterval(regQrPollRef.current!); regQrPollRef.current = null;
+            setRegQrStatus("expired");
+          }
+        } catch { /* network hiccup */ }
+      }, 2500);
+
+      setTimeout(() => {
+        if (regQrPollRef.current) {
+          clearInterval(regQrPollRef.current); regQrPollRef.current = null;
+          setRegQrStatus(s => s === "polling" ? "expired" : s);
+        }
+      }, 5 * 60_000);
+    } catch {
+      setRegQrStatus("error");
+    }
+  }
+
   async function handleBiometricSetup(attachment?: "cross-platform" | "platform") {
+    if (attachment === "cross-platform") { handlePhoneRegisterQr(); return; }
     setPasskeyLoading(true);
     setPasskeyError(null);
     try {
@@ -329,7 +373,6 @@ export default function LoginModal({
         setPasskeyStatus("enrolled");
         setShowAddBiometric(false);
         setPasskeyError(null);
-        /* If not yet 2FA-verified, elevate now */
         if (!session?.twoFactorVerified) { await update({ twoFactorVerified: true }); onClose(); }
       } else {
         setPasskeyError("Passkey setup failed. Please use your code to continue.");
@@ -760,17 +803,69 @@ export default function LoginModal({
                         ))}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleBiometricSetup("cross-platform")}
-                        disabled={passkeyLoading}
-                        className="btn btn-primary"
-                        style={{ width: "100%", padding: "11px", fontSize: 13 }}
-                      >
-                        {passkeyLoading
-                          ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Waiting…</span>
-                          : "Register with Microsoft Authenticator"}
-                      </button>
+                      {/* ── Register QR panel ── */}
+                      {regQrStatus === "idle" && (
+                        <button
+                          type="button"
+                          onClick={handlePhoneRegisterQr}
+                          className="btn btn-primary"
+                          style={{ width: "100%", padding: "11px", fontSize: 13 }}
+                        >
+                          Register with Microsoft Authenticator
+                        </button>
+                      )}
+
+                      {regQrStatus === "loading" && (
+                        <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
+                          <Spinner size={22} />
+                        </div>
+                      )}
+
+                      {(regQrStatus === "polling" || regQrStatus === "verified") && regQrUrl && (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                          <div style={{
+                            borderRadius: 10, padding: 10,
+                            background: "#04080f", border: "1px solid rgba(0,204,122,0.25)",
+                            boxShadow: "0 0 18px rgba(0,204,122,0.1)",
+                          }}>
+                            <img src={regQrUrl} width={180} height={180} alt="Scan to register biometric" style={{ display: "block", imageRendering: "pixelated", borderRadius: 4 }} />
+                          </div>
+                          {regQrStatus === "polling" && (
+                            <>
+                              <p style={{ fontSize: 12, color: "var(--ink-2)", textAlign: "center", lineHeight: 1.6, margin: 0 }}>
+                                Scan with your phone camera.<br/>
+                                Tap <strong style={{ color: "var(--ink-1)" }}>Register with biometric</strong> on the page that opens.
+                              </p>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <Spinner size={12} /><span style={{ fontSize: 11, color: "var(--ink-3)" }}>Waiting for phone…</span>
+                              </div>
+                            </>
+                          )}
+                          {regQrStatus === "verified" && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+                                <path d="M2.5 7l3.5 3.5L11.5 3" stroke="var(--green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                              <span style={{ fontSize: 12, color: "var(--green)" }}>Phone registered successfully!</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {regQrStatus === "expired" && (
+                        <div style={{ textAlign: "center" }}>
+                          <p style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 10 }}>QR expired.</p>
+                          <button type="button" onClick={handlePhoneRegisterQr} className="btn btn-ghost" style={{ fontSize: 12, padding: "8px 16px" }}>
+                            Generate new QR
+                          </button>
+                        </div>
+                      )}
+
+                      {regQrStatus === "error" && (
+                        <p style={{ fontSize: 12, color: "var(--red)", textAlign: "center" }}>
+                          Could not create registration QR. Please try again.
+                        </p>
+                      )}
                     </div>
                   </div>
 
