@@ -321,6 +321,20 @@ function fmtHMS(sec: number): string {
   return `${p(h)}:${p(m)}:${p(s)}`;
 }
 
+function isContractActive(c: { type: "day" | "week"; setAt: string }): boolean {
+  const aestNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Melbourne" }));
+  const aestSet = new Date(new Date(c.setAt).toLocaleString("en-US", { timeZone: "Australia/Melbourne" }));
+  if (c.type === "day") return aestNow.toDateString() === aestSet.toDateString();
+  const monday = (d: Date) => {
+    const dow = d.getDay();
+    const r   = new Date(d);
+    r.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    r.setHours(0, 0, 0, 0);
+    return r.getTime();
+  };
+  return monday(aestNow) === monday(aestSet);
+}
+
 function getGreeting(name: string, hour: number) {
   const first = name.split(" ")[0] || name;
   if (hour >= 5  && hour < 12) return `Good morning, ${first}`;
@@ -1185,8 +1199,16 @@ function JournalTimeline({
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
   const [expandedPlanIndices, setExpandedPlanIndices] = useState<Set<number>>(new Set());
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const loading = tradingLoading || commentsLoading;
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setIsFullscreen(false); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isFullscreen]);
 
   const togglePlan = (idx: number) =>
     setExpandedPlanIndices(prev => {
@@ -1200,9 +1222,10 @@ function JournalTimeline({
   const visibleComments = operatorView
     ? comments.filter(c =>
         !c.content.startsWith("Analyst comment:") &&
+        !c.content.startsWith("session_contract:") &&
         new Date(c.Entry).getTime() >= weekMs
       )
-    : comments;
+    : comments.filter(c => !c.content.startsWith("session_contract:"));
   const visibleTrades = operatorView
     ? trades.filter(t => new Date(t.entry).getTime() >= weekMs)
     : trades;
@@ -1277,15 +1300,52 @@ function JournalTimeline({
   }
 
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
+    <div
+      className="card"
+      style={{
+        overflow: "hidden",
+        ...(isFullscreen ? {
+          position: "fixed", inset: 0, zIndex: 9000,
+          borderRadius: 0,
+          display: "flex", flexDirection: "column",
+          background: "var(--bg, #04080f)",
+        } : {}),
+      }}
+    >
       <CardHeader
         title="Session Journal"
         badge={!loading && hasData
           ? <span className="chip chip-muted">{visibleTrades.length} trades · {visibleComments.length} comments · {operatorView ? "this week" : "last 2w"}</span>
           : undefined}
-        actions={<IconBtn icon="refresh" onClick={onRefresh} />}
+        actions={<>
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(o => !o)}
+            title={isFullscreen ? "Exit fullscreen (Esc)" : "Expand to fullscreen"}
+            style={{ background: "none", border: "none", padding: 4, cursor: "pointer", color: "var(--ink-3)", display: "flex", alignItems: "center" }}
+          >
+            {isFullscreen ? (
+              /* compress icon */
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            ) : (
+              /* expand icon */
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </button>
+          <IconBtn icon="refresh" onClick={onRefresh} />
+        </>}
       />
-      <div ref={scrollRef} style={{ overflowY: "auto", maxHeight: 560, overflowX: "hidden", width: "100%", padding: "16px 0" }}>
+      <div
+        ref={scrollRef}
+        style={{
+          overflowY: "auto", overflowX: "hidden", width: "100%", padding: "16px 0",
+          ...(isFullscreen ? { flex: 1 } : { maxHeight: 560 }),
+        }}
+      >
         {loading && (
           <div style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</div>
         )}
@@ -1490,11 +1550,13 @@ function RecordTradeForm({ selectedId, onSuccess, showToast, baseTZ }: { selecte
    ADD COMMENT FORM
 ═══════════════════════════════════════════════════════════ */
 function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, showToast, baseTZ }: { tradeId?: string; fullWidth?: boolean; isAnalyst?: boolean; onSuccess?: () => void; showToast: ShowToast; baseTZ: string }) {
-  const [content,    setContent]    = useState("");
-  const [tradeId,    setTradeId]    = useState(initId ?? "");
-  const [createdAt,  setCreatedAt]  = useState(() => nowInTZ(baseTZ));
-  const [submitting, setSubmitting] = useState(false);
-  const [lastErr,    setLastErr]    = useState<string | null>(null);
+  const [content,      setContent]      = useState("");
+  const [tradeId,      setTradeId]      = useState(initId ?? "");
+  const [createdAt,    setCreatedAt]    = useState(() => nowInTZ(baseTZ));
+  const [submitting,   setSubmitting]   = useState(false);
+  const [lastErr,      setLastErr]      = useState<string | null>(null);
+  const [isLastTrade,  setIsLastTrade]  = useState(false);
+  const [contractType, setContractType] = useState<"day" | "week">("day");
 
   useEffect(() => { if (initId) setTradeId(initId); }, [initId]);
 
@@ -1503,7 +1565,10 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
     if (!content.trim()) return;
     setSubmitting(true);
     setLastErr(null);
-    const final = isAnalyst ? `Analyst comment: ${content.trim()}` : content.trim();
+    const recordStamp = `record @+ ${fmtTz(new Date().toISOString(), baseTZ)}`;
+    const final = isAnalyst
+      ? `Analyst comment: ${recordStamp}: ${content.trim()}`
+      : `${recordStamp}: ${content.trim()}`;
     try {
       const res = await fetch("/api/session/comments", {
         method: "POST",
@@ -1520,8 +1585,20 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
         setLastErr(msg);
         showToast("error", msg);
       } else {
+        if (isLastTrade) {
+          // Persist session conclude contract server-side as a silent comment
+          await fetch("/api/session/comments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content:    `session_contract:${JSON.stringify({ type: contractType, setAt: new Date().toISOString() })}`,
+              created_at: new Date().toISOString(),
+            }),
+          }).catch(() => {});
+        }
         showToast("success", isAnalyst ? "Analyst comment added" : "Comment added");
         setContent("");
+        setIsLastTrade(false);
         onSuccess?.();
       }
     } catch {
@@ -1549,34 +1626,47 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
         <div>
           <label style={{ ...LBL, color: "var(--red)" }}>Content *</label>
 
-          {/* Analyst prefix badge — sits flush above the textarea */}
-          {isAnalyst && (
-            <div style={{
-              padding: "5px 10px",
-              background: "var(--amber-10)",
-              border: "1px solid rgba(240,160,48,0.22)",
-              borderBottom: "none",
-              borderRadius: "4px 4px 0 0",
-              display: "flex", alignItems: "center", gap: 6,
-            }}>
+          {/* Prefix badge — sits flush above the textarea */}
+          <div style={{
+            padding: "5px 10px",
+            background: isAnalyst ? "var(--amber-10)" : "rgba(77,156,245,0.07)",
+            border: `1px solid ${isAnalyst ? "rgba(240,160,48,0.22)" : "rgba(77,156,245,0.20)"}`,
+            borderBottom: "none",
+            borderRadius: "4px 4px 0 0",
+            display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+          }}>
+            {isAnalyst ? (
               <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
                 <path d="M6 1L7.5 4.5H11L8 7l1 3.5L6 8.5 3 10.5 4 7 1 4.5h3.5L6 1Z" stroke="var(--amber)" strokeWidth="1" strokeLinejoin="round"/>
               </svg>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--amber)", letterSpacing: "0.03em" }}>
-                Analyst comment:
-              </span>
-              <span style={{ fontSize: 10, color: "rgba(240,160,48,0.5)", fontStyle: "italic" }}>
-                prepended automatically
-              </span>
-            </div>
-          )}
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+                <circle cx="6" cy="6" r="4.5" stroke="#4d9cf5" strokeWidth="1.2"/>
+                <path d="M6 4v2.5M6 8h.01" stroke="#4d9cf5" strokeWidth="1.2" strokeLinecap="round"/>
+              </svg>
+            )}
+            <span style={{
+              fontSize: 10.5, fontWeight: 700,
+              color: isAnalyst ? "var(--amber)" : "#4d9cf5",
+              letterSpacing: "0.03em",
+              fontFamily: "var(--font-mono)",
+            }}>
+              {isAnalyst ? "Analyst comment:" : "record @+"} {!isAnalyst && (
+                <span style={{ color: "#4d9cf5", opacity: 0.75 }} suppressHydrationWarning>{nowInTZ(baseTZ).replace("T", " ")}</span>
+              )}
+            </span>
+            <span style={{ fontSize: 10, color: isAnalyst ? "rgba(240,160,48,0.5)" : "rgba(77,156,245,0.45)", fontStyle: "italic" }}>
+              prepended on submit
+            </span>
+          </div>
 
           <textarea
             style={{
               ...INP,
               minHeight: fullWidth ? 160 : 96,
               resize: "vertical",
-              ...(isAnalyst && { borderRadius: "0 0 4px 4px", borderTop: "1px solid rgba(240,160,48,0.22)" }),
+              borderRadius: "0 0 4px 4px",
+              borderTop: `1px solid ${isAnalyst ? "rgba(240,160,48,0.22)" : "rgba(77,156,245,0.20)"}`,
             }}
             placeholder={isAnalyst ? "Your observation or analysis…" : "Enter your observation, decision, or emotional state…"}
             value={content}
@@ -1585,6 +1675,54 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
           />
         </div>
         <div><label style={LBL}>Trade ID</label><input style={INP} placeholder="Link to specific trade (optional)" value={tradeId} onChange={e => setTradeId(e.target.value)} /></div>
+
+        {/* Last Trade — session conclude contract */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}
+            onClick={() => setIsLastTrade(o => !o)}
+          >
+            <div style={{
+              width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+              background: isLastTrade ? "rgba(240,58,87,0.16)" : "var(--sub)",
+              border: `1.5px solid ${isLastTrade ? "rgba(240,58,87,0.55)" : "var(--line-hi)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 0.14s, border-color 0.14s",
+            }}>
+              {isLastTrade && (
+                <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden>
+                  <path d="M1.5 4.5l2 2 4-4" stroke="var(--red)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 600, color: isLastTrade ? "var(--red)" : "var(--ink-2)", letterSpacing: "0.01em" }}>
+              Last Trade
+            </span>
+          </div>
+
+          {isLastTrade && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 22, flexWrap: "wrap" }}>
+              {(["day", "week"] as const).map(t => {
+                const active = contractType === t;
+                return (
+                  <button key={t} type="button" onClick={() => setContractType(t)} style={{
+                    padding: "4px 14px", borderRadius: 4, cursor: "pointer",
+                    fontSize: 11, fontWeight: active ? 700 : 400,
+                    background: active ? "rgba(240,58,87,0.12)" : "var(--sub)",
+                    border: `1px solid ${active ? "rgba(240,58,87,0.42)" : "var(--line-hi)"}`,
+                    color: active ? "var(--red)" : "var(--ink-3)",
+                    transition: "background 0.12s, border-color 0.12s, color 0.12s",
+                  }}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                );
+              })}
+              <span style={{ fontSize: 10, color: "var(--ink-3)", fontStyle: "italic", marginLeft: 2 }}>
+                conclude contract recorded on submit
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Analyst-only: adjustable creation timestamp */}
         {isAnalyst && (
@@ -1621,8 +1759,9 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
    Immediate     → 2 fields: Skip Anchor 1 · Target Anchor
    Last field is always the Target Anchor (anchor: true in JSON).
 ═══════════════════════════════════════════════════════════ */
-function EntryChecklistForm({ baseTZ, onSuccess, showToast }: {
+function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
   baseTZ: string; onSuccess?: () => void; showToast: ShowToast;
+  sessionContract?: { type: "day" | "week"; setAt: string } | null;
 }) {
   const [isImmediate,  setIsImmediate]  = useState(false);
   /* Always keep 3 datetime slots; show 2 or 3 based on toggle */
@@ -1704,28 +1843,84 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast }: {
 
       <form onSubmit={submit} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
 
-        {/* Immediate checkbox */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }} onClick={() => setIsImmediate(o => !o)}>
+        {/* Session conclude contract violation */}
+        {sessionContract && (
           <div style={{
-            width: 17, height: 17, borderRadius: 4, flexShrink: 0,
-            background: isImmediate ? "rgba(0,204,122,0.2)" : "var(--sub)",
-            border: `1.5px solid ${isImmediate ? "rgba(0,204,122,0.6)" : "var(--line-hi)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "background 0.15s, border-color 0.15s",
+            padding: "10px 14px",
+            background: "rgba(240,58,87,0.06)",
+            border: "1px solid rgba(240,58,87,0.28)",
+            borderLeft: "3px solid var(--red)",
+            borderRadius: "0 6px 6px 0",
           }}>
-            {isImmediate && (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
-                <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="var(--green)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            )}
+            <p style={{ margin: "0 0 3px", fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "var(--red)", textTransform: "uppercase" as const }}>
+              ⛔ VIOLATES SESSION CONCLUDE CONTRACT
+            </p>
+            <p style={{ margin: 0, fontSize: 11.5, color: "var(--red)", opacity: 0.85, lineHeight: 1.55 }}>
+              Last trade of the {sessionContract.type} was declared.
+              Submitting this entry plan violates the session conclude contract.
+            </p>
           </div>
-          <span style={{ fontSize: 13.5, fontWeight: 700, color: isImmediate ? "var(--green)" : "var(--ink-1)", letterSpacing: "-0.01em" }}>
-            Immediate
-          </span>
-          <span style={{ fontSize: 10, color: "var(--ink-3)", fontStyle: "italic" }}>
-            {isImmediate ? "2 fields" : "3 fields"}
-          </span>
+        )}
+
+        {/* Immediate checkbox */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }} onClick={() => setIsImmediate(o => !o)}>
+            <div style={{
+              width: 17, height: 17, borderRadius: 4, flexShrink: 0,
+              background: isImmediate ? "rgba(0,204,122,0.2)" : "var(--sub)",
+              border: `1.5px solid ${isImmediate ? "rgba(0,204,122,0.6)" : "var(--line-hi)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 0.15s, border-color 0.15s",
+            }}>
+              {isImmediate && (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+                  <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="var(--green)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </div>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: isImmediate ? "var(--green)" : "var(--ink-1)", letterSpacing: "-0.01em" }}>
+              Immediate
+            </span>
+            <span style={{ fontSize: 10, color: "var(--ink-3)", fontStyle: "italic" }}>
+              {isImmediate ? "2 fields" : "3 fields"}
+            </span>
+          </div>
+
+          {/* Guide tip — appears on tick */}
+          {isImmediate && (
+            <div style={{
+              marginTop: 8,
+              padding: "9px 12px",
+              background: "rgba(0,204,122,0.05)",
+              border: "1px solid rgba(0,204,122,0.22)",
+              borderLeft: "3px solid var(--green)",
+              borderRadius: "0 5px 5px 0",
+            }}>
+              <p style={{ margin: "0 0 3px", fontSize: 9, fontWeight: 700, letterSpacing: "0.09em", color: "var(--green)", textTransform: "uppercase" as const }}>
+                ⚡ Immediate anchor guide
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: "var(--ink-1)", lineHeight: 1.65 }}>
+                Use immediate trend for anchor/n — if <strong style={{ color: "var(--green)" }}>3+ touches on 1 frame higher</strong> exist, use that.
+              </p>
+            </div>
+          )}
         </div>
+
+        {/* Higher frame peak hint — only when not immediate */}
+        {!isImmediate && (
+          <div style={{
+            padding: "8px 12px",
+            background: "rgba(77,156,245,0.05)",
+            border: "1px solid rgba(77,156,245,0.18)",
+            borderLeft: "3px solid #4d9cf5",
+            borderRadius: "0 5px 5px 0",
+          }}>
+            <p style={{ margin: 0, fontSize: 12, color: "var(--ink-1)", lineHeight: 1.6 }}>
+              <span style={{ color: "#4d9cf5", fontWeight: 700 }}>↑ Higher frame peak</span>
+              {" "}— select anchor from a higher timeframe peak or trough.
+            </p>
+          </div>
+        )}
 
         {/* Entry datetime fields — always shown */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2200,6 +2395,18 @@ export default function SessionClient({ user }: { user: User }) {
     : undefined;
   const modeColor = effectiveMode === "analyst" ? "var(--amber)" : "var(--green)";
 
+  /* Derive the active session conclude contract from comments */
+  let sessionContract: { type: "day" | "week"; setAt: string } | null = null;
+  for (const c of [...commentRows].sort((a, b) => new Date(b.Entry).getTime() - new Date(a.Entry).getTime())) {
+    if (c.content.startsWith("session_contract:")) {
+      try {
+        const p = JSON.parse(c.content.replace(/^session_contract:/, "")) as { type: "day" | "week"; setAt: string };
+        if (isContractActive(p)) sessionContract = p;
+      } catch {}
+      break; // only the most recent contract matters
+    }
+  }
+
   return (
     <div style={{ minHeight: "100%", paddingBottom: 64 }}>
       <Toaster toasts={toasts} />
@@ -2368,7 +2575,7 @@ export default function SessionClient({ user }: { user: User }) {
               </button>
 
               {showChecklist && (
-                <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchComments} showToast={showToast} />
+                <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchComments} showToast={showToast} sessionContract={sessionContract} />
               )}
 
               <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
