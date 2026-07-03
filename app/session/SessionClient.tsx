@@ -1223,9 +1223,13 @@ function JournalTimeline({
     ? comments.filter(c =>
         !c.content.startsWith("Analyst comment:") &&
         !c.content.startsWith("session_contract:") &&
+        !c.content.startsWith("alarm_state:") &&
         new Date(c.Entry).getTime() >= weekMs
       )
-    : comments.filter(c => !c.content.startsWith("session_contract:"));
+    : comments.filter(c =>
+        !c.content.startsWith("session_contract:") &&
+        !c.content.startsWith("alarm_state:")
+      );
   const visibleTrades = operatorView
     ? trades.filter(t => new Date(t.entry).getTime() >= weekMs)
     : trades;
@@ -1676,8 +1680,8 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
         </div>
         <div><label style={LBL}>Trade ID</label><input style={INP} placeholder="Link to specific trade (optional)" value={tradeId} onChange={e => setTradeId(e.target.value)} /></div>
 
-        {/* Last Trade — session conclude contract */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {/* Last Trade — session conclude contract (operator only) */}
+        {!isAnalyst && <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div
             style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}
             onClick={() => setIsLastTrade(o => !o)}
@@ -1722,7 +1726,7 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
               </span>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Analyst-only: adjustable creation timestamp */}
         {isAnalyst && (
@@ -1985,6 +1989,506 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
         </div>
       </form>
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FOCUS ALARM
+   Operator-only configurable focus/absent cycle alarm.
+   Fires a toast + fullscreen flash at (interval - focus) min
+   into each cycle so the operator has `focus` min to engage.
+═══════════════════════════════════════════════════════════ */
+
+function playAlarmBeeps(volume: number) {
+  if (volume <= 0) return;
+  try {
+    const ctx  = new AudioContext();
+    const dest = ctx.destination;
+    const v    = Math.min(1, Math.max(0, volume));
+
+    const tone = (t: number, freq: number, dur: number, rel = 1.0) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(dest);
+      osc.type = "sawtooth";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(v * rel, t + 0.008);
+      gain.gain.setValueAtTime(v * rel, t + dur - 0.03);
+      gain.gain.linearRampToValueAtTime(0, t + dur);
+      osc.start(t); osc.stop(t + dur + 0.01);
+    };
+
+    const now = ctx.currentTime;
+    tone(now,        1320, 0.08, 0.55);
+    tone(now + 0.11, 1320, 0.08, 0.55);
+    tone(now + 0.28, 1760, 0.22, 0.65);
+    tone(now + 0.70, 1320, 0.08, 0.60);
+    tone(now + 0.81, 1320, 0.08, 0.60);
+    tone(now + 0.98, 1760, 0.22, 0.70);
+    tone(now + 1.40, 1320, 0.08, 0.65);
+    tone(now + 1.51, 1320, 0.08, 0.65);
+    tone(now + 1.68, 1760, 0.36, 0.75);
+    setTimeout(() => ctx.close(), 2500);
+  } catch {
+    /* AudioContext unavailable */
+  }
+}
+
+function AlarmConfig({ showToast }: { showToast: ShowToast }) {
+  type SrvState = {
+    running:        boolean;
+    started_at:     string | null;
+    interval_min:   number;
+    focus_min:      number;
+    last_ack_cycle: number;
+  };
+  const SRV0: SrvState = { running: false, started_at: null, interval_min: 15, focus_min: 2, last_ack_cycle: -1 };
+
+  const [srv,          setSrv]          = useState<SrvState>(SRV0);
+  const [intervalMin,  setIntervalMin]  = useState(15);   // local config (editable when stopped)
+  const [focusMin,     setFocusMin]     = useState(2);
+  const [flash,        setFlash]        = useState(false);
+  const [countdown,    setCountdown]    = useState<number | null>(null);
+  const [focusRemain,  setFocusRemain]  = useState<number | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [volume,       setVolume]       = useState(0.7);
+  const [syncing,      setSyncing]      = useState(false);
+
+  const tickRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const soundFiredCycle = useRef<number>(-1);
+  const lastAckRef      = useRef<number>(-1);
+  const volumeRef       = useRef<number>(0.7);
+
+  useEffect(() => { volumeRef.current  = volume;             }, [volume]);
+  useEffect(() => { lastAckRef.current = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
+
+  /* Sync local config from server when alarm is stopped */
+  useEffect(() => {
+    if (!srv.running) {
+      setIntervalMin(srv.interval_min);
+      setFocusMin(srv.focus_min);
+    }
+  }, [srv.running, srv.interval_min, srv.focus_min]);
+
+  /* ── Polling ─────────────────────────────────────── */
+  const fetchState = useCallback(async () => {
+    try {
+      const res = await fetch("/api/session/alarm");
+      if (res.ok) setSrv(await res.json() as SrvState);
+    } catch {}
+  }, []);
+
+  useEffect(() => { void fetchState(); }, [fetchState]);
+
+  useEffect(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(fetchState, srv.running ? 2000 : 5000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [srv.running, fetchState]);
+
+  /* ── Local countdown + flash detection ─────────────── */
+  useEffect(() => {
+    if (tickRef.current) clearInterval(tickRef.current);
+    if (!srv.running || !srv.started_at) {
+      setCountdown(null); setFocusRemain(null); setFlash(false);
+      return;
+    }
+    const epoch      = new Date(srv.started_at).getTime();
+    const cycleSec   = srv.interval_min * 60;
+    const triggerSec = (srv.interval_min - srv.focus_min) * 60;
+
+    const tick = () => {
+      const elapsed  = (Date.now() - epoch) / 1000;
+      const cycleNum = Math.floor(elapsed / cycleSec);
+      const cyclePos = elapsed % cycleSec;
+
+      setCountdown(cyclePos < triggerSec ? Math.ceil(triggerSec - cyclePos) : 0);
+
+      if (cyclePos >= triggerSec) {
+        const focusLeft = srv.focus_min * 60 - (cyclePos - triggerSec);
+        setFocusRemain(focusLeft > 0 ? Math.ceil(focusLeft) : null);
+      } else {
+        setFocusRemain(null);
+      }
+
+      const shouldFlash = cyclePos >= triggerSec && cycleNum > lastAckRef.current;
+      setFlash(shouldFlash);
+
+      if (shouldFlash && soundFiredCycle.current < cycleNum) {
+        soundFiredCycle.current = cycleNum;
+        playAlarmBeeps(volumeRef.current);
+        showToast("success", "Focus window — return your attention to the session");
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true });
+        }
+      }
+    };
+
+    tick();
+    tickRef.current = setInterval(tick, 1000);
+    return () => { if (tickRef.current) clearInterval(tickRef.current); };
+  }, [srv.running, srv.started_at, srv.interval_min, srv.focus_min, showToast]);
+
+  /* ── API actions ────────────────────────────────────── */
+  const callAPI = useCallback(async (body: Record<string, unknown>) => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/session/alarm", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) setSrv(await res.json() as SrvState);
+    } catch {} finally { setSyncing(false); }
+  }, []);
+
+  const handleStart = useCallback(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default")
+      Notification.requestPermission().catch(() => {});
+    soundFiredCycle.current = -1;
+    void callAPI({ action: "start", intervalMin, focusMin });
+  }, [callAPI, intervalMin, focusMin]);
+
+  const handleStop = useCallback(() => void callAPI({ action: "stop" }), [callAPI]);
+
+  const handleAck = useCallback(() => {
+    if (!srv.started_at) { setFlash(false); return; }
+    const cycleNum = Math.floor((Date.now() - new Date(srv.started_at).getTime()) / 1000 / (srv.interval_min * 60));
+    setFlash(false);
+    void callAPI({ action: "ack", cycle: cycleNum });
+  }, [callAPI, srv.started_at, srv.interval_min]);
+
+  const running      = srv.running;
+  const dispInterval = running ? srv.interval_min : intervalMin;
+  const dispFocus    = running ? srv.focus_min    : focusMin;
+
+  /* Fire preview */
+  const fireMins: number[] = [];
+  for (let i = 1; i * dispInterval <= 60; i++) fireMins.push(i * dispInterval - dispFocus);
+
+  function fmtCountdown(sec: number): string {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  return (
+    <>
+      {/* ── Alarm overlay ── */}
+      {flash && (
+        <div
+          role="alertdialog"
+          aria-label="Focus Window Alarm"
+          onClick={handleAck}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "var(--canvas)",
+            backgroundImage: [
+              "radial-gradient(ellipse 80% 55% at 50% 38%, rgba(0,204,122,0.07) 0%, transparent 68%)",
+              "radial-gradient(ellipse 44% 32% at 90% 90%, rgba(0,130,255,0.016) 0%, transparent 50%)",
+            ].join(","),
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          {/* Card */}
+          <div
+            onClick={e => { e.stopPropagation(); handleAck(); }}
+            style={{
+              background: "var(--card)",
+              backgroundImage: "linear-gradient(160deg, rgba(255,255,255,0.026) 0%, transparent 46%)",
+              border: "1px solid rgba(0,204,122,0.22)",
+              borderRadius: 6,
+              padding: "44px 52px 36px",
+              display: "flex", flexDirection: "column", alignItems: "center",
+              textAlign: "center" as const,
+              maxWidth: 420, width: "88%",
+              boxShadow: [
+                "0 0 0 1px rgba(0,204,122,0.06)",
+                "0 20px 56px rgba(0,0,0,0.65)",
+                "0 0 80px rgba(0,204,122,0.09)",
+              ].join(","),
+              animation: "alarmSlideIn 0.32s cubic-bezier(0.4,0,0.2,1) both",
+              position: "relative" as const,
+              overflow: "hidden",
+            }}
+          >
+            {/* Top accent line */}
+            <div style={{
+              position: "absolute", top: 0, left: 0, right: 0, height: 2,
+              background: "linear-gradient(90deg, transparent, var(--green), transparent)",
+              animation: "alarmAccent 2.4s ease-in-out infinite",
+            }} />
+
+            {/* Custom bell icon with glow halo */}
+            <div style={{
+              position: "relative", marginBottom: 26,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 72, height: 72,
+            }}>
+              {/* Radial glow behind icon */}
+              <div style={{
+                position: "absolute", inset: 0, borderRadius: "50%",
+                background: "radial-gradient(circle, rgba(0,204,122,0.18) 0%, transparent 72%)",
+                animation: "alarmGlow 2.2s ease-in-out infinite",
+              }} />
+              <svg
+                width="36" height="36" viewBox="0 0 36 36"
+                fill="none" xmlns="http://www.w3.org/2000/svg"
+                style={{ position: "relative", zIndex: 1 }}
+                aria-hidden
+              >
+                {/* Handle */}
+                <path d="M18 3.5V6" stroke="var(--green)" strokeWidth="1.6" strokeLinecap="round"/>
+                {/* Bell body */}
+                <path
+                  d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                  stroke="var(--green)" strokeWidth="1.6"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  fill="rgba(0,204,122,0.07)"
+                />
+                {/* Clapper arc */}
+                <path
+                  d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                  stroke="var(--green)" strokeWidth="1.6" strokeLinecap="round"
+                />
+                {/* Tiny motion lines (ringing) */}
+                <path d="M5.5 12.5C5.5 12.5 4 14.5 4 16.5" stroke="var(--green)" strokeWidth="1.2" strokeLinecap="round" opacity="0.5"/>
+                <path d="M30.5 12.5C30.5 12.5 32 14.5 32 16.5" stroke="var(--green)" strokeWidth="1.2" strokeLinecap="round" opacity="0.5"/>
+              </svg>
+            </div>
+
+            {/* Eyebrow — matches .section-eyebrow */}
+            <p style={{
+              margin: "0 0 10px",
+              fontSize: 10, fontWeight: 700, letterSpacing: "0.12em",
+              textTransform: "uppercase" as const,
+              color: "var(--green)",
+              fontFamily: "var(--font-mono), monospace",
+              textShadow: "0 0 22px rgba(0,204,122,0.38)",
+            }}>
+              Focus Window
+            </p>
+
+            {/* Headline */}
+            <p style={{
+              margin: "0 0 8px",
+              fontSize: 20, fontWeight: 700,
+              color: "var(--ink-0)", lineHeight: 1.2,
+              letterSpacing: "-0.01em",
+            }}>
+              Return Your Attention
+            </p>
+
+            {/* Sub-line */}
+            <p style={{
+              margin: "0 0 28px",
+              fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.6,
+            }}>
+              {focusMin}-minute focus window is active.
+            </p>
+
+            {/* Divider */}
+            <div style={{ width: "100%", height: 1, background: "var(--line)", marginBottom: 24 }} />
+
+            {/* Dismiss button — matches .btn .btn-primary */}
+            <button
+              type="button"
+              onClick={handleAck}
+              className="btn btn-primary"
+              style={{ padding: "10px 36px", fontSize: 12.5 }}
+            >
+              Acknowledge
+            </button>
+
+            <p style={{ margin: "10px 0 0", fontSize: 10.5, color: "var(--ink-3)", letterSpacing: "0.02em" }}>
+              or click anywhere to dismiss
+            </p>
+          </div>
+
+          {/* Subtle screen-edge glow */}
+          <div style={{
+            position: "fixed", inset: 0, pointerEvents: "none",
+            boxShadow: "inset 0 0 48px rgba(0,204,122,0.07)",
+            animation: "alarmEdge 2.4s ease-in-out infinite",
+          }} />
+        </div>
+      )}
+
+      <style>{`
+        @keyframes alarmSlideIn {
+          from { opacity: 0; transform: translateY(18px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes alarmGlow {
+          0%,100% { opacity: 1; transform: scale(1); }
+          50%      { opacity: 0.55; transform: scale(1.18); }
+        }
+        @keyframes alarmAccent {
+          0%,100% { opacity: 0.6; }
+          50%      { opacity: 1; }
+        }
+        @keyframes alarmEdge {
+          0%,100% { box-shadow: inset 0 0 48px rgba(0,204,122,0.07); }
+          50%      { box-shadow: inset 0 0 80px rgba(0,204,122,0.14); }
+        }
+      `}</style>
+
+      {/* Config card */}
+      <style>{`
+        input[type=number].alarm-stepper::-webkit-outer-spin-button,
+        input[type=number].alarm-stepper::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number].alarm-stepper { -moz-appearance: textfield; }
+      `}</style>
+      <div style={{
+        marginTop: 12,
+        background: "var(--sub)",
+        borderRadius: 8,
+        outline: `1px solid ${running ? "rgba(0,204,122,0.3)" : "var(--line-hi)"}`,
+        transition: "outline-color 0.2s",
+        overflow: "hidden",
+      }}>
+
+        {/* ── Header row ── */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", borderBottom: showSettings ? "1px solid var(--line)" : "none" }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-1)", letterSpacing: "0.01em", flex: 1 }}>
+            Focus Alarm
+          </span>
+          {running && (
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--green)", background: "rgba(0,204,122,0.1)", padding: "2px 7px", borderRadius: 3, letterSpacing: "0.06em" }}>
+              ACTIVE
+            </span>
+          )}
+          {/* Gear — toggles settings panel */}
+          <button
+            type="button"
+            aria-label="Toggle alarm settings"
+            onClick={() => setShowSettings(s => !s)}
+            style={{
+              width: 26, height: 26, borderRadius: 5, border: "1px solid var(--line-hi)",
+              background: showSettings ? "rgba(0,204,122,0.1)" : "var(--raised)",
+              color: showSettings ? "var(--green)" : "var(--ink-2)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", flexShrink: 0, transition: "background 0.15s, color 0.15s",
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path d="M8 10.5A2.5 2.5 0 1 0 8 5.5a2.5 2.5 0 0 0 0 5Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M2.929 2.929l1.06 1.06M12.01 12.01l1.06 1.06M2.929 13.071l1.06-1.06M12.01 3.99l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* ── Settings panel (collapsible) ── */}
+        {showSettings && (
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 12 }}>
+
+            {/* Steppers row */}
+            <div style={{ display: "flex", gap: 12 }}>
+              {([
+                { label: "Interval (min)", value: intervalMin, set: (v: number) => setIntervalMin(Math.max(focusMin + 1, Math.min(60, v))), dec: () => setIntervalMin(v => Math.max(focusMin + 1, v - 1)), inc: () => setIntervalMin(v => Math.min(60, v + 1)), decDis: intervalMin <= focusMin + 1, incDis: intervalMin >= 60, min: focusMin + 1, max: 60 },
+                { label: "Focus (min)",    value: focusMin,    set: (v: number) => setFocusMin(Math.max(1, Math.min(intervalMin - 1, v))),   dec: () => setFocusMin(v => Math.max(1, v - 1)),               inc: () => setFocusMin(v => Math.min(intervalMin - 1, v + 1)), decDis: focusMin <= 1,             incDis: focusMin >= intervalMin - 1, min: 1, max: intervalMin - 1 },
+              ] as const).map(cfg => (
+                <div key={cfg.label} style={{ flex: 1 }}>
+                  <p style={{ margin: "0 0 5px", fontSize: 9.5, fontWeight: 600, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+                    {cfg.label}
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <button type="button" disabled={running || cfg.decDis} onClick={cfg.dec}
+                      style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid var(--line-hi)", background: "var(--raised)", color: "var(--ink-1)", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", opacity: (running || cfg.decDis) ? 0.3 : 1, flexShrink: 0 }}>
+                      −
+                    </button>
+                    <input type="number" className="alarm-stepper"
+                      value={cfg.value} min={cfg.min} max={cfg.max} disabled={running}
+                      onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) cfg.set(v); }}
+                      style={{ width: 34, fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--ink-0)", background: "transparent", border: "none", borderBottom: `1px solid ${running ? "transparent" : "var(--line-hi)"}`, textAlign: "center" as const, outline: "none", padding: "1px 0", opacity: running ? 0.45 : 1 }}
+                    />
+                    <button type="button" disabled={running || cfg.incDis} onClick={cfg.inc}
+                      style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid var(--line-hi)", background: "var(--raised)", color: "var(--ink-1)", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", opacity: (running || cfg.incDis) ? 0.3 : 1, flexShrink: 0 }}>
+                      +
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Fire preview */}
+            <div>
+              <p style={{ margin: "0 0 2px", fontSize: 9.5, fontWeight: 600, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+                Fires at (per hour)
+              </p>
+              <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-2)" }}>
+                {fireMins.map(m => `${m}m`).join(" · ")}
+              </p>
+            </div>
+
+            {/* Volume slider */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                <p style={{ margin: 0, fontSize: 9.5, fontWeight: 600, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>Volume</p>
+                <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--ink-2)", fontWeight: 600 }}>
+                  {Math.round(volume * 100)}%
+                </span>
+              </div>
+              <input
+                type="range" min={0} max={1} step={0.05} value={volume}
+                onChange={e => setVolume(parseFloat(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--green)" }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── Always-visible body ── */}
+        <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* Dual countdown tiles */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{
+              flex: 1, padding: "7px 10px", borderRadius: 5,
+              background: running ? "var(--raised)" : "var(--card)",
+              border: `1px solid ${running && countdown !== null && countdown < 60 ? "rgba(0,204,122,0.25)" : "var(--line)"}`,
+              transition: "border-color 0.3s",
+            }}>
+              <p style={{ margin: "0 0 1px", fontSize: 9.5, fontWeight: 600, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>Next Alarm</p>
+              <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: running && countdown !== null && countdown < 60 ? "var(--green)" : running ? "var(--ink-1)" : "var(--ink-3)" }}>
+                {running && countdown !== null ? fmtCountdown(countdown) : `${dispInterval - dispFocus}:00`}
+              </p>
+            </div>
+            <div style={{
+              flex: 1, padding: "7px 10px", borderRadius: 5,
+              background: focusRemain ? "rgba(0,204,122,0.04)" : "var(--card)",
+              border: `1px solid ${focusRemain ? "rgba(0,204,122,0.18)" : "var(--line)"}`,
+              transition: "background 0.3s, border-color 0.3s",
+            }}>
+              <p style={{ margin: "0 0 1px", fontSize: 9.5, fontWeight: 600, color: focusRemain ? "var(--green)" : "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>Focus Left</p>
+              <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: focusRemain ? "var(--ink-1)" : "var(--ink-3)" }}>
+                {focusRemain ? fmtCountdown(focusRemain) : `${dispFocus}:00`}
+              </p>
+            </div>
+          </div>
+
+          {/* Start / Stop */}
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={running ? handleStop : handleStart}
+            style={{
+              width: "100%", padding: "9px 0", borderRadius: 6, border: "none",
+              background: running ? "rgba(240,58,87,0.1)" : "rgba(0,204,122,0.1)",
+              color: running ? "var(--red)" : "var(--green)",
+              outline: `1px solid ${running ? "rgba(240,58,87,0.28)" : "rgba(0,204,122,0.22)"}`,
+              fontSize: 12.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
+              transition: "background 0.15s, color 0.15s, outline-color 0.15s",
+              letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
+            }}
+          >
+            {syncing ? "Syncing…" : running ? "Stop Alarm" : "Start Alarm"}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -2579,6 +3083,8 @@ export default function SessionClient({ user }: { user: User }) {
               )}
 
               <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
+
+              <AlarmConfig showToast={showToast} />
             </div>
           </div>
         )}
