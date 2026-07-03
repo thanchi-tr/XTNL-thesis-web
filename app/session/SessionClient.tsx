@@ -229,12 +229,6 @@ function Toaster({ toasts }: { toasts: ToastMsg[] }) {
   );
 }
 
-/* Static task list — update manually as needed */
-const TASKS = [
-  { id: "ingestion", label: "Ingestion",        done: true,  ts: "Jun 30 · 06:00 AM" },
-  { id: "analysis",  label: "Analysis Session", done: false, ts: null                 },
-];
-
 /* ═══════════════════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════════════════ */
@@ -363,16 +357,43 @@ const TD  = { padding: "9px 12px", fontSize: 12.5, color: "var(--ink-1)", fontFa
 /* ═══════════════════════════════════════════════════════════
    TASK PILL
 ═══════════════════════════════════════════════════════════ */
-function TaskPill({ done, label, ts }: { done: boolean; label: string; ts: string | null }) {
+function TaskPill({ done, label, ts, onClick, loading }: {
+  done: boolean; label: string; ts: string | null;
+  onClick?: () => void; loading?: boolean;
+}) {
+  const clickable = !!onClick && !done && !loading;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 4, border: `1px solid ${done ? "rgba(0,204,122,0.22)" : "var(--line)"}`, background: done ? "var(--green-06)" : "var(--sub)" }}>
-      {done
-        ? <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden><circle cx="6" cy="6" r="5.5" stroke="var(--green)" strokeWidth="1"/><path d="M3.5 6l1.8 1.8 3-3.6" stroke="var(--green)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        : <div style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid var(--ink-3)", flexShrink: 0 }} />
-      }
+    <div
+      onClick={clickable ? onClick : undefined}
+      role={clickable ? "button" : undefined}
+      title={clickable ? `Click to verify ${label}` : undefined}
+      style={{
+        display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 4,
+        border: `1px solid ${done ? "rgba(0,204,122,0.22)" : "var(--line)"}`,
+        background: done ? "var(--green-06)" : "var(--sub)",
+        cursor: clickable ? "pointer" : "default",
+        transition: "border-color 0.15s, background 0.15s",
+        opacity: loading ? 0.6 : 1,
+      }}
+    >
+      {loading ? (
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden style={{ animation: "spin 1s linear infinite" }}>
+          <circle cx="6" cy="6" r="4.5" stroke="var(--ink-3)" strokeWidth="1.5" strokeDasharray="14 8"/>
+        </svg>
+      ) : done ? (
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <circle cx="6" cy="6" r="5.5" stroke="var(--green)" strokeWidth="1"/>
+          <path d="M3.5 6l1.8 1.8 3-3.6" stroke="var(--green)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ) : (
+        <div style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid var(--ink-3)", flexShrink: 0 }} />
+      )}
       <span style={{ fontSize: 11, fontWeight: 600, color: done ? "var(--green)" : "var(--ink-2)", letterSpacing: "0.02em" }}>{label}</span>
-      {done && ts  && <span style={{ fontSize: 10, color: "var(--ink-3)" }}>{ts}</span>}
-      {!done       && <span style={{ fontSize: 10, color: "var(--ink-3)", fontStyle: "italic" }}>pending</span>}
+      {loading              && <span style={{ fontSize: 10, color: "var(--ink-3)", fontStyle: "italic" }}>checking…</span>}
+      {!loading && done && ts && <span style={{ fontSize: 10, color: "var(--ink-3)" }}>{ts}</span>}
+      {!loading && done && !ts && <span style={{ fontSize: 10, color: "var(--green)", fontStyle: "italic" }}>verified</span>}
+      {!loading && !done        && <span style={{ fontSize: 10, color: "var(--ink-3)", fontStyle: "italic" }}>{clickable ? "click to verify" : "pending"}</span>}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -2035,7 +2056,7 @@ function playAlarmBeeps(volume: number) {
   }
 }
 
-function AlarmConfig({ showToast }: { showToast: ShowToast }) {
+function AlarmConfig({ showToast, onRunningChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void }) {
   type SrvState = {
     running:        boolean;
     started_at:     string | null;
@@ -2071,6 +2092,9 @@ function AlarmConfig({ showToast }: { showToast: ShowToast }) {
       setFocusMin(srv.focus_min);
     }
   }, [srv.running, srv.interval_min, srv.focus_min]);
+
+  /* Notify parent of running state changes */
+  useEffect(() => { onRunningChange?.(srv.running); }, [srv.running, onRunningChange]);
 
   /* ── Polling ─────────────────────────────────────── */
   const fetchState = useCallback(async () => {
@@ -2789,9 +2813,10 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
 export default function SessionClient({ user }: { user: User }) {
   const [mode,         setMode]         = useState<Mode>("operator");
   const [modeOverride, setModeOverride] = useState<Mode | null>(null);
-  const [greeting,     setGreeting]     = useState("Welcome back");
-  const [timeStr,      setTimeStr]      = useState("");
-  const [dayStr,       setDayStr]       = useState("");
+  const [greeting,      setGreeting]      = useState("Welcome back");
+  const [timeStr,       setTimeStr]       = useState("");
+  const [dayStr,        setDayStr]        = useState("");
+  const [alarmRunning,  setAlarmRunning]  = useState(false);
   const [baseTZ,       setBaseTZ]       = useState<string>(() => {
     if (typeof window === "undefined") return "Australia/Melbourne";
     return localStorage.getItem("xtnl_tz") ?? "Australia/Melbourne";
@@ -2820,6 +2845,11 @@ export default function SessionClient({ user }: { user: User }) {
   const [loadingOpt,   setLoadingOpt]   = useState(true);
   const [loadingLive,  setLoadingLive]  = useState(true);
   const [loadingComm,  setLoadingComm]  = useState(true);
+
+  /* ── Session pipeline status ─────────────────────── */
+  const [pipelineStatus,    setPipelineStatus]    = useState<{ ingestionDone: boolean; processDone: boolean } | null>(null);
+  const [analysisDone,      setAnalysisDone]      = useState(false);
+  const [analysisChecking,  setAnalysisChecking]  = useState(false);
 
   const fetchOptimal = useCallback(async () => {
     setLoadingOpt(true);
@@ -2857,11 +2887,19 @@ export default function SessionClient({ user }: { user: User }) {
     }
   }, [showToast]);
 
+  const fetchPipelineStatus = useCallback(async () => {
+    try {
+      const r = await fetch("/api/session/pipeline-status");
+      if (r.ok) { const j = await r.json(); setPipelineStatus(j); }
+    } catch { /* ignore */ }
+  }, []);
+
   const fetchLive = useCallback(async () => {
     setLoadingLive(true);
     try { const r = await fetch("/api/session/live-trades"); const j = await r.json(); setLiveRows(j.rows ?? []); } catch {}
     setLoadingLive(false);
-  }, []);
+    fetchPipelineStatus();
+  }, [fetchPipelineStatus]);
 
   const fetchComments = useCallback(async () => {
     setLoadingComm(true);
@@ -2871,11 +2909,28 @@ export default function SessionClient({ user }: { user: User }) {
 
   const fetchJournal = useCallback(() => { fetchOptimal(); fetchComments(); }, [fetchOptimal, fetchComments]);
 
+  const handleVerifyAnalysis = useCallback(async () => {
+    setAnalysisChecking(true);
+    try {
+      const r = await fetch("/api/data/report");
+      if (r.ok) {
+        setAnalysisDone(true);
+        showToast("success", "Weekly report found — Analysis Session verified");
+      } else {
+        showToast("error", "No weekly report found in OneDrive yet");
+      }
+    } catch {
+      showToast("error", "Could not reach OneDrive — try again");
+    }
+    setAnalysisChecking(false);
+  }, [showToast]);
+
   useEffect(() => {
     fetchOptimal();
     fetchLive();
     fetchComments();
-  }, [fetchOptimal, fetchLive, fetchComments]);
+    fetchPipelineStatus();
+  }, [fetchOptimal, fetchLive, fetchComments, fetchPipelineStatus]);
 
   useEffect(() => {
     function tick() {
@@ -2914,12 +2969,12 @@ export default function SessionClient({ user }: { user: User }) {
   return (
     <div style={{ minHeight: "100%", paddingBottom: 64 }}>
       <Toaster toasts={toasts} />
-      <div className="site-container" style={{ paddingTop: 32 }}>
+      <div className="site-container" style={{ paddingTop: 20 }}>
 
         {/* ── PAGE HEADER ──────────────────────────────────── */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <div style={{ width: 7, height: 7, borderRadius: "50%", background: modeColor, boxShadow: `0 0 8px ${modeColor}` }} />
               <span className="section-eyebrow" style={{ color: modeColor }}>
                 {effectiveMode === "analyst" ? "Analyst Mode" : "Operator Mode"}
@@ -2954,43 +3009,127 @@ export default function SessionClient({ user }: { user: User }) {
                 </div>
               )}
             </div>
-            <h1 style={{ margin: 0, fontSize: "clamp(20px, 3vw, 26px)", fontWeight: 700, letterSpacing: "-0.03em", color: "var(--ink-0)" }}>{greeting}</h1>
-            {timeStr && <p style={{ marginTop: 5, fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>Melbourne · {dayStr} · {timeStr} AEST</p>}
-          </div>
-          <div className="session-header-tasks">
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "var(--ink-3)", textTransform: "uppercase" }}>Session Tasks</span>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {TASKS.map(t => <TaskPill key={t.id} done={t.done} label={t.label} ts={t.ts} />)}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <h1 style={{ margin: 0, fontSize: "clamp(18px, 2.5vw, 22px)", fontWeight: 700, letterSpacing: "-0.03em", color: "var(--ink-0)" }}>{greeting}</h1>
+              {alarmRunning && effectiveMode === "operator" && (
+                <span
+                  title="Focus alarm active"
+                  style={{
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    width: 28, height: 28, borderRadius: "50%",
+                    background: "rgba(0,204,122,0.12)",
+                    border: "1px solid rgba(0,204,122,0.3)",
+                    color: "var(--green)",
+                    animation: "alarmBadgePulse 2s ease-in-out infinite",
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 36 36" fill="none" aria-hidden>
+                    <path d="M18 3.5V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                      stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                      fill="rgba(0,204,122,0.12)"/>
+                    <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                      stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  </svg>
+                </span>
+              )}
+              <style>{`
+                @keyframes alarmBadgePulse {
+                  0%,100% { box-shadow: 0 0 0 0 rgba(0,204,122,0.45); opacity: 1; }
+                  50%      { box-shadow: 0 0 0 6px rgba(0,204,122,0);  opacity: 0.75; }
+                }
+              `}</style>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 5, flexWrap: "wrap" }}>
+              {timeStr && <span style={{ fontSize: 11, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>Melbourne · {dayStr} · {timeStr} AEST</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: "0.08em", color: "var(--ink-3)", textTransform: "uppercase" }}>TZ</span>
+                <select
+                  value={baseTZ}
+                  onChange={e => handleTZChange(e.target.value)}
+                  style={{
+                    background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 4,
+                    color: "var(--ink-2)", fontSize: 10.5, fontFamily: "var(--font-mono)",
+                    padding: "3px 6px", cursor: "pointer", outline: "none",
+                  }}
+                >
+                  {TIMEZONES.map(z => (
+                    <option key={z.value} value={z.value}>{z.label}  {tzOffset(z.value)}</option>
+                  ))}
+                </select>
+                <span suppressHydrationWarning style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--ink-3)" }}>
+                  {nowInTZ(baseTZ).replace("T", " ")}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+          {effectiveMode === "analyst" && <div className="session-header-tasks">
+            <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.10em", color: "var(--ink-3)", textTransform: "uppercase" }}>Session Pipeline</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
 
-        {/* ── TIMEZONE SELECTOR ────────────────────────────── */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "var(--ink-3)", textTransform: "uppercase", flexShrink: 0 }}>Base TZ</span>
-          <select
-            value={baseTZ}
-            onChange={e => handleTZChange(e.target.value)}
-            style={{
-              flex: 1, maxWidth: 280,
-              background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 4,
-              color: "var(--ink-1)", fontSize: 11.5, fontFamily: "var(--font-mono)",
-              padding: "5px 8px", cursor: "pointer", outline: "none",
-            }}
-          >
-            {TIMEZONES.map(z => (
-              <option key={z.value} value={z.value}>{z.label}  {tzOffset(z.value)}</option>
-            ))}
-          </select>
-          <span suppressHydrationWarning style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)", flexShrink: 0 }}>
-            {nowInTZ(baseTZ).replace("T", " ")}
-          </span>
-        </div>
+              {/* Step 1 — Ingestion */}
+              <TaskPill
+                done={pipelineStatus?.ingestionDone ?? false}
+                label="Ingestion"
+                ts={null}
+                loading={pipelineStatus === null}
+              />
 
-        <div style={{ height: 1, background: "var(--line)", marginBottom: 20 }} />
+              {/* arrow → */}
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden style={{ color: "var(--ink-3)", flexShrink: 0 }}>
+                <path d="M2 7h10M8 3.5l3.5 3.5L8 10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+
+              {/* Step 2 — Process All Trades (button when incomplete, pill when done) */}
+              {pipelineStatus?.processDone ? (
+                <TaskPill done label="Process All Trades" ts={null} />
+              ) : (
+                <button
+                  disabled={!pipelineStatus?.ingestionDone}
+                  onClick={fetchPipelineStatus}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "5px 10px", borderRadius: 4,
+                    border: `1px solid ${pipelineStatus?.ingestionDone ? "rgba(240,160,48,0.28)" : "var(--line)"}`,
+                    background: pipelineStatus?.ingestionDone ? "rgba(240,160,48,0.07)" : "var(--sub)",
+                    color: pipelineStatus?.ingestionDone ? "var(--amber)" : "var(--ink-3)",
+                    cursor: pipelineStatus?.ingestionDone ? "pointer" : "not-allowed",
+                    fontSize: 11, fontWeight: 600, letterSpacing: "0.02em",
+                    transition: "background 0.15s, border-color 0.15s",
+                    opacity: pipelineStatus === null ? 0.5 : 1,
+                  }}
+                  onMouseEnter={e => { if (pipelineStatus?.ingestionDone) { (e.currentTarget as HTMLButtonElement).style.background = "rgba(240,160,48,0.13)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(240,160,48,0.45)"; } }}
+                  onMouseLeave={e => { if (pipelineStatus?.ingestionDone) { (e.currentTarget as HTMLButtonElement).style.background = "rgba(240,160,48,0.07)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(240,160,48,0.28)"; } }}
+                  title={pipelineStatus?.ingestionDone ? "Check if all trades are processed" : "Waiting for ingestion"}
+                >
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+                    <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Process All Trades
+                </button>
+              )}
+
+              {/* arrow → */}
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden style={{ color: "var(--ink-3)", flexShrink: 0 }}>
+                <path d="M2 7h10M8 3.5l3.5 3.5L8 10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+
+              {/* Step 3 — Analysis Session (click to verify OneDrive report) */}
+              <TaskPill
+                done={analysisDone}
+                label="Analysis Session"
+                ts={null}
+                loading={analysisChecking}
+                onClick={pipelineStatus?.processDone && !analysisDone ? handleVerifyAnalysis : undefined}
+              />
+
+            </div>
+          </div>}
+        </div>
 
         {/* ── SESSION COUNTDOWN ────────────────────────────── */}
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 16 }}>
           <SessionCountdown hero={effectiveMode === "operator"} />
         </div>
 
@@ -3084,7 +3223,7 @@ export default function SessionClient({ user }: { user: User }) {
 
               <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
 
-              <AlarmConfig showToast={showToast} />
+              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} />
             </div>
           </div>
         )}

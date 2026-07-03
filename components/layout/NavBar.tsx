@@ -21,6 +21,7 @@ export default function NavBar() {
   const [drawerOpen,   setDrawerOpen]   = useState(false);
   const [modalOpen,    setModalOpen]    = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [alarmRunning, setAlarmRunning] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const pathname           = usePathname();
@@ -64,8 +65,33 @@ export default function NavBar() {
 
   const authed = session?.twoFactorVerified;
 
+  /* Alarm running state — lightweight poll (only when authed) */
+  useEffect(() => {
+    if (!authed) { setAlarmRunning(false); return; }
+    let active = true;
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/session/alarm");
+        if (!active) return;
+        if (res.ok) {
+          const data = await res.json() as { running?: boolean };
+          setAlarmRunning(!!data.running);
+        }
+      } catch { /* network blip — ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(id); };
+  }, [authed]);
+
   return (
     <>
+      <style>{`
+        @keyframes navAlarmPulse {
+          0%,100% { box-shadow: 0 0 0 0 rgba(0,204,122,0.45); opacity: 1; }
+          50%      { box-shadow: 0 0 0 5px rgba(0,204,122,0);  opacity: 0.75; }
+        }
+      `}</style>
       <nav
         style={{
           position: "fixed", top: 0, left: 0, right: 0,
@@ -99,8 +125,32 @@ export default function NavBar() {
               <Link
                 key={href} href={href}
                 className={`nav-link${pathname === href ? " active" : ""}${authedOnly ? " nav-link-accent" : ""}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
               >
                 {label}
+                {href === "/session" && alarmRunning && (
+                  <span
+                    title="Focus alarm active"
+                    style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 16, height: 16, borderRadius: "50%",
+                      background: "rgba(0,204,122,0.12)",
+                      border: "1px solid rgba(0,204,122,0.3)",
+                      color: "var(--green)",
+                      animation: "navAlarmPulse 2s ease-in-out infinite",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="8" height="8" viewBox="0 0 36 36" fill="none" aria-hidden>
+                      <path d="M18 3.5V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                      <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                        fill="rgba(0,204,122,0.12)"/>
+                      <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    </svg>
+                  </span>
+                )}
               </Link>
             ))}
           </div>
@@ -186,17 +236,41 @@ export default function NavBar() {
           </div>
 
           {/* ── Hamburger ─────────────────────────────── */}
-          <button
-            className="nav-hamburger"
-            onClick={() => setDrawerOpen(!drawerOpen)}
-            aria-label={drawerOpen ? "Close menu" : "Open menu"}
-            aria-expanded={drawerOpen}
-            style={{ background: "none", border: "none", cursor: "pointer", padding: 8, flexDirection: "column", gap: 5, marginRight: -8 }}
-          >
-            <span style={{ display: "block", width: 20, height: 1.5, background: "var(--ink-1)", transition: "transform 0.22s ease, opacity 0.22s ease", transform: drawerOpen ? "translateY(6.5px) rotate(45deg)" : "none" }}/>
-            <span style={{ display: "block", width: 20, height: 1.5, background: "var(--ink-1)", transition: "opacity 0.22s ease", opacity: drawerOpen ? 0 : 1 }}/>
-            <span style={{ display: "block", height: 1.5, background: "var(--ink-2)", transition: "transform 0.22s ease, opacity 0.22s ease, width 0.22s ease", transform: drawerOpen ? "translateY(-6.5px) rotate(-45deg)" : "none", width: drawerOpen ? 20 : 14 }}/>
-          </button>
+          <div className="nav-hamburger" style={{ alignItems: "center", gap: 6, marginRight: -8 }}>
+            {alarmRunning && (
+              <span
+                title="Focus alarm active"
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 22, height: 22, borderRadius: "50%",
+                  background: "rgba(0,204,122,0.12)",
+                  border: "1px solid rgba(0,204,122,0.3)",
+                  color: "var(--green)",
+                  animation: "navAlarmPulse 2s ease-in-out infinite",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="10" height="10" viewBox="0 0 36 36" fill="none" aria-hidden>
+                  <path d="M18 3.5V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                    fill="rgba(0,204,122,0.12)"/>
+                  <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                </svg>
+              </span>
+            )}
+            <button
+              onClick={() => setDrawerOpen(!drawerOpen)}
+              aria-label={drawerOpen ? "Close menu" : "Open menu"}
+              aria-expanded={drawerOpen}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 8, display: "flex", flexDirection: "column", gap: 5 }}
+            >
+              <span style={{ display: "block", width: 20, height: 1.5, background: "var(--ink-1)", transition: "transform 0.22s ease, opacity 0.22s ease", transform: drawerOpen ? "translateY(6.5px) rotate(45deg)" : "none" }}/>
+              <span style={{ display: "block", width: 20, height: 1.5, background: "var(--ink-1)", transition: "opacity 0.22s ease", opacity: drawerOpen ? 0 : 1 }}/>
+              <span style={{ display: "block", height: 1.5, background: "var(--ink-2)", transition: "transform 0.22s ease, opacity 0.22s ease, width 0.22s ease", transform: drawerOpen ? "translateY(-6.5px) rotate(-45deg)" : "none", width: drawerOpen ? 20 : 14 }}/>
+            </button>
+          </div>
         </div>
       </nav>
 

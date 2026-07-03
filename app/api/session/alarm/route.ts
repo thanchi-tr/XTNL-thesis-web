@@ -60,15 +60,32 @@ async function readState(): Promise<AlarmState> {
 }
 
 async function writeState(state: AlarmState, userId?: string): Promise<void> {
-  const now = new Date().toISOString();
-  const row: Record<string, unknown> = {
-    content:    PREFIX + JSON.stringify(state),
-    created_at: now,
-    Entry:      now,
-  };
-  if (userId) row.user_id = userId;
-  const { error } = await supabase.from("comments").insert(row);
-  if (error) throw new Error(error.message);
+  const content = PREFIX + JSON.stringify(state);
+
+  /* Find the existing alarm row so we can update it in-place.
+     This keeps exactly one alarm_state row in the comments table forever. */
+  const { data: existing } = await supabase
+    .from("comments")
+    .select("Entry")
+    .like("content", `${PREFIX}%`)
+    .order("Entry", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("comments")
+      .update({ content })
+      .eq("Entry", existing.Entry);
+    if (error) throw new Error(error.message);
+  } else {
+    /* First write ever — insert the single sentinel row. */
+    const now = new Date().toISOString();
+    const row: Record<string, unknown> = { content, created_at: now, Entry: now };
+    if (userId) row.user_id = userId;
+    const { error } = await supabase.from("comments").insert(row);
+    if (error) throw new Error(error.message);
+  }
 }
 
 /* ── GET — poll current state ── */
