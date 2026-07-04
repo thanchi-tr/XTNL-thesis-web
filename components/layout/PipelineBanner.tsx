@@ -234,6 +234,15 @@ export default function PipelineBanner() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  /* On mount: check server for this week's analysis completion (persists across devices/refreshes) */
+  useEffect(() => {
+    if (!authed) return;
+    fetch("/api/session/analysis-session")
+      .then(r => r.ok ? r.json() as Promise<{ done: boolean }> : null)
+      .then(j => { if (j?.done) setAnalysisDone(true); })
+      .catch(() => {});
+  }, [authed]);
+
   /* Time-window flags every 30 s */
   useEffect(() => {
     const tick = () => {
@@ -292,8 +301,9 @@ export default function PipelineBanner() {
         const ts = raw.match(/TIMESTAMP:\s*(.+)/)?.[1]?.trim() ?? "";
         window.dispatchEvent(new CustomEvent("audit-report-ready", { detail: raw }));
         window.dispatchEvent(new CustomEvent("analysis-session-complete"));
-        localStorage.setItem("xtnl_analysis_ts", Date.now().toString());
         setAnalysisDone(true);
+        // Persist server-side so all devices + refreshes reflect done state
+        fetch("/api/session/analysis-session", { method: "POST" }).catch(() => {});
         setCelebrationTs(ts);
         setCelebration(true);
       } else {
