@@ -2054,7 +2054,7 @@ function RecordTradeForm({ selectedId, hydrate, onSuccess, showToast, baseTZ }: 
 /* ═══════════════════════════════════════════════════════════
    ADD COMMENT FORM
 ═══════════════════════════════════════════════════════════ */
-function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, showToast, baseTZ }: { tradeId?: string; fullWidth?: boolean; isAnalyst?: boolean; onSuccess?: () => void; showToast: ShowToast; baseTZ: string }) {
+function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, failCompliance, onSuccess, showToast, baseTZ }: { tradeId?: string; fullWidth?: boolean; isAnalyst?: boolean; failCompliance?: boolean; onSuccess?: () => void; showToast: ShowToast; baseTZ: string }) {
   const [content,      setContent]      = useState("");
   const [tradeId,      setTradeId]      = useState(initId ?? "");
   const [createdAt,    setCreatedAt]    = useState(() => nowInTZ(baseTZ));
@@ -2070,10 +2070,11 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
     if (!content.trim()) return;
     setSubmitting(true);
     setLastErr(null);
-    const recordStamp = `record @+ ${fmtTz(new Date().toISOString(), baseTZ)}`;
+    const recordStamp   = `record @+ ${fmtTz(new Date().toISOString(), baseTZ)}`;
+    const body          = failCompliance ? `fail compliance: ${content.trim()}` : content.trim();
     const final = isAnalyst
-      ? `Analyst comment: ${recordStamp}: ${content.trim()}`
-      : `${recordStamp}: ${content.trim()}`;
+      ? `Analyst comment: ${recordStamp}: ${body}`
+      : `${recordStamp}: ${body}`;
     try {
       const res = await fetch("/api/session/comments", {
         method: "POST",
@@ -2130,6 +2131,20 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
         <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>{nowLabel}</span>
       </div>
       <form onSubmit={submit} style={{ padding: "16px", display: "flex", flexDirection: "column", gap: 11 }}>
+        {failCompliance && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 7,
+            padding: "6px 10px", borderRadius: 5,
+            background: "rgba(240,58,87,0.07)",
+            border: "1px solid rgba(240,58,87,0.28)",
+          }}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="var(--red)" strokeWidth="1.4"/><path d="M8 5v3.5M8 10.5h.01" stroke="var(--red)" strokeWidth="1.4" strokeLinecap="round"/></svg>
+            <span style={{ fontSize: 10.5, color: "var(--red)", fontWeight: 600 }}>
+              Focus challenge failed — <span style={{ fontFamily: "var(--font-mono)" }}>fail compliance:</span> will be prepended
+            </span>
+          </div>
+        )}
+
         <div>
           <label style={{ ...LBL, color: "var(--red)" }}>Content *</label>
 
@@ -2538,18 +2553,26 @@ function playAlarmBeeps(volume: number) {
   }
 }
 
-function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean }) {
+function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void }) {
   type SrvState = {
-    running:        boolean;
-    started_at:     string | null;
-    interval_min:   number;
-    focus_min:      number;
-    last_ack_cycle: number;
+    running:               boolean;
+    started_at:            string | null;
+    interval_min:          number;
+    focus_min:             number;
+    last_ack_cycle:        number;
+    enforce_focus:         boolean;
+    challenge_number:      number | null;
+    challenge_cycle:       number;
+    challenge_status:      "pending" | "pass" | "fail" | null;
+    challenge_expires_at:  string | null;
   };
-  const SRV0: SrvState = { running: false, started_at: null, interval_min: 15, focus_min: 2, last_ack_cycle: -1 };
+  const SRV0: SrvState = {
+    running: false, started_at: null, interval_min: 15, focus_min: 2, last_ack_cycle: -1,
+    enforce_focus: false, challenge_number: null, challenge_cycle: -1, challenge_status: null, challenge_expires_at: null,
+  };
 
   const [srv,          setSrv]          = useState<SrvState>(SRV0);
-  const [intervalMin,  setIntervalMin]  = useState(15);   // local config (editable when stopped)
+  const [intervalMin,  setIntervalMin]  = useState(15);
   const [focusMin,     setFocusMin]     = useState(2);
   const [flash,        setFlash]        = useState(false);
   const [countdown,    setCountdown]    = useState<number | null>(null);
@@ -2557,6 +2580,8 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast:
   const [showSettings, setShowSettings] = useState(false);
   const [volume,       setVolume]       = useState(0.7);
   const [syncing,      setSyncing]      = useState(false);
+
+  const challengeStartedCycle = useRef(-1); // which cycle we already called challenge_start for
 
   const tickRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2600,6 +2625,9 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast:
 
   /* Notify parent of running state changes */
   useEffect(() => { onRunningChange?.(srv.running); }, [srv.running, onRunningChange]);
+
+  /* Notify parent of challenge status changes */
+  useEffect(() => { onChallengeStatusChange?.(srv.challenge_status); }, [srv.challenge_status, onChallengeStatusChange]);
 
   /* ── Polling ─────────────────────────────────────── */
   const fetchState = useCallback(async () => {
@@ -2646,16 +2674,37 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast:
       }
 
       /* Suppress flash and beep while frozen in analyst mode */
-      const frozen      = frozenSince.current !== null;
-      const shouldFlash = !frozen && cyclePos >= triggerSec && cycleNum > lastAckRef.current;
+      const frozen        = frozenSince.current !== null;
+      const inFocusWindow = !frozen && cyclePos >= triggerSec && cycleNum > lastAckRef.current;
+      // Keep flash active while enforce_focus challenge is pending (even after focus window ends)
+      const challengeKeepFlash = srv.enforce_focus && srv.challenge_status === "pending";
+      const shouldFlash   = inFocusWindow || challengeKeepFlash;
       setFlash(shouldFlash);
 
-      if (shouldFlash && soundFiredCycle.current < cycleNum) {
+      if (inFocusWindow && soundFiredCycle.current < cycleNum) {
         soundFiredCycle.current = cycleNum;
         playAlarmBeeps(volumeRef.current);
         showToast("success", "Focus window — return your attention to the session");
         if (typeof Notification !== "undefined" && Notification.permission === "granted") {
           new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true });
+        }
+        // Start enforce_focus challenge: generate number client-side and push to server
+        if (srv.enforce_focus && challengeStartedCycle.current < cycleNum) {
+          challengeStartedCycle.current = cycleNum;
+          const n = Math.floor(Math.random() * 5) + 1;
+          void callAPI({ action: "challenge_start", cycle: cycleNum, challengeNumber: n });
+        }
+      }
+
+      // Auto-dismiss when challenge is resolved
+      if (srv.enforce_focus) {
+        if (srv.challenge_status === "pass" && srv.challenge_cycle === cycleNum) {
+          setFlash(false);
+          showToast("success", "Focus challenge passed ✓");
+          void callAPI({ action: "ack", cycle: cycleNum });
+        } else if (srv.challenge_status === "fail" && srv.challenge_cycle === cycleNum) {
+          setFlash(false);
+          showToast("error", "Focus challenge failed — fail compliance logged");
         }
       }
     };
@@ -2663,7 +2712,8 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast:
     tick();
     tickRef.current = setInterval(tick, 1000);
     return () => { if (tickRef.current) clearInterval(tickRef.current); };
-  }, [srv.running, srv.started_at, srv.interval_min, srv.focus_min, showToast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srv.running, srv.started_at, srv.interval_min, srv.focus_min, srv.enforce_focus, srv.challenge_status, srv.challenge_cycle, showToast, callAPI]);
 
   /* ── API actions ────────────────────────────────────── */
   const callAPI = useCallback(async (body: Record<string, unknown>) => {
@@ -2692,6 +2742,10 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast:
     setFlash(false);
     void callAPI({ action: "ack", cycle: cycleNum });
   }, [callAPI, srv.started_at, srv.interval_min]);
+
+  const handleEnforceToggle = useCallback(() => {
+    void callAPI({ action: "toggle_enforce_focus" });
+  }, [callAPI]);
 
   const running      = srv.running;
   const dispInterval = running ? srv.interval_min : intervalMin;
@@ -2820,25 +2874,53 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast:
               margin: "0 0 28px",
               fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.6,
             }}>
-              {focusMin}-minute focus window is active.
+              {srv.focus_min}-minute focus window is active.
             </p>
 
             {/* Divider */}
             <div style={{ width: "100%", height: 1, background: "var(--line)", marginBottom: 24 }} />
 
-            {/* Dismiss button — matches .btn .btn-primary */}
-            <button
-              type="button"
-              onClick={handleAck}
-              className="btn btn-primary"
-              style={{ padding: "10px 36px", fontSize: 12.5 }}
-            >
-              Acknowledge
-            </button>
-
-            <p style={{ margin: "10px 0 0", fontSize: 10.5, color: "var(--ink-3)", letterSpacing: "0.02em" }}>
-              or click anywhere to dismiss
-            </p>
+            {srv.enforce_focus && srv.challenge_status === "pending" ? (
+              /* ── Enforce Focus: show challenge number ── */
+              <>
+                <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
+                  Tap this many times on your watch
+                </p>
+                <div style={{
+                  width: 96, height: 96, borderRadius: "50%",
+                  background: "rgba(0,204,122,0.12)",
+                  border: "2px solid rgba(0,204,122,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  marginBottom: 16,
+                  boxShadow: "0 0 32px rgba(0,204,122,0.18)",
+                }}>
+                  <span style={{ fontSize: 52, fontWeight: 800, color: "var(--green)", lineHeight: 1 }}>
+                    {srv.challenge_number ?? "…"}
+                  </span>
+                </div>
+                <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--ink-2)" }}>
+                  Tap the number on your Galaxy Watch, then submit.
+                </p>
+                <p style={{ margin: 0, fontSize: 10.5, color: "var(--ink-4)" }}>
+                  2-minute window · watch is listening…
+                </p>
+              </>
+            ) : (
+              /* ── Standard dismiss ── */
+              <>
+                <button
+                  type="button"
+                  onClick={handleAck}
+                  className="btn btn-primary"
+                  style={{ padding: "10px 36px", fontSize: 12.5 }}
+                >
+                  Acknowledge
+                </button>
+                <p style={{ margin: "10px 0 0", fontSize: 10.5, color: "var(--ink-3)", letterSpacing: "0.02em" }}>
+                  or click anywhere to dismiss
+                </p>
+              </>
+            )}
           </div>
 
           {/* Subtle screen-edge glow */}
@@ -2970,6 +3052,47 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast:
                 onChange={e => setVolume(parseFloat(e.target.value))}
                 style={{ width: "100%", accentColor: "var(--green)" }}
               />
+            </div>
+
+            {/* Enforce Focus toggle — analyst session only */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 10px", borderRadius: 6,
+              background: srv.enforce_focus ? "rgba(0,204,122,0.06)" : "var(--card)",
+              border: `1px solid ${srv.enforce_focus ? "rgba(0,204,122,0.25)" : "var(--line)"}`,
+              opacity: isAnalystMode ? 1 : 0.4,
+              transition: "background 0.2s, border-color 0.2s",
+            }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: srv.enforce_focus ? "var(--green)" : "var(--ink-1)", letterSpacing: "0.01em" }}>
+                  Enforce Focus
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 9.5, color: "var(--ink-4)" }}>
+                  {isAnalystMode ? "Tap challenge on watch to acknowledge" : "Analyst session only"}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={!isAnalystMode || syncing}
+                onClick={handleEnforceToggle}
+                aria-label={srv.enforce_focus ? "Disable enforce focus" : "Enable enforce focus"}
+                style={{
+                  width: 38, height: 22, borderRadius: 11,
+                  background: srv.enforce_focus ? "var(--green)" : "var(--raised)",
+                  border: "1px solid var(--line-hi)",
+                  cursor: isAnalystMode ? "pointer" : "not-allowed",
+                  position: "relative", flexShrink: 0,
+                  transition: "background 0.2s",
+                }}
+              >
+                <span style={{
+                  display: "block", width: 16, height: 16, borderRadius: "50%",
+                  background: srv.enforce_focus ? "#04080F" : "var(--ink-3)",
+                  position: "absolute", top: 2,
+                  left: srv.enforce_focus ? 18 : 2,
+                  transition: "left 0.2s",
+                }} />
+              </button>
             </div>
           </div>
         )}
@@ -3357,7 +3480,8 @@ export default function SessionClient({ user }: { user: User }) {
   const [greeting,      setGreeting]      = useState("Welcome back");
   const [timeStr,       setTimeStr]       = useState("");
   const [dayStr,        setDayStr]        = useState("");
-  const [alarmRunning,  setAlarmRunning]  = useState(false);
+  const [alarmRunning,      setAlarmRunning]      = useState(false);
+  const [challengeStatus,   setChallengeStatus]   = useState<string | null>(null);
   const [baseTZ,       setBaseTZ]       = useState<string>(() => {
     if (typeof window === "undefined") return "Australia/Melbourne";
     return localStorage.getItem("xtnl_tz") ?? "Australia/Melbourne";
@@ -3676,7 +3800,7 @@ export default function SessionClient({ user }: { user: User }) {
             </div>
             <div className="session-sidebar">
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
-              <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
+              <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst failCompliance={challengeStatus === "fail"} onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
             </div>
           </div>
         )}
@@ -3758,9 +3882,9 @@ export default function SessionClient({ user }: { user: User }) {
                 <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchComments} showToast={showToast} sessionContract={sessionContract} />
               )}
 
-              <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
+              <AddCommentForm fullWidth failCompliance={challengeStatus === "fail"} onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
 
-              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} />
+              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} onChallengeStatusChange={setChallengeStatus} />
             </div>
           </div>
         )}

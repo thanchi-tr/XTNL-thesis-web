@@ -1,18 +1,3 @@
-/*
-  Alarm state sync — REST pub/sub, no persistent connections.
-  No schema migration needed: piggybacks on the existing `comments` table
-  using an "alarm_state:" prefix, identical to the "session_contract:" pattern.
-
-  The latest comment row whose content starts with "alarm_state:" is the
-  authoritative state. Each mutation inserts a new row; the previous rows
-  are left in place (same as session_contract).
-
-  All mutations are idempotent:
-    start  → no-op if latest state already has running=true
-    stop   → no-op if latest state already has running=false
-    ack N  → no-op if latest state already has last_ack_cycle >= N
-*/
-
 import { NextResponse }               from "next/server";
 import { auth }                       from "@/auth";
 import { supabase, OPERATOR_USER_ID } from "@/lib/supabase";
@@ -25,19 +10,29 @@ function authed(session: Session | null): boolean {
 }
 
 export type AlarmState = {
-  running:        boolean;
-  started_at:     string | null;
-  interval_min:   number;
-  focus_min:      number;
-  last_ack_cycle: number;
+  running:               boolean;
+  started_at:            string | null;
+  interval_min:          number;
+  focus_min:             number;
+  last_ack_cycle:        number;
+  enforce_focus:         boolean;
+  challenge_number:      number | null;  // browser sees this; watch endpoint strips it
+  challenge_cycle:       number;
+  challenge_status:      "pending" | "pass" | "fail" | null;
+  challenge_expires_at:  string | null;
 };
 
 const DEFAULT: AlarmState = {
-  running:        false,
-  started_at:     null,
-  interval_min:   15,
-  focus_min:      2,
-  last_ack_cycle: -1,
+  running:              false,
+  started_at:           null,
+  interval_min:         15,
+  focus_min:            2,
+  last_ack_cycle:       -1,
+  enforce_focus:        false,
+  challenge_number:     null,
+  challenge_cycle:      -1,
+  challenge_status:     null,
+  challenge_expires_at: null,
 };
 
 const PREFIX = "alarm_state:";
@@ -53,7 +48,7 @@ async function readState(): Promise<AlarmState> {
 
   if (!data) return { ...DEFAULT };
   try {
-    return JSON.parse(data.content.slice(PREFIX.length)) as AlarmState;
+    return { ...DEFAULT, ...JSON.parse(data.content.slice(PREFIX.length)) as Partial<AlarmState> };
   } catch {
     return { ...DEFAULT };
   }
@@ -62,8 +57,6 @@ async function readState(): Promise<AlarmState> {
 async function writeState(state: AlarmState, userId?: string): Promise<void> {
   const content = PREFIX + JSON.stringify(state);
 
-  /* Find the existing alarm row so we can update it in-place.
-     This keeps exactly one alarm_state row in the comments table forever. */
   const { data: existing } = await supabase
     .from("comments")
     .select("Entry")
@@ -73,13 +66,9 @@ async function writeState(state: AlarmState, userId?: string): Promise<void> {
     .single();
 
   if (existing) {
-    const { error } = await supabase
-      .from("comments")
-      .update({ content })
-      .eq("Entry", existing.Entry);
+    const { error } = await supabase.from("comments").update({ content }).eq("Entry", existing.Entry);
     if (error) throw new Error(error.message);
   } else {
-    /* First write ever — insert the single sentinel row. */
     const now = new Date().toISOString();
     const row: Record<string, unknown> = { content, created_at: now, Entry: now };
     if (userId) row.user_id = userId;
@@ -88,13 +77,38 @@ async function writeState(state: AlarmState, userId?: string): Promise<void> {
   }
 }
 
-/* ── GET — poll current state ── */
+async function submitFailComment(userId?: string): Promise<void> {
+  const now = new Date().toISOString();
+  await supabase.from("comments").insert({
+    content:    "[Focus Alert] fail challenge, user is not focus",
+    created_at: now,
+    Entry:      now,
+    user_id:    userId ?? OPERATOR_USER_ID,
+  });
+}
+
+/* ── GET — poll current state (browser) ── */
 export async function GET() {
   try {
     const session = await auth() as Session | null;
     if (!authed(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    return NextResponse.json(await readState());
+    const state = await readState();
+
+    // Auto-expire pending challenge
+    if (
+      state.challenge_status === "pending" &&
+      state.challenge_expires_at &&
+      Date.now() > new Date(state.challenge_expires_at).getTime()
+    ) {
+      const userId = OPERATOR_USER_ID ?? (((session as AuthedSession).user) as { id?: string } | undefined)?.id;
+      const newState: AlarmState = { ...state, challenge_status: "fail", last_ack_cycle: state.challenge_cycle };
+      await writeState(newState, userId);
+      await submitFailComment(userId);
+      return NextResponse.json(newState);
+    }
+
+    return NextResponse.json(state);
   } catch (e) {
     console.error("[alarm GET]", e);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
@@ -111,38 +125,40 @@ export async function PUT(req: Request) {
       ?? (((session as AuthedSession).user) as { id?: string } | undefined)?.id;
 
     const body = await req.json() as {
-      action:       "start" | "stop" | "ack";
-      intervalMin?: unknown;
-      focusMin?:    unknown;
-      cycle?:       unknown;
+      action:           string;
+      intervalMin?:     unknown;
+      focusMin?:        unknown;
+      cycle?:           unknown;
+      challengeNumber?: unknown;
+      taps?:            unknown;
     };
 
     const current = await readState();
 
     if (body.action === "start") {
-      if (current.running) return NextResponse.json(current);   // already running — no-op
-
+      if (current.running) return NextResponse.json(current);
       const iMin = typeof body.intervalMin === "number" && body.intervalMin >= 2
-        ? Math.min(Math.floor(body.intervalMin), 120)
-        : current.interval_min;
+        ? Math.min(Math.floor(body.intervalMin), 120) : current.interval_min;
       const fMin = typeof body.focusMin === "number" && body.focusMin >= 1
-        ? Math.min(Math.floor(body.focusMin), iMin - 1)
-        : Math.min(current.focus_min, iMin - 1);
-
+        ? Math.min(Math.floor(body.focusMin), iMin - 1) : Math.min(current.focus_min, iMin - 1);
       const next: AlarmState = {
-        running:        true,
-        started_at:     new Date().toISOString(),
-        interval_min:   iMin,
-        focus_min:      Math.max(1, fMin),
-        last_ack_cycle: -1,
+        ...current,
+        running:              true,
+        started_at:           new Date().toISOString(),
+        interval_min:         iMin,
+        focus_min:            Math.max(1, fMin),
+        last_ack_cycle:       -1,
+        challenge_number:     null,
+        challenge_cycle:      -1,
+        challenge_status:     null,
+        challenge_expires_at: null,
       };
       await writeState(next, userId);
       return NextResponse.json(next);
     }
 
     if (body.action === "stop") {
-      if (!current.running) return NextResponse.json(current);  // already stopped — no-op
-
+      if (!current.running) return NextResponse.json(current);
       const next: AlarmState = { ...current, running: false, started_at: null };
       await writeState(next, userId);
       return NextResponse.json(next);
@@ -150,9 +166,30 @@ export async function PUT(req: Request) {
 
     if (body.action === "ack") {
       const cycle = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
-      if (current.last_ack_cycle >= cycle) return NextResponse.json(current); // already acked — no-op
-
+      if (current.last_ack_cycle >= cycle) return NextResponse.json(current);
       const next: AlarmState = { ...current, last_ack_cycle: cycle };
+      await writeState(next, userId);
+      return NextResponse.json(next);
+    }
+
+    if (body.action === "toggle_enforce_focus") {
+      const next: AlarmState = { ...current, enforce_focus: !current.enforce_focus };
+      await writeState(next, userId);
+      return NextResponse.json(next);
+    }
+
+    if (body.action === "challenge_start") {
+      const cycle           = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
+      const challengeNumber = typeof body.challengeNumber === "number" ? Math.floor(body.challengeNumber) : 1;
+      if (current.challenge_cycle >= cycle) return NextResponse.json(current); // already started
+      const expiresAt = new Date(Date.now() + 2 * 60_000).toISOString();
+      const next: AlarmState = {
+        ...current,
+        challenge_number:     challengeNumber,
+        challenge_cycle:      cycle,
+        challenge_status:     "pending",
+        challenge_expires_at: expiresAt,
+      };
       await writeState(next, userId);
       return NextResponse.json(next);
     }

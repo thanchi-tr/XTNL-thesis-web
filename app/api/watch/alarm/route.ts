@@ -1,28 +1,50 @@
 /**
  * Watch-authenticated mirror of /api/session/alarm.
  * Uses Bearer JWT (from watch token) instead of NextAuth session cookie.
- * Logic is identical to the browser route — single source of truth in Supabase.
+ * Never returns challenge_number — watch must not see it (anti-cheat).
  */
 import { NextResponse }           from "next/server";
 import { supabase, OPERATOR_USER_ID } from "@/lib/supabase";
 import { verifyWatchToken }       from "@/lib/watchJwt";
 
 export type AlarmState = {
-  running:        boolean;
-  started_at:     string | null;
-  interval_min:   number;
-  focus_min:      number;
-  last_ack_cycle: number;
+  running:               boolean;
+  started_at:            string | null;
+  interval_min:          number;
+  focus_min:             number;
+  last_ack_cycle:        number;
+  enforce_focus:         boolean;
+  challenge_number:      number | null;
+  challenge_cycle:       number;
+  challenge_status:      "pending" | "pass" | "fail" | null;
+  challenge_expires_at:  string | null;
 };
 
-const DEFAULT: AlarmState = { running: false, started_at: null, interval_min: 15, focus_min: 2, last_ack_cycle: -1 };
+const DEFAULT: AlarmState = {
+  running:              false,
+  started_at:           null,
+  interval_min:         15,
+  focus_min:            2,
+  last_ack_cycle:       -1,
+  enforce_focus:        false,
+  challenge_number:     null,
+  challenge_cycle:      -1,
+  challenge_status:     null,
+  challenge_expires_at: null,
+};
+
 const PREFIX = "alarm_state:";
+
+function strip(state: AlarmState): Omit<AlarmState, "challenge_number"> & { challenge_number: null } {
+  return { ...state, challenge_number: null };
+}
 
 async function readState(): Promise<AlarmState> {
   const { data } = await supabase.from("comments").select("content")
     .like("content", `${PREFIX}%`).order("Entry", { ascending: false }).limit(1).single();
   if (!data) return { ...DEFAULT };
-  try { return JSON.parse(data.content.slice(PREFIX.length)) as AlarmState; } catch { return { ...DEFAULT }; }
+  try { return { ...DEFAULT, ...JSON.parse(data.content.slice(PREFIX.length)) as Partial<AlarmState> }; }
+  catch { return { ...DEFAULT }; }
 }
 
 async function writeState(state: AlarmState): Promise<void> {
@@ -37,6 +59,28 @@ async function writeState(state: AlarmState): Promise<void> {
   }
 }
 
+async function submitFailComment(): Promise<void> {
+  const now = new Date().toISOString();
+  await supabase.from("comments").insert({
+    content:    "[Focus Alert] fail challenge, user is not focus",
+    created_at: now,
+    Entry:      now,
+    user_id:    OPERATOR_USER_ID,
+  });
+}
+
+function currentCycleInfo(state: AlarmState): { cycle: number; inFocus: boolean } | null {
+  if (!state.running || !state.started_at) return null;
+  const startMs    = new Date(state.started_at).getTime();
+  const elapsedMs  = Date.now() - startMs;
+  const intervalMs = state.interval_min * 60_000;
+  const focusMs    = state.focus_min * 60_000;
+  if (intervalMs <= 0) return null;
+  const cycle   = Math.floor(elapsedMs / intervalMs);
+  const inFocus = (elapsedMs % intervalMs) >= (intervalMs - focusMs);
+  return { cycle, inFocus };
+}
+
 async function auth(req: Request) {
   const header = req.headers.get("Authorization") ?? "";
   const token  = header.startsWith("Bearer ") ? header.slice(7) : null;
@@ -46,39 +90,117 @@ async function auth(req: Request) {
 
 export async function GET(req: Request) {
   if (!await auth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  try { return NextResponse.json(await readState()); }
-  catch { return NextResponse.json({ error: "Server error" }, { status: 500 }); }
+  try {
+    let state = await readState();
+
+    if (state.enforce_focus) {
+      const info = currentCycleInfo(state);
+
+      // Auto-generate challenge when watch enters a new focus cycle
+      if (info?.inFocus && state.challenge_cycle < info.cycle) {
+        const n         = Math.floor(Math.random() * 5) + 1;
+        const expiresAt = new Date(Date.now() + 2 * 60_000).toISOString();
+        state = {
+          ...state,
+          challenge_number:     n,
+          challenge_cycle:      info.cycle,
+          challenge_status:     "pending",
+          challenge_expires_at: expiresAt,
+        };
+        await writeState(state);
+      }
+
+      // Auto-expire overdue pending challenge
+      if (
+        state.challenge_status === "pending" &&
+        state.challenge_expires_at &&
+        Date.now() > new Date(state.challenge_expires_at).getTime()
+      ) {
+        state = { ...state, challenge_status: "fail", last_ack_cycle: state.challenge_cycle };
+        await writeState(state);
+        await submitFailComment();
+      }
+    }
+
+    return NextResponse.json(strip(state));
+  } catch {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
 }
 
 export async function PUT(req: Request) {
   if (!await auth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const body = await req.json() as { action: "start" | "stop" | "ack"; intervalMin?: number; focusMin?: number; cycle?: number };
-    const cur  = await readState();
+    const body = await req.json() as {
+      action:     string;
+      intervalMin?: number;
+      focusMin?:    number;
+      cycle?:       number;
+      taps?:        number;
+    };
+    const cur = await readState();
 
     if (body.action === "start") {
-      if (cur.running) return NextResponse.json(cur);
+      if (cur.running) return NextResponse.json(strip(cur));
       const iMin = typeof body.intervalMin === "number" && body.intervalMin >= 2
         ? Math.min(Math.floor(body.intervalMin), 120) : cur.interval_min;
       const fMin = typeof body.focusMin === "number" && body.focusMin >= 1
         ? Math.min(Math.floor(body.focusMin), iMin - 1) : Math.min(cur.focus_min, iMin - 1);
-      const next: AlarmState = { running: true, started_at: new Date().toISOString(), interval_min: iMin, focus_min: Math.max(1, fMin), last_ack_cycle: -1 };
+      const next: AlarmState = {
+        ...cur,
+        running:              true,
+        started_at:           new Date().toISOString(),
+        interval_min:         iMin,
+        focus_min:            Math.max(1, fMin),
+        last_ack_cycle:       -1,
+        challenge_number:     null,
+        challenge_cycle:      -1,
+        challenge_status:     null,
+        challenge_expires_at: null,
+      };
       await writeState(next);
-      return NextResponse.json(next);
+      return NextResponse.json(strip(next));
     }
+
     if (body.action === "stop") {
-      if (!cur.running) return NextResponse.json(cur);
+      if (!cur.running) return NextResponse.json(strip(cur));
       const next = { ...cur, running: false, started_at: null };
       await writeState(next);
-      return NextResponse.json(next);
+      return NextResponse.json(strip(next));
     }
+
     if (body.action === "ack") {
       const cycle = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
-      if (cur.last_ack_cycle >= cycle) return NextResponse.json(cur);
+      if (cur.last_ack_cycle >= cycle) return NextResponse.json(strip(cur));
       const next = { ...cur, last_ack_cycle: cycle };
       await writeState(next);
-      return NextResponse.json(next);
+      return NextResponse.json(strip(next));
     }
+
+    if (body.action === "challenge_result") {
+      const cycle = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
+      const taps  = typeof body.taps  === "number" ? Math.floor(body.taps)  : -1;
+
+      if (cur.challenge_status !== "pending" || cur.challenge_cycle !== cycle) {
+        return NextResponse.json(strip(cur));
+      }
+
+      const expired = cur.challenge_expires_at
+        && Date.now() > new Date(cur.challenge_expires_at).getTime();
+      const pass = !expired && taps === cur.challenge_number;
+
+      const next: AlarmState = {
+        ...cur,
+        challenge_status: pass ? "pass" : "fail",
+        last_ack_cycle:   cycle, // always ack the cycle so alarm doesn't repeat
+      };
+      await writeState(next);
+      if (!pass) await submitFailComment();
+      return NextResponse.json(strip(next));
+    }
+
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-  } catch { return NextResponse.json({ error: "Server error" }, { status: 500 }); }
+  } catch {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
 }
