@@ -159,13 +159,13 @@ function CelebrationOverlay({ reportTs, onDone }: { reportTs: string; onDone: ()
   );
 }
 
-const ANALYST_DAY_START_H = 18;
-const ANALYST_DAY_END_H   = 1;
-
 function isAnalystDay(): boolean {
-  const md = new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Melbourne" }));
-  const h  = md.getHours();
-  return h >= ANALYST_DAY_START_H || h < ANALYST_DAY_END_H;
+  // Must mirror SessionClient getSessionState() exactly:
+  // analyst = Sunday (day 0) all day, or Saturday (day 6) from 1 AM onwards (Melbourne time)
+  const md  = new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Melbourne" }));
+  const day = md.getDay();
+  const h   = md.getHours();
+  return day === 0 || (day === 6 && h >= 1);
 }
 
 type PipelineData = {
