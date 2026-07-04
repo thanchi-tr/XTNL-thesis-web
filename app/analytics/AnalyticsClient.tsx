@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { getMondayAESTKey } from "@/lib/weekKey";
 
 /* ─── Types ─────────────────────────────────────────────── */
 
@@ -2265,6 +2266,33 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void fetchLive(); }, []);
 
+  /* Re-fetch when Analysis Session is confirmed (same tab or other tab) */
+  useEffect(() => {
+    const onEvent   = () => void fetchLive();
+    const onStorage = (e: StorageEvent) => { if (e.key === "xtnl_analysis_ts") void fetchLive(); };
+    window.addEventListener("analysis-session-complete", onEvent);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("analysis-session-complete", onEvent);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [fetchLive]);
+
+  /* Auto-refresh Monday 4 AM AEST — poll every 60 s + on tab focus */
+  const liveMetaRef = useRef<LiveMeta | null>(null);
+  useEffect(() => { liveMetaRef.current = liveMeta; }, [liveMeta]);
+
+  useEffect(() => {
+    const check = () => {
+      const m = liveMetaRef.current;
+      if (m && getMondayAESTKey() !== m.reportDate) void fetchLive();
+    };
+    const id = setInterval(check, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, [fetchLive]);
+
   const handleParse = useCallback(() => {
     setParseError("");
     if (!applyRaw(raw)) {
@@ -2302,7 +2330,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
           >
             <span className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-2)" }}>DATA SOURCE</span>
             {dataSource === "live" && liveStatus === "loaded" && liveMeta && report && (
-              <span className="mono" style={{ fontSize: 9, color: "var(--green)" }}>● LIVE · w/c {liveMeta.reportDate} · {report.sections.length} sections</span>
+              <span className="mono" style={{ fontSize: 9, color: "var(--green)" }}>● LIVE · w/c {new Date(liveMeta.reportDate + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} · {report.sections.length} sections</span>
             )}
             {dataSource === "live" && liveStatus === "loading" && (
               <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)" }}>● loading…</span>

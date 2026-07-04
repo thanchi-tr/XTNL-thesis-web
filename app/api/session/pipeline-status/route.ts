@@ -25,27 +25,35 @@ export async function GET() {
 
     const weekStart = getWeekStartUTC();
 
-    /* Any trade ingested this week? */
-    const { count: total, error: e1 } = await supabase
-      .from("trades")
-      .select("id", { count: "exact", head: true })
-      .gte("entry", weekStart);
+    const COR_FIELDS = ["cor_dir", "cor_lock", "cor_target", "cor_entry", "cor_rm"] as const;
 
-    if (e1) throw new Error(e1.message);
+    /* Run all queries in parallel: total trades + 5 per-field filled counts */
+    const [totalRes, ...fieldRes] = await Promise.all([
+      supabase.from("trades").select("trade_id", { count: "exact", head: true }).gte("entry", weekStart),
+      ...COR_FIELDS.map(f =>
+        supabase.from("trades").select("trade_id", { count: "exact", head: true }).gte("entry", weekStart).not(f, "is", null)
+      ),
+    ]);
 
-    /* Any trade this week still has a null cor_* field? */
-    const { count: incomplete, error: e2 } = await supabase
-      .from("trades")
-      .select("id", { count: "exact", head: true })
-      .gte("entry", weekStart)
+    if (totalRes.error) throw new Error(totalRes.error.message);
+    const errs = fieldRes.filter(r => r.error);
+    if (errs.length) throw new Error(errs[0].error!.message);
+
+    const totalTrades    = totalRes.count ?? 0;
+    const totalFields    = totalTrades * COR_FIELDS.length;
+    const processedFields = fieldRes.reduce((sum, r) => sum + (r.count ?? 0), 0);
+
+    /* Trade-level done flags (for step gating) */
+    const incompleteRes = await supabase
+      .from("trades").select("trade_id", { count: "exact", head: true }).gte("entry", weekStart)
       .or("cor_lock.is.null,cor_dir.is.null,cor_target.is.null,cor_entry.is.null,cor_rm.is.null");
+    if (incompleteRes.error) throw new Error(incompleteRes.error.message);
 
-    if (e2) throw new Error(e2.message);
+    const incompleteVal = incompleteRes.count ?? 0;
+    const ingestionDone = totalTrades > 0;
+    const processDone   = ingestionDone && incompleteVal === 0;
 
-    const ingestionDone = (total      ?? 0) > 0;
-    const processDone   = ingestionDone && (incomplete ?? 0) === 0;
-
-    return NextResponse.json({ ingestionDone, processDone, weekStart });
+    return NextResponse.json({ ingestionDone, processDone, total: totalTrades, totalFields, processedFields, weekStart });
   } catch (e) {
     console.error("[pipeline-status GET]", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

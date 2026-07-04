@@ -332,6 +332,9 @@ input[type="range"]::-moz-range-thumb {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--line-act); border-radius: 3px; }
 
+/* Hide native scrollbar on table scroll containers (custom thumb rendered in JS) */
+.table-hscroll-inner::-webkit-scrollbar { display: none; }
+
 /* ═══════════════════════════════════════════════════════════
    ANIMATIONS
    ═══════════════════════════════════════════════════════════ */

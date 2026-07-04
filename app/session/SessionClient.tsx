@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
+import { getMondayAESTKey } from "@/lib/weekKey";
+import { getSessionStatus } from "@/lib/sessionStatus";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -105,51 +107,6 @@ export function parseFrictionReport(raw: string): FrictionReport {
 /* ═══════════════════════════════════════════════════════════
    MOCK RAW REPORT  — replace body with OneDrive file content
 ═══════════════════════════════════════════════════════════ */
-const MOCK_RAW_REPORT = `
-==============================================================
-   XTNLS INSTITUTIONAL AUDIT - PRE-SESSION MIRROR
-   TIMESTAMP: 2026-06-27 14:33:00
-==============================================================
-
-[SYSTEM STATE] :: RISK REDUCE - FRICTIONAL BLEED
-* Visualization             : - - - -
-**After the 4th consecutive streak, the injection amount is unlocked
-* Current Streak            : 0 Weeks
-* Planned Injection/deposit : $2,400.00 (LOCKED)
-* Scaling Factor            : 1.200x
-* Deployment                : RESERVED
-
-[EXECUTION TRUTH]
-* Rating                    : 0.822 [SUB-PAR]
-* Profit Leakage            : -4.91R  [ADJUSTED: 4.58R Forgiven]
-* Lucky R Total             : 0.00R (Lucky warning)
-* Capture Rate              : 100.0%  [ADJUSTED: 1.0 Exemptions]
-
-[PROBABILISTIC EDGE]
-* System SQN                : 3.98
-* 95% Stress SQN            : 3.46
-* Edge Decay                : 0.51 (Problem Outlier)
-* Target Risk               : 0.5088 per trade
-
-[THE MIRROR - LLM AUDIT]
-REVIEW: Radical Candor: Your execution is failing due to severe focus degradation and on-the-fly rule invention. While the medical emergency with your wife is a valid and understandable exemption for the 24th and 25th, your behavior on the 22nd (misreading levels while distracted by dinner) and your ongoing gaming addiction during active hours are unacceptable for a high-performance system. You are masking a lack of discipline with 'grey areas' and inventing ATR-based justifications when structural rules are not met. The deployment of an OS blocker is a necessary crutch, but true symmetry requires internal steadfastness. You must stop fighting the wave and respect the session boundaries.
-
-DETECTED FLAWS:
-  - [RULE_VIOLATION]: "Recidivism detected: FOMO contamination across multiple sessions. Operator is imaging entries and acting on impulse.|nRecidivism detected: 'I have successfully overcome fomo' AND 'context switch cause him to fomo into a trade'"
-
-HANDOVER NOTES: Operator is under extreme psychological stress due to a family medical crisis, which validates specific performance exemptions on the 24th and 25th. However, baseline discipline is fractured: gaming during sessions, distracted charting while eating, and inventing ATR-based entry rules on the fly to justify setups. External OS blockers have been deployed to enforce focus, but the operator's internal steadfastness is currently compromised.
-
-[SYSTEM FRICTION UPDATES]
- * Mandatory 10-minute chart-sync protocol after returning from any break (e.g., dinner) before placing orders.
- * No entries allowed if the primary rule (body length) is unmet; ATR justifications are strictly banned.
- * All manual terminations require a pre-logged structural invalidation reason.
-
-==============================================================
-==============================================================
-`;
-
-/* Derived once at module level — swap source string to re-parse */
-const FRICTION = parseFrictionReport(MOCK_RAW_REPORT);
 
 /* ═══════════════════════════════════════════════════════════
    DB ROW TYPES
@@ -164,14 +121,17 @@ interface OptimalRow {
 }
 
 interface LiveRow {
-  id?:         string;
+  trade_id:    string;
   entry:       string;
-  exit:        string | null;
-  cor_lock:    string | null;
-  cor_dir:     string | null;
-  cor_target:  string | null;
-  cor_entry:   string | null;
-  cor_rm:      string | null;
+  exit:        string;
+  cor_dir:     boolean | null;
+  cor_lock:    boolean | null;
+  cor_target:  boolean | null;
+  cor_entry:   boolean | null;
+  cor_rm:      boolean | null;
+  is_bad:      boolean | null;
+  manual_pass: boolean | null;
+  result_r:    number;
   [key: string]: unknown;
 }
 
@@ -243,38 +203,8 @@ function rColor(r: number) {
     Session 1 — 18:00 → 19:00
     Session 2 — 20:00 → 01:00 (next day)
 */
-type SessionStatus = {
-  inSession:   boolean;
-  sessionName: string;
-  targetLabel: string; // "6:00 PM" / "7:00 PM" / "8:00 PM" / "1:00 AM"
-  remainingSec: number;
-};
-
-function getSessionStatus(): SessionStatus {
-  const now  = new Date();
-  const md   = new Date(now.toLocaleString("en-US", { timeZone: "Australia/Melbourne" }));
-  const h = md.getHours(), m = md.getMinutes(), s = md.getSeconds();
-  const tot  = h * 3600 + m * 60 + s;
-
-  /* 00:00 – 01:00  →  Session 2 overnight, ends 1 AM */
-  if (tot < 3600)
-    return { inSession: true,  sessionName: "Session 2", targetLabel: "1:00 AM", remainingSec: 3600 - tot };
-
-  /* 01:00 – 18:00  →  standby, next is Session 1 at 6 PM */
-  if (tot < 18 * 3600)
-    return { inSession: false, sessionName: "Session 1", targetLabel: "6:00 PM", remainingSec: 18 * 3600 - tot };
-
-  /* 18:00 – 19:00  →  Session 1 active, ends 7 PM */
-  if (tot < 19 * 3600)
-    return { inSession: true,  sessionName: "Session 1", targetLabel: "7:00 PM", remainingSec: 19 * 3600 - tot };
-
-  /* 19:00 – 20:00  →  standby, next is Session 2 at 8 PM */
-  if (tot < 20 * 3600)
-    return { inSession: false, sessionName: "Session 2", targetLabel: "8:00 PM", remainingSec: 20 * 3600 - tot };
-
-  /* 20:00 – 24:00  →  Session 2 active, ends 1 AM next day */
-  return { inSession: true, sessionName: "Session 2", targetLabel: "1:00 AM", remainingSec: 25 * 3600 - tot };
-}
+/* SessionStatus + getSessionStatus are shared — imported from lib/sessionStatus */
+type SessionStatus = import("@/lib/sessionStatus").SessionStatus;
 
 /*
   Accepts pasted text from the Optimal Sample table copy-cells
@@ -473,6 +403,19 @@ function nowInTZ(tz: string): string {
   const p    = ptz.formatToParts(now);
   const get  = (t: string) => p.find(x => x.type === t)?.value ?? "00";
   const hr   = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hr}:${get("minute")}`;
+}
+
+/* Convert a UTC ISO string to a datetime-local value (YYYY-MM-DDTHH:mm) in the given timezone */
+function utcToLocalInput(utcIso: string, tz: string): string {
+  const d   = new Date(utcIso);
+  const ptz = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  const p   = ptz.formatToParts(d);
+  const get = (t: string) => p.find(x => x.type === t)?.value ?? "00";
+  const hr  = get("hour") === "24" ? "00" : get("hour");
   return `${get("year")}-${get("month")}-${get("day")}T${hr}:${get("minute")}`;
 }
 
@@ -693,8 +636,8 @@ function OptimalTable({ rows, loading, selected, onSelect, tz, onDelete, onRefre
         </div>
       )}
 
-      <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 420, width: "100%", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
+      <HorizScrollContainer style={{ width: "100%" }} innerStyle={{ overflowY: "auto", maxHeight: 420, overscrollBehavior: "contain" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480, userSelect: "none" }}>
           <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card)" }}>
             <tr>
               {([
@@ -770,7 +713,7 @@ function OptimalTable({ rows, loading, selected, onSelect, tz, onDelete, onRefre
             })}
           </tbody>
         </table>
-      </div>
+      </HorizScrollContainer>
     </div>
   );
 }
@@ -778,46 +721,533 @@ function OptimalTable({ rows, loading, selected, onSelect, tz, onDelete, onRefre
 /* ═══════════════════════════════════════════════════════════
    LIVE TRADE TABLE
 ═══════════════════════════════════════════════════════════ */
-function LiveTable({ rows, loading, tz, onRefresh }: { rows: LiveRow[]; loading: boolean; tz: string; onRefresh?: () => void }) {
-  const COLS = ["Entry","Exit","Dir","Lock","Target","RM","Entry Price","Is Bad"];
-  const sopBad = (r: LiveRow) =>
-    r.cor_lock === null || r.cor_dir === null || r.cor_target === null ||
-    r.cor_entry === null || r.cor_rm === null;
+type LiveBoolDraft = boolean | null;
+type LiveDraftFields = { cor_dir: LiveBoolDraft; cor_lock: LiveBoolDraft; cor_target: LiveBoolDraft; cor_entry: LiveBoolDraft; cor_rm: LiveBoolDraft; is_bad: LiveBoolDraft };
+type LiveDrafts = Record<string, Partial<LiveDraftFields>>; // keyed by trade_id
+
+const BOOL_FIELDS: (keyof LiveDraftFields)[] = ["cor_dir", "cor_lock", "cor_target", "cor_entry", "cor_rm", "is_bad"];
+/* The 5 cor_* fields that define whether a trade is "processed" (matches pipeline API) */
+const COR_FIELDS = ["cor_dir", "cor_lock", "cor_target", "cor_entry", "cor_rm"] as const;
+const isTradeProcessed = (r: LiveRow) => COR_FIELDS.every(f => r[f] !== null);
+
+function BoolSelect({ value, changed, onChange, invert = false }: {
+  value: boolean | null; changed: boolean; onChange: (v: boolean | null) => void; invert?: boolean;
+}) {
+  const sel = value === null ? "" : value ? "true" : "false";
+  return (
+    <select
+      value={sel}
+      onChange={e => onChange(e.target.value === "" ? null : e.target.value === "true")}
+      style={{
+        minWidth: 64,
+        background: changed ? "rgba(240,160,48,0.08)" : "var(--sub)",
+        border: `1px solid ${changed ? "rgba(240,160,48,0.55)" : "var(--line)"}`,
+        borderRadius: 3, color: "var(--ink-1)",
+        fontSize: 11, fontFamily: "var(--font-mono)",
+        padding: "3px 5px", outline: "none", cursor: "pointer",
+        boxShadow: changed ? "0 0 0 2px rgba(240,160,48,0.12)" : "none",
+      }}
+    >
+      <option value="">—</option>
+      {invert ? (
+        <>
+          <option value="true">✗ Toxic</option>
+          <option value="false">✓ OK</option>
+        </>
+      ) : (
+        <>
+          <option value="true">✓ Pass</option>
+          <option value="false">✗ Fail</option>
+        </>
+      )}
+    </select>
+  );
+}
+
+/* Custom horizontal scroll container with a large draggable thumb overlay.
+   - Hides the native scrollbar
+   - Shows a thick thumb on hover / while dragging
+   - Wheel (deltaX or Shift+deltaY) still scrolls the content               */
+function HorizScrollContainer({
+  children, style, innerStyle,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  innerStyle?: React.CSSProperties;
+}) {
+  const scrollRef  = useRef<HTMLDivElement>(null);
+  const [thumbLeft,  setThumbLeft]  = useState(0);
+  const [thumbWidth, setThumbWidth] = useState(0);
+  const [hovered,    setHovered]    = useState(false);
+  const [dragging,   setDragging]   = useState(false);
+  const dragStart = useRef({ x: 0, scrollLeft: 0 });
+
+  const updateThumb = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    if (scrollWidth <= clientWidth) { setThumbWidth(0); return; }
+    const ratio = clientWidth / scrollWidth;
+    const w     = Math.max(48, clientWidth * ratio);
+    const max   = clientWidth - w;
+    setThumbWidth(w);
+    setThumbLeft(scrollWidth > clientWidth ? (scrollLeft / (scrollWidth - clientWidth)) * max : 0);
+  }, []);
+
+  /* Wheel handler */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      const dx = e.deltaX !== 0 ? e.deltaX : e.shiftKey ? e.deltaY : 0;
+      if (dx === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      el.scrollLeft += dx;
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
+  /* Sync thumb on scroll + resize */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", updateThumb, { passive: true });
+    updateThumb();
+    const ro = new ResizeObserver(updateThumb);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", updateThumb); ro.disconnect(); };
+  }, [updateThumb]);
+
+  /* Drag */
+  const onThumbDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStart.current = { x: e.clientX, scrollLeft: scrollRef.current?.scrollLeft ?? 0 };
+    setDragging(true);
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const { scrollWidth, clientWidth } = el;
+      const trackW   = clientWidth;
+      const thumbW   = Math.max(48, clientWidth * (clientWidth / scrollWidth));
+      const maxThumb = trackW - thumbW;
+      const maxScroll = scrollWidth - clientWidth;
+      const dx = e.clientX - dragStart.current.x;
+      el.scrollLeft = Math.max(0, Math.min(maxScroll, dragStart.current.scrollLeft + (dx / maxThumb) * maxScroll));
+    };
+    const onUp = () => setDragging(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup",   onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [dragging]);
+
+  const showBar = (hovered || dragging) && thumbWidth > 0;
+
+  return (
+    <div style={{ position: "relative", ...style }}>
+      {/* Content — native scrollbar hidden */}
+      <div ref={scrollRef} className="table-hscroll-inner" style={{
+        overflowX: "auto", scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
+        ...innerStyle,
+      }}>
+        {children}
+      </div>
+
+      {/* Custom scrollbar track — always in DOM so hover target exists; thumb fades in */}
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => !dragging && setHovered(false)}
+        style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, height: 19,
+          pointerEvents: thumbWidth > 0 ? "auto" : "none",
+          background: "rgba(255,255,255,0.03)",
+          borderTop: "1px solid rgba(255,255,255,0.05)",
+        }}
+      >
+        <div
+          onMouseDown={onThumbDown}
+          style={{
+            position: "absolute",
+            left: thumbLeft,
+            width: thumbWidth,
+            top: 3, bottom: 3,
+            opacity: showBar ? 1 : 0,
+            transition: dragging ? "none" : "opacity 0.18s, background 0.15s",
+            background: dragging ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.28)",
+            borderRadius: 5,
+            cursor: dragging ? "grabbing" : "grab",
+            userSelect: "none",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BoolBadge({ value, invert = false }: { value: boolean | null; invert?: boolean }) {
+  if (value === null) return <span style={{ color: "var(--ink-3)", fontWeight: 700, fontSize: 11 }}>—</span>;
+  const pass = invert ? !value : value;
+  return pass
+    ? <span style={{ color: "var(--green)", fontSize: 11 }}>✓</span>
+    : <span style={{ color: "var(--red)",   fontSize: 11 }}>✗</span>;
+}
+
+type LiveSortKey = "trade_id" | "entry" | "exit" | "result_r" | "cor_dir" | "cor_lock" | "cor_target" | "cor_rm" | "cor_entry" | "is_bad" | "status";
+
+const LIVE_COLS: { label: string; key: LiveSortKey }[] = [
+  { label: "ID",        key: "trade_id"   },
+  { label: "Entry",     key: "entry"      },
+  { label: "Exit",      key: "exit"       },
+  { label: "R",         key: "result_r"   },
+  { label: "Dir",       key: "cor_dir"    },
+  { label: "Lock",      key: "cor_lock"   },
+  { label: "Target",    key: "cor_target" },
+  { label: "RM",        key: "cor_rm"     },
+  { label: "Cor. Entry",key: "cor_entry"  },
+  { label: "Bad",       key: "is_bad"     },
+  { label: "Status",    key: "status"     },
+];
+
+function sortLiveRows(
+  rows: LiveRow[],
+  key: LiveSortKey,
+  dir: 1 | -1,
+  isIncomplete: (r: LiveRow) => boolean,
+): LiveRow[] {
+  return [...rows].sort((a, b) => {
+    let cmp = 0;
+    if (key === "trade_id") {
+      cmp = a.trade_id.localeCompare(b.trade_id);
+    } else if (key === "entry" || key === "exit") {
+      cmp = new Date(a[key]).getTime() - new Date(b[key]).getTime();
+    } else if (key === "result_r") {
+      cmp = (a.result_r ?? 0) - (b.result_r ?? 0);
+    } else if (key === "is_bad") {
+      const rank = (v: boolean | null) => v === null ? 0 : v ? 2 : 1;
+      cmp = rank(a.is_bad) - rank(b.is_bad);
+    } else if (key === "status") {
+      cmp = (isIncomplete(a) ? 1 : 0) - (isIncomplete(b) ? 1 : 0);
+    } else {
+      const av = a[key] as boolean | null;
+      const bv = b[key] as boolean | null;
+      const rank = (v: boolean | null) => v === null ? 0 : v ? 2 : 1;
+      cmp = rank(av) - rank(bv);
+    }
+    return cmp * dir;
+  });
+}
+
+function CopyCell({ value, display, style }: { value: string; display?: React.ReactNode; style?: React.CSSProperties }) {
+  const [copied, setCopied] = useState(false);
+  const handleClick = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    });
+  };
+  return (
+    <span
+      onClick={handleClick}
+      title={`Click to copy: ${value}`}
+      style={{
+        cursor: "copy",
+        borderRadius: 3,
+        padding: "1px 3px",
+        background: copied ? "rgba(0,204,122,0.12)" : "transparent",
+        color: copied ? "var(--green)" : "inherit",
+        transition: "background 0.2s, color 0.2s",
+        userSelect: "none",
+        ...style,
+      }}
+    >
+      {copied ? "Copied!" : (display ?? value)}
+    </span>
+  );
+}
+
+function SortChevron({ active, dir }: { active: boolean; dir: 1 | -1 }) {
+  return (
+    <svg
+      width="8" height="8" viewBox="0 0 8 8" fill="none"
+      style={{ marginLeft: 3, opacity: active ? 1 : 0.25, flexShrink: 0 }}
+    >
+      {dir === 1
+        ? <path d="M4 6L1 2h6L4 6z" fill="currentColor"/>
+        : <path d="M4 2l3 4H1L4 2z" fill="currentColor"/>}
+    </svg>
+  );
+}
+
+const WEEK_OPTIONS = [1, 2, 3, 4] as const;
+
+function LiveTable({ tz, isAnalyst, onRefresh, onHydrate }: {
+  tz: string; isAnalyst?: boolean; onRefresh?: () => void; onHydrate?: (v: TradeHydrate) => void;
+}) {
+  const [rows,       setRows]       = useState<LiveRow[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [weeks,      setWeeks]      = useState(1);
+  const [drafts,     setDrafts]     = useState<LiveDrafts>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [sortKey,    setSortKey]    = useState<LiveSortKey>("entry");
+  const [sortDir,    setSortDir]    = useState<1 | -1>(-1);
+  const [liveFilter, setLiveFilter] = useState<"queue" | "all" | "processed">("queue");
+
+  const fetchRows = useCallback(async (w: number) => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/session/live-trades?weeks=${w}`);
+      const j = await r.json();
+      setRows(j.rows ?? []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchRows(weeks);
+    setDrafts({});   // clear unsaved edits when window changes
+  }, [weeks, fetchRows]);
+
+  const handleWeeksChange = (w: number) => setWeeks(w);
+
+  const setField = (tradeId: string, field: keyof LiveDraftFields, value: boolean | null, orig: boolean | null) =>
+    setDrafts(prev => {
+      const row = { ...(prev[tradeId] ?? {}) };
+      if (value === orig) {
+        delete row[field];
+      } else {
+        row[field] = value;
+      }
+      if (Object.keys(row).length === 0) {
+        const next = { ...prev };
+        delete next[tradeId];
+        return next;
+      }
+      return { ...prev, [tradeId]: row };
+    });
+
+  const pendingCount = Object.keys(drafts).length;
+
+  const handleSubmit = async () => {
+    const updates = Object.entries(drafts)
+      .filter(([, d]) => d && Object.keys(d).length > 0)
+      .map(([trade_id, fields]) => ({ trade_id, ...fields }));
+    if (!updates.length) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/session/live-trades", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
+      if (res.ok) {
+        setDrafts({});
+        fetchRows(weeks);  // refresh table data
+        onRefresh?.();     // notify parent (updates JournalTimeline liveRows)
+        window.dispatchEvent(new CustomEvent("pipeline-refresh")); // trigger banner update
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const effectiveBool = (tradeId: string, field: keyof LiveDraftFields, orig: boolean | null): boolean | null =>
+    field in (drafts[tradeId] ?? {}) ? (drafts[tradeId]![field] ?? null) : orig;
+
+  const isIncomplete = (r: LiveRow) =>
+    BOOL_FIELDS.some(f => effectiveBool(r.trade_id, f, r[f] as boolean | null) === null);
+
+  const handleColClick = (key: LiveSortKey) => {
+    if (key === sortKey) setSortDir(d => (d === 1 ? -1 : 1));
+    else { setSortKey(key); setSortDir(-1); }
+  };
+
+  const filtered = liveFilter === "queue"
+    ? rows.filter(r => !isTradeProcessed(r))
+    : liveFilter === "processed"
+      ? rows.filter(isTradeProcessed)
+      : rows;
+
+  const sorted = sortLiveRows(filtered, sortKey, sortDir, isIncomplete);
+
+  const thSort: React.CSSProperties = {
+    ...TH,
+    cursor: "pointer",
+    userSelect: "none",
+    whiteSpace: "nowrap",
+  };
+
   return (
     <div className="card">
-      <CardHeader eyebrow="Live" eyebrowColor="var(--red)" title="Trade"
+      <CardHeader
+        eyebrow="Live" eyebrowColor="var(--red)" title="Trade"
         badge={<span className="chip chip-red"><span style={{ display:"inline-block", width:5, height:5, borderRadius:"50%", background:"var(--red)", marginRight:5, verticalAlign:"middle" }}/>LIVE</span>}
-        right={<span className="chip chip-muted">{rows.length} results</span>}
-        actions={<><IconBtn icon="filter"/><IconBtn icon="download"/><IconBtn icon="refresh" onClick={onRefresh}/></>}
+        right={<span className="chip chip-muted">{sorted.length} / {rows.length}</span>}
+        actions={
+          <>
+            {/* Week range selector */}
+            <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--sub)", borderRadius: 5, border: "1px solid var(--line)" }}>
+              {WEEK_OPTIONS.map(w => {
+                const active = weeks === w;
+                return (
+                  <button key={w} type="button" onClick={() => handleWeeksChange(w)} style={{
+                    padding: "2px 7px", border: "none", borderRadius: 3,
+                    background: active ? "var(--card)" : "transparent",
+                    color: active ? "var(--ink-0)" : "var(--ink-3)",
+                    fontSize: 10, fontWeight: active ? 700 : 400,
+                    cursor: "pointer", transition: "background 0.12s, color 0.12s",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {w}W
+                  </button>
+                );
+              })}
+            </div>
+            {/* Queue / All / Done filter */}
+            <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--sub)", borderRadius: 5, border: "1px solid var(--line)" }}>
+              {(["queue", "all", "processed"] as const).map(f => {
+                const active = liveFilter === f;
+                const label = f === "queue" ? "Queue" : f === "processed" ? "Done" : "All";
+                return (
+                  <button key={f} type="button" onClick={() => setLiveFilter(f)} style={{
+                    padding: "2px 8px", border: "none", borderRadius: 3,
+                    background: active ? "var(--card)" : "transparent",
+                    color: active
+                      ? f === "queue" ? "var(--red)" : f === "processed" ? "var(--green)" : "var(--ink-0)"
+                      : "var(--ink-3)",
+                    fontSize: 10, fontWeight: active ? 700 : 400,
+                    cursor: "pointer", transition: "background 0.12s, color 0.12s",
+                  }}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <IconBtn icon="refresh" onClick={() => fetchRows(weeks)}/>
+            {isAnalyst && pendingCount > 0 && (
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "4px 10px", borderRadius: 4,
+                  border: "1px solid rgba(240,160,48,0.35)",
+                  background: submitting ? "rgba(240,160,48,0.05)" : "rgba(240,160,48,0.10)",
+                  color: "var(--amber)", cursor: submitting ? "not-allowed" : "pointer",
+                  fontSize: 11, fontWeight: 700, letterSpacing: "0.03em",
+                  opacity: submitting ? 0.6 : 1,
+                }}
+              >
+                {submitting ? "Saving…" : `Submit ${pendingCount} change${pendingCount > 1 ? "s" : ""}`}
+              </button>
+            )}
+          </>
+        }
       />
-      <div style={{ overflowX: "auto", width: "100%", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
-          <thead><tr>{COLS.map(h => <th key={h} style={TH}>{h}</th>)}</tr></thead>
+      <HorizScrollContainer style={{ width: "100%" }} innerStyle={{ overscrollBehavior: "contain" }}>
+        <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", userSelect: "none" }}>
+          <thead>
+            <tr>
+              {LIVE_COLS.map(({ label, key }) => (
+                <th key={key} style={thSort} onClick={() => handleColClick(key)}>
+                  <span style={{ display: "inline-flex", alignItems: "center" }}>
+                    {label}
+                    <SortChevron active={sortKey === key} dir={sortKey === key ? sortDir : -1} />
+                  </span>
+                </th>
+              ))}
+              {onHydrate && <th style={{ ...thSort, cursor: "default" }} />}
+            </tr>
+          </thead>
           <tbody>
-            {loading && <tr><td colSpan={COLS.length} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={COLS.length} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No active positions</td></tr>}
-            {!loading && rows.map((r, i) => {
-              const bad = sopBad(r);
+            {loading && (
+              <tr><td colSpan={LIVE_COLS.length + (onHydrate ? 1 : 0)} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>Loading…</td></tr>
+            )}
+            {!loading && sorted.length === 0 && (
+              <tr><td colSpan={LIVE_COLS.length + (onHydrate ? 1 : 0)} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>
+                {liveFilter === "queue" ? "No trades in queue" : liveFilter === "processed" ? "No processed trades yet" : "No trades"}
+              </td></tr>
+            )}
+            {!loading && sorted.map((r, i) => {
+              const id       = r.trade_id;
+              const hasDraft = id in drafts;
+              const bad      = isIncomplete(r);
               return (
-                <tr key={i} style={{ background: bad ? "rgba(240,58,87,0.04)" : "transparent" }}>
-                  <td style={TD}>{fmtTz(r.entry, tz)}</td>
-                  <td style={TD}>{r.exit ? fmtTz(r.exit, tz) : "—"}</td>
-                  <td style={{ ...TD, color: r.cor_dir ?? "var(--ink-3)" }}>{r.cor_dir ?? <span style={{ color: "var(--red)" }}>—</span>}</td>
-                  <td style={{ ...TD, color: r.cor_lock ? "var(--ink-1)" : "var(--red)" }}>{r.cor_lock ?? "—"}</td>
-                  <td style={{ ...TD, color: r.cor_target ? "var(--ink-1)" : "var(--red)" }}>{r.cor_target ?? "—"}</td>
-                  <td style={{ ...TD, color: r.cor_rm ? "var(--ink-1)" : "var(--red)" }}>{r.cor_rm ?? "—"}</td>
-                  <td style={{ ...TD, color: r.cor_entry ? "var(--ink-1)" : "var(--red)" }}>{r.cor_entry ?? "—"}</td>
-                  <td style={{ ...TD }}>
-                    {bad
-                      ? <span style={{ fontSize: 10, fontWeight: 700, color: "var(--red)", letterSpacing: "0.05em" }}>BAD</span>
-                      : <span style={{ fontSize: 10, color: "var(--green)" }}>OK</span>}
+                <tr key={i} style={{
+                  background:  hasDraft ? "rgba(240,160,48,0.03)" : bad ? "rgba(240,58,87,0.03)" : "transparent",
+                  borderLeft:  hasDraft ? "2px solid rgba(240,160,48,0.35)" : "2px solid transparent",
+                }}>
+                  <td style={{ ...TD, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-3)" }}>
+                    <CopyCell value={id} display={id.slice(0, 8) + "…"} />
                   </td>
+                  <td style={TD}>
+                    <CopyCell value={utcToLocalInput(r.entry, tz)} display={fmtTz(r.entry, tz)} />
+                  </td>
+                  <td style={TD}>
+                    <CopyCell value={r.exit ? utcToLocalInput(r.exit, tz) : ""} display={fmtTz(r.exit, tz)} />
+                  </td>
+                  <td style={{ ...TD, fontFamily: "var(--font-mono)", color: r.result_r > 0 ? "var(--green)" : r.result_r < 0 ? "var(--red)" : "var(--ink-3)" }}>
+                    {r.result_r != null ? (r.result_r > 0 ? "+" : "") + r.result_r.toFixed(2) + "R" : "—"}
+                  </td>
+                  {(["cor_dir","cor_lock","cor_target","cor_rm","cor_entry"] as const).map(f => (
+                    <td key={f} style={{ ...TD, paddingTop: 4, paddingBottom: 4 }}>
+                      {isAnalyst
+                        ? <BoolSelect
+                            value={effectiveBool(id, f, r[f] as boolean | null)}
+                            changed={f in (drafts[id] ?? {})}
+                            onChange={v => setField(id, f, v, r[f] as boolean | null)}
+                          />
+                        : <BoolBadge value={r[f] as boolean | null} />}
+                    </td>
+                  ))}
+                  <td style={{ ...TD, paddingTop: 4, paddingBottom: 4 }}>
+                    {isAnalyst
+                      ? <BoolSelect
+                          value={effectiveBool(id, "is_bad", r.is_bad)}
+                          changed={"is_bad" in (drafts[id] ?? {})}
+                          onChange={v => setField(id, "is_bad", v, r.is_bad)}
+                          invert
+                        />
+                      : <BoolBadge value={r.is_bad} invert />}
+                  </td>
+                  <td style={TD}>
+                    {bad
+                      ? <span style={{ fontSize: 10, fontWeight: 700, color: "var(--red)",   letterSpacing: "0.05em" }}>INCOMPLETE</span>
+                      : <span style={{ fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.05em" }}>DONE</span>}
+                  </td>
+                  {onHydrate && (
+                    <td style={{ ...TD, width: 28, paddingLeft: 4, paddingRight: 8 }}>
+                      <button
+                        type="button"
+                        title="Fill optimal trade form"
+                        onClick={() => onHydrate({
+                          tradeId: r.trade_id,
+                          entry: utcToLocalInput(r.entry, tz),
+                          exit: r.exit ? utcToLocalInput(r.exit, tz) : "",
+                        })}
+                        style={{
+                          background: "none", border: "1px solid var(--line)", borderRadius: 3,
+                          color: "var(--ink-3)", cursor: "pointer", fontSize: 12, lineHeight: 1,
+                          padding: "2px 5px", display: "flex", alignItems: "center",
+                          transition: "border-color 0.12s, color 0.12s",
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--green)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--green)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--line)";  (e.currentTarget as HTMLButtonElement).style.color = "var(--ink-3)"; }}
+                      >
+                        ↗
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
           </tbody>
         </table>
-      </div>
+      </HorizScrollContainer>
     </div>
   );
 }
@@ -1208,12 +1638,13 @@ function weekStartMs(): number {
 }
 
 function JournalTimeline({
-  trades, tradingLoading, comments, commentsLoading, tz, analystMode, operatorView, onDeleteComment, onRefresh,
+  trades, tradingLoading, comments, commentsLoading, tz, analystMode, operatorView, liveRows, onDeleteComment, onRefresh,
 }: {
   trades: OptimalRow[];    tradingLoading: boolean;
   comments: CommentRow[];  commentsLoading: boolean; tz: string;
   analystMode?: boolean;
-  operatorView?: boolean;    /* operator mode: filter to this week + operator comments only */
+  operatorView?: boolean;
+  liveRows?: LiveRow[];
   onDeleteComment?: (id: string) => Promise<void>;
   onRefresh?: () => void;
 }) {
@@ -1221,8 +1652,23 @@ function JournalTimeline({
   const [expandedPlanIndices, setExpandedPlanIndices] = useState<Set<number>>(new Set());
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [tradeSource, setTradeSource] = useState<"optimal" | "live">("optimal");
   const scrollRef = useRef<HTMLDivElement>(null);
   const loading = tradingLoading || commentsLoading;
+
+  /* Normalise LiveRow → OptimalRow shape so timeline rendering is unchanged */
+  const liveAsOptimal = (rows: LiveRow[]): OptimalRow[] => rows.map(r => ({
+    optimal_trade_id: r.trade_id,
+    trade_id:         r.trade_id,
+    result_r:         r.result_r,
+    entry:            r.entry,
+    exit:             r.exit,
+    created_at:       r.entry,
+  }));
+
+  const effectiveTrades = analystMode && tradeSource === "live"
+    ? liveAsOptimal(liveRows ?? [])
+    : trades;
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -1252,8 +1698,8 @@ function JournalTimeline({
         !c.content.startsWith("alarm_state:")
       );
   const visibleTrades = operatorView
-    ? trades.filter(t => new Date(t.entry).getTime() >= weekMs)
-    : trades;
+    ? effectiveTrades.filter(t => new Date(t.entry).getTime() >= weekMs)
+    : effectiveTrades;
 
   /* ── collect all key timestamps for non-linear scale ── */
   const keyMs: number[] = [
@@ -1343,6 +1789,24 @@ function JournalTimeline({
           ? <span className="chip chip-muted">{visibleTrades.length} trades · {visibleComments.length} comments · {operatorView ? "this week" : "last 2w"}</span>
           : undefined}
         actions={<>
+          {analystMode && (
+            <div style={{ display: "flex", gap: 2, padding: 2, background: "var(--sub)", borderRadius: 5, border: "1px solid var(--line)" }}>
+              {(["optimal", "live"] as const).map(src => {
+                const active = tradeSource === src;
+                return (
+                  <button key={src} type="button" onClick={() => setTradeSource(src)} style={{
+                    padding: "3px 10px", border: "none", borderRadius: 3,
+                    background: active ? "var(--card)" : "transparent",
+                    color: active ? "var(--ink-0)" : "var(--ink-3)",
+                    fontSize: 10.5, fontWeight: active ? 600 : 400, cursor: "pointer",
+                    transition: "background 0.15s, color 0.15s",
+                  }}>
+                    {src === "optimal" ? "Optimal" : "Live"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setIsFullscreen(o => !o)}
@@ -1468,7 +1932,9 @@ function JournalTimeline({
 /* ═══════════════════════════════════════════════════════════
    RECORD TRADE FORM
 ═══════════════════════════════════════════════════════════ */
-function RecordTradeForm({ selectedId, onSuccess, showToast, baseTZ }: { selectedId: string | null; onSuccess?: () => void; showToast: ShowToast; baseTZ: string }) {
+type TradeHydrate = { tradeId: string; entry: string; exit: string };
+
+function RecordTradeForm({ selectedId, hydrate, onSuccess, showToast, baseTZ }: { selectedId: string | null; hydrate?: TradeHydrate | null; onSuccess?: () => void; showToast: ShowToast; baseTZ: string }) {
   const [tradeId, setTradeId] = useState("");
   const [entry,   setEntry]   = useState(() => nowInTZ(baseTZ));
   const [exit_,   setExit]    = useState(() => nowInTZ(baseTZ));
@@ -1479,6 +1945,13 @@ function RecordTradeForm({ selectedId, onSuccess, showToast, baseTZ }: { selecte
   const [lastErr,    setLastErr]    = useState<string | null>(null);
 
   useEffect(() => { if (selectedId) setTradeId(selectedId); }, [selectedId]);
+
+  useEffect(() => {
+    if (!hydrate) return;
+    setTradeId(hydrate.tradeId);
+    setEntry(hydrate.entry);
+    setExit(hydrate.exit);
+  }, [hydrate]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -1504,6 +1977,13 @@ function RecordTradeForm({ selectedId, onSuccess, showToast, baseTZ }: { selecte
         showToast("error", msg);
       } else {
         showToast("success", "Optimal trade recorded");
+        setTradeId("");
+        setEntry(nowInTZ(baseTZ));
+        setExit(nowInTZ(baseTZ));
+        setExemptR("0");
+        setResult("0");
+        setExemp("false");
+        setLastErr(null);
         onSuccess?.();
       }
     } catch (e) {
@@ -1623,6 +2103,8 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, onSuccess, show
         }
         showToast("success", isAnalyst ? "Analyst comment added" : "Comment added");
         setContent("");
+        setTradeId("");
+        setCreatedAt(nowInTZ(baseTZ));
         setIsLastTrade(false);
         onSuccess?.();
       }
@@ -2056,7 +2538,7 @@ function playAlarmBeeps(volume: number) {
   }
 }
 
-function AlarmConfig({ showToast, onRunningChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void }) {
+function AlarmConfig({ showToast, onRunningChange, isAnalystMode }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean }) {
   type SrvState = {
     running:        boolean;
     started_at:     string | null;
@@ -2081,9 +2563,32 @@ function AlarmConfig({ showToast, onRunningChange }: { showToast: ShowToast; onR
   const soundFiredCycle = useRef<number>(-1);
   const lastAckRef      = useRef<number>(-1);
   const volumeRef       = useRef<number>(0.7);
+  /* Freeze tracking: accumulated ms the alarm has been paused in analyst mode */
+  const frozenOffsetMs = useRef<number>(0);
+  const frozenSince    = useRef<number | null>(null);
 
   useEffect(() => { volumeRef.current  = volume;             }, [volume]);
   useEffect(() => { lastAckRef.current = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
+
+  /* Freeze / unfreeze when analyst mode toggles */
+  useEffect(() => {
+    if (!srv.running) return;
+    if (isAnalystMode) {
+      if (frozenSince.current === null) frozenSince.current = Date.now();
+    } else {
+      if (frozenSince.current !== null) {
+        frozenOffsetMs.current += Date.now() - frozenSince.current;
+        frozenSince.current = null;
+      }
+    }
+  }, [isAnalystMode, srv.running]);
+
+  /* Reset freeze counters when alarm starts/stops */
+  useEffect(() => {
+    frozenOffsetMs.current = 0;
+    frozenSince.current    = isAnalystMode ? Date.now() : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srv.started_at]);
 
   /* Sync local config from server when alarm is stopped */
   useEffect(() => {
@@ -2124,9 +2629,12 @@ function AlarmConfig({ showToast, onRunningChange }: { showToast: ShowToast; onR
     const triggerSec = (srv.interval_min - srv.focus_min) * 60;
 
     const tick = () => {
-      const elapsed  = (Date.now() - epoch) / 1000;
-      const cycleNum = Math.floor(elapsed / cycleSec);
-      const cyclePos = elapsed % cycleSec;
+      /* Subtract accumulated frozen time so analyst periods don't count */
+      const currentFrozen = frozenSince.current !== null ? Date.now() - frozenSince.current : 0;
+      const adjustedMs    = Date.now() - epoch - frozenOffsetMs.current - currentFrozen;
+      const elapsed       = adjustedMs / 1000;
+      const cycleNum      = Math.floor(elapsed / cycleSec);
+      const cyclePos      = elapsed % cycleSec;
 
       setCountdown(cyclePos < triggerSec ? Math.ceil(triggerSec - cyclePos) : 0);
 
@@ -2137,7 +2645,9 @@ function AlarmConfig({ showToast, onRunningChange }: { showToast: ShowToast; onR
         setFocusRemain(null);
       }
 
-      const shouldFlash = cyclePos >= triggerSec && cycleNum > lastAckRef.current;
+      /* Suppress flash and beep while frozen in analyst mode */
+      const frozen      = frozenSince.current !== null;
+      const shouldFlash = !frozen && cyclePos >= triggerSec && cycleNum > lastAckRef.current;
       setFlash(shouldFlash);
 
       if (shouldFlash && soundFiredCycle.current < cycleNum) {
@@ -2467,16 +2977,32 @@ function AlarmConfig({ showToast, onRunningChange }: { showToast: ShowToast; onR
         {/* ── Always-visible body ── */}
         <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
 
+          {/* Frozen banner */}
+          {isAnalystMode && running && (
+            <div style={{
+              padding: "6px 10px", borderRadius: 5,
+              background: "rgba(240,160,48,0.06)",
+              border: "1px solid rgba(240,160,48,0.22)",
+              display: "flex", alignItems: "center", gap: 7,
+            }}>
+              <span style={{ fontSize: 13 }}>❄︎</span>
+              <div>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "var(--amber)", letterSpacing: "0.04em" }}>FROZEN — ANALYST MODE</p>
+                <p style={{ margin: 0, fontSize: 9.5, color: "var(--ink-3)" }}>Resumes next operator session</p>
+              </div>
+            </div>
+          )}
+
           {/* Dual countdown tiles */}
           <div style={{ display: "flex", gap: 8 }}>
             <div style={{
               flex: 1, padding: "7px 10px", borderRadius: 5,
               background: running ? "var(--raised)" : "var(--card)",
-              border: `1px solid ${running && countdown !== null && countdown < 60 ? "rgba(0,204,122,0.25)" : "var(--line)"}`,
+              border: `1px solid ${isAnalystMode ? "rgba(240,160,48,0.18)" : running && countdown !== null && countdown < 60 ? "rgba(0,204,122,0.25)" : "var(--line)"}`,
               transition: "border-color 0.3s",
             }}>
-              <p style={{ margin: "0 0 1px", fontSize: 9.5, fontWeight: 600, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>Next Alarm</p>
-              <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: running && countdown !== null && countdown < 60 ? "var(--green)" : running ? "var(--ink-1)" : "var(--ink-3)" }}>
+              <p style={{ margin: "0 0 1px", fontSize: 9.5, fontWeight: 600, color: isAnalystMode ? "var(--amber)" : "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>Next Alarm</p>
+              <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: isAnalystMode ? "var(--amber)" : running && countdown !== null && countdown < 60 ? "var(--green)" : running ? "var(--ink-1)" : "var(--ink-3)" }}>
                 {running && countdown !== null ? fmtCountdown(countdown) : `${dispInterval - dispFocus}:00`}
               </p>
             </div>
@@ -2670,14 +3196,29 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* ── Header ───────────────────────────────────── */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
           <p className="section-eyebrow" style={{ color: "var(--amber)", marginBottom: 5 }}>Pre-Session Mirror</p>
           <p style={{ margin: 0, fontSize: 19, fontWeight: 700, color: "var(--ink-0)", letterSpacing: "-0.02em" }}>
             {f.state.mode}
           </p>
         </div>
-        <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--ink-3)" }}>{f.ts}</span>
+        {f.ts && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+            padding: "4px 9px", borderRadius: 4,
+            border: "1px solid rgba(255,255,255,0.07)",
+            background: "rgba(255,255,255,0.03)",
+          }}>
+            <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+              <circle cx="6" cy="6" r="4.5" stroke="var(--ink-3)" strokeWidth="1.2"/>
+              <path d="M6 3.5V6l1.5 1.5" stroke="var(--ink-3)" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span style={{ fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)", letterSpacing: "0.02em" }}>
+              {f.ts}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Key stats strip ───────────────────────────── */}
@@ -2826,8 +3367,50 @@ export default function SessionClient({ user }: { user: User }) {
     if (typeof window !== "undefined") localStorage.setItem("xtnl_tz", tz);
   }, []);
   const [selId,          setSelId]          = useState<string | null>(null);
+  const [hydrateValues,  setHydrateValues]  = useState<TradeHydrate | null>(null);
   const [showChecklist,  setShowChecklist]  = useState(false);
   const [opMainView,     setOpMainView]     = useState<"mirror" | "journal">("mirror");
+  const [frictionReport, setFrictionReport] = useState<FrictionReport | null>(null);
+
+  /* ── Fetch audit report from OneDrive ──────────────── */
+  const auditWeekKeyRef = useRef<string>("");
+
+  const fetchAuditReport = useCallback(async () => {
+    try {
+      const r = await fetch("/api/session/audit-report");
+      if (!r.ok) return;
+      const weekKey = r.headers.get("X-Week-Key") ?? getMondayAESTKey();
+      const text    = await r.text();
+      auditWeekKeyRef.current = weekKey;
+      setFrictionReport(parseFrictionReport(text));
+    } catch { /* silently ignore — report may not exist yet */ }
+  }, []);
+
+  useEffect(() => { void fetchAuditReport(); }, [fetchAuditReport]);
+
+  /* ── Live update when Analysis Session is confirmed ── */
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const raw = (e as CustomEvent<string>).detail;
+      if (raw) {
+        auditWeekKeyRef.current = getMondayAESTKey();
+        setFrictionReport(parseFrictionReport(raw));
+      }
+    };
+    window.addEventListener("audit-report-ready", handler);
+    return () => window.removeEventListener("audit-report-ready", handler);
+  }, []);
+
+  /* ── Auto-refresh Monday 4 AM AEST ───────────────────── */
+  useEffect(() => {
+    const check = () => {
+      if (getMondayAESTKey() !== auditWeekKeyRef.current) void fetchAuditReport();
+    };
+    const id = setInterval(check, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, [fetchAuditReport]);
 
   /* ── Toast notifications ─────────────────────────── */
   const [toasts,   setToasts]  = useState<ToastMsg[]>([]);
@@ -2850,6 +3433,13 @@ export default function SessionClient({ user }: { user: User }) {
   const [pipelineStatus,    setPipelineStatus]    = useState<{ ingestionDone: boolean; processDone: boolean } | null>(null);
   const [analysisDone,      setAnalysisDone]      = useState(false);
   const [analysisChecking,  setAnalysisChecking]  = useState(false);
+
+  /* Derived pipeline progress — computed from already-loaded liveRows, always in sync */
+  const pipeTotalLive     = liveRows.length;
+  const pipeProcessedLive = liveRows.filter(isTradeProcessed).length;
+  const pipeIngestionDone = pipeTotalLive > 0;
+  const pipeProcessDone   = pipeIngestionDone && pipeProcessedLive === pipeTotalLive;
+  const pipeProgress      = pipeTotalLive > 0 ? pipeProcessedLive / pipeTotalLive : 0;
 
   const fetchOptimal = useCallback(async () => {
     setLoadingOpt(true);
@@ -3064,68 +3654,6 @@ export default function SessionClient({ user }: { user: User }) {
               </div>
             </div>
           </div>
-          {effectiveMode === "analyst" && <div className="session-header-tasks">
-            <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.10em", color: "var(--ink-3)", textTransform: "uppercase" }}>Session Pipeline</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-
-              {/* Step 1 — Ingestion */}
-              <TaskPill
-                done={pipelineStatus?.ingestionDone ?? false}
-                label="Ingestion"
-                ts={null}
-                loading={pipelineStatus === null}
-              />
-
-              {/* arrow → */}
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden style={{ color: "var(--ink-3)", flexShrink: 0 }}>
-                <path d="M2 7h10M8 3.5l3.5 3.5L8 10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-
-              {/* Step 2 — Process All Trades (button when incomplete, pill when done) */}
-              {pipelineStatus?.processDone ? (
-                <TaskPill done label="Process All Trades" ts={null} />
-              ) : (
-                <button
-                  disabled={!pipelineStatus?.ingestionDone}
-                  onClick={fetchPipelineStatus}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "5px 10px", borderRadius: 4,
-                    border: `1px solid ${pipelineStatus?.ingestionDone ? "rgba(240,160,48,0.28)" : "var(--line)"}`,
-                    background: pipelineStatus?.ingestionDone ? "rgba(240,160,48,0.07)" : "var(--sub)",
-                    color: pipelineStatus?.ingestionDone ? "var(--amber)" : "var(--ink-3)",
-                    cursor: pipelineStatus?.ingestionDone ? "pointer" : "not-allowed",
-                    fontSize: 11, fontWeight: 600, letterSpacing: "0.02em",
-                    transition: "background 0.15s, border-color 0.15s",
-                    opacity: pipelineStatus === null ? 0.5 : 1,
-                  }}
-                  onMouseEnter={e => { if (pipelineStatus?.ingestionDone) { (e.currentTarget as HTMLButtonElement).style.background = "rgba(240,160,48,0.13)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(240,160,48,0.45)"; } }}
-                  onMouseLeave={e => { if (pipelineStatus?.ingestionDone) { (e.currentTarget as HTMLButtonElement).style.background = "rgba(240,160,48,0.07)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(240,160,48,0.28)"; } }}
-                  title={pipelineStatus?.ingestionDone ? "Check if all trades are processed" : "Waiting for ingestion"}
-                >
-                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
-                    <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  Process All Trades
-                </button>
-              )}
-
-              {/* arrow → */}
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden style={{ color: "var(--ink-3)", flexShrink: 0 }}>
-                <path d="M2 7h10M8 3.5l3.5 3.5L8 10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-
-              {/* Step 3 — Analysis Session (click to verify OneDrive report) */}
-              <TaskPill
-                done={analysisDone}
-                label="Analysis Session"
-                ts={null}
-                loading={analysisChecking}
-                onClick={pipelineStatus?.processDone && !analysisDone ? handleVerifyAnalysis : undefined}
-              />
-
-            </div>
-          </div>}
         </div>
 
         {/* ── SESSION COUNTDOWN ────────────────────────────── */}
@@ -3140,11 +3668,11 @@ export default function SessionClient({ user }: { user: User }) {
           <div className="session-2col">
             <div className="session-main">
               <OptimalTable rows={optimalRows} loading={loadingOpt} selected={selId} onSelect={id => setSelId(prev => prev === id ? null : id)} tz={baseTZ} onDelete={deleteOptimal} onRefresh={fetchOptimal} />
-              <LiveTable rows={liveRows} loading={loadingLive} tz={baseTZ} onRefresh={fetchLive} />
-              <JournalTimeline trades={optimalRows} tradingLoading={loadingOpt} comments={commentRows} commentsLoading={loadingComm} tz={baseTZ} analystMode={effectiveMode === "analyst"} onDeleteComment={deleteComment} onRefresh={fetchJournal} />
+              <LiveTable tz={baseTZ} isAnalyst={effectiveMode === "analyst"} onRefresh={fetchLive} onHydrate={v => setHydrateValues({ ...v })} />
+              <JournalTimeline trades={optimalRows} tradingLoading={loadingOpt} comments={commentRows} commentsLoading={loadingComm} tz={baseTZ} analystMode={effectiveMode === "analyst"} liveRows={liveRows} onDeleteComment={deleteComment} onRefresh={fetchJournal} />
             </div>
             <div className="session-sidebar">
-              <RecordTradeForm selectedId={selId} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
+              <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
               <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
             </div>
           </div>
@@ -3179,7 +3707,13 @@ export default function SessionClient({ user }: { user: User }) {
                 })}
               </div>
 
-              {opMainView === "mirror"  && <FrictionPanel f={FRICTION} />}
+              {opMainView === "mirror"  && (
+                frictionReport
+                  ? <FrictionPanel f={frictionReport} />
+                  : <div style={{ padding: "32px 0", textAlign: "center", color: "var(--ink-4)", fontSize: 13 }}>
+                      Loading audit report…
+                    </div>
+              )}
               {opMainView === "journal" && (
                 <JournalTimeline
                   trades={optimalRows} tradingLoading={loadingOpt}
@@ -3223,7 +3757,7 @@ export default function SessionClient({ user }: { user: User }) {
 
               <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
 
-              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} />
+              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={effectiveMode === "analyst"} />
             </div>
           </div>
         )}

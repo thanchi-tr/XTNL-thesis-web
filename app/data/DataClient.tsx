@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { getMondayAESTKey }                         from "@/lib/weekKey";
 
 interface ReportData {
   content:    string;
@@ -191,6 +192,33 @@ export default function DataClient() {
 
   useEffect(() => { void load(); }, [load]);
 
+  /* Re-fetch when Analysis Session is confirmed (same tab or other tab) */
+  useEffect(() => {
+    const onEvent   = () => void load();
+    const onStorage = (e: StorageEvent) => { if (e.key === "xtnl_analysis_ts") void load(); };
+    window.addEventListener("analysis-session-complete", onEvent);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("analysis-session-complete", onEvent);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [load]);
+
+  /* Auto-refresh Monday 4 AM AEST — poll every 60 s + on tab focus */
+  const reportRef = useRef<ReportData | null>(null);
+  useEffect(() => { reportRef.current = report; }, [report]);
+
+  useEffect(() => {
+    const check = () => {
+      const r = reportRef.current;
+      if (r && getMondayAESTKey() !== r.reportDate) void load();
+    };
+    const id = setInterval(check, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, [load]);
+
 
   const sections = report ? parseSections(report.content) : [];
 
@@ -205,7 +233,7 @@ export default function DataClient() {
             <>
               <span style={{ color: "var(--line-hi)", fontSize: 10 }}>·</span>
               <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--ink-3)" }}>
-                w/c {report.reportDate}
+                w/c {new Date(report.reportDate + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
               </span>
               {report.fetchedAt && (
                 <>

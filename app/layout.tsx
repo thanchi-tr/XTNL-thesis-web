@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import NavBar from "@/components/layout/NavBar";
-import StatusBar from "@/components/layout/StatusBar";
-import Footer from "@/components/layout/Footer";
-import ScrollToTop from "@/components/ui/ScrollToTop";
+import NavBar          from "@/components/layout/NavBar";
+import StatusBar        from "@/components/layout/StatusBar";
+import Footer           from "@/components/layout/Footer";
+import PipelineBanner   from "@/components/layout/PipelineBanner";
+import ScrollToTop  from "@/components/ui/ScrollToTop";
+import Calculator   from "@/components/ui/Calculator";
 import SessionProvider          from "@/components/SessionProvider";
 import { SimulatorProvider }   from "@/context/SimulatorContext";
 import FounderWelcome          from "@/components/FounderWelcome";
@@ -59,8 +61,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <div style={{ paddingTop: "calc(var(--nav-h) + var(--bar-h))" }}>
               {children}
             </div>
+            <PipelineBanner />
             <Footer />
             <ScrollToTop />
+            <Calculator />
             <FounderWelcome />
           </SimulatorProvider>
         </SessionProvider>

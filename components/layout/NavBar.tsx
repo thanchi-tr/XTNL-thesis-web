@@ -202,6 +202,27 @@ export default function NavBar() {
                       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/><path d="M2.5 13.5c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
                       Profile
                     </Link>
+                    <button
+                      onClick={() => { setDropdownOpen(false); window.dispatchEvent(new CustomEvent("open-calculator")); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 9, width: "100%",
+                        padding: "9px 12px", borderRadius: 5,
+                        color: "var(--ink-1)", background: "none", border: "none",
+                        cursor: "pointer", fontSize: 12, fontWeight: 500,
+                        textAlign: "left", transition: "background 0.12s",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--raised)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="2" width="12" height="12" rx="1.5"/>
+                        <line x1="5" y1="5" x2="6" y2="5"/><line x1="8" y1="5" x2="9" y2="5"/><line x1="11" y1="5" x2="11" y2="5"/>
+                        <line x1="5" y1="8" x2="6" y2="8"/><line x1="8" y1="8" x2="9" y2="8"/><line x1="11" y1="8" x2="11" y2="8"/>
+                        <line x1="5" y1="11" x2="6" y2="11"/><line x1="8" y1="11" x2="9" y2="11"/><line x1="11" y1="11" x2="11" y2="11"/>
+                      </svg>
+                      Calculator
+                      <span style={{ marginLeft: "auto", fontSize: 9.5, color: "var(--ink-4)", fontFamily: "var(--font-mono)" }}>Ctrl+`</span>
+                    </button>
                     <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
                     <button
                       onClick={() => { setDropdownOpen(false); signOut({ redirectTo: "/" }); }}

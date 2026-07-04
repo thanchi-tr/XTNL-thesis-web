@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth }                           from "@/auth";
 import { unstable_cache }                 from "next/cache";
+import { getMondayAESTKey }               from "@/lib/weekKey";
 
 /* ── Config ─────────────────────────────────────────────────── */
 const TENANT_ID     = process.env.AZURE_TENANT_ID!;
@@ -14,19 +15,6 @@ const REPORT_BASE   = (process.env.REPORT_BASE_URL ?? "XTNLSolutions/Operations/
 /* Fixed live report path — pipeline writes here every Monday */
 const LIVE_FILE = "live.general.txt";
 const LIVE_PATH = `${REPORT_BASE}/${LIVE_FILE}`;
-
-/* ── Cache key — Monday of the current AEST week ───────────────
-   AEST = UTC+10. When Monday arrives in Australia, the key
-   changes and unstable_cache re-fetches on the next request.    */
-function getMondayAESTKey(): string {
-  const now      = Date.now();
-  const aestMs   = now + 10 * 60 * 60 * 1000;          // UTC+10 (AEST standard)
-  const aestDate = new Date(aestMs);
-  const dow      = aestDate.getUTCDay();                 // 0=Sun … 6=Sat
-  const backDays = dow === 0 ? 6 : dow - 1;             // days back to Monday
-  const mondayMs = aestMs - backDays * 24 * 60 * 60 * 1000;
-  return new Date(mondayMs).toISOString().slice(0, 10);  // "YYYY-MM-DD"
-}
 
 /* ── Graph API helpers ──────────────────────────────────────── */
 async function getGraphToken(): Promise<string> {
