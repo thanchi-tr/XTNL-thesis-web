@@ -3537,6 +3537,9 @@ export default function SessionClient({ user }: { user: User }) {
 
   /* In dev: override supersedes the time gate */
   const effectiveMode: Mode = IS_DEV && modeOverride !== null ? modeOverride : mode;
+  // Precompute as plain boolean — TypeScript control-flow narrows effectiveMode to
+  // "operator" inside the operator JSX block, making in-JSX comparisons fail tsc.
+  const isAnalystMode: boolean = effectiveMode === "analyst";
 
   /* Look up the trade_id UUID from the selected optimal row to pre-fill forms */
   const selectedTradeId = selId
@@ -3757,7 +3760,7 @@ export default function SessionClient({ user }: { user: User }) {
 
               <AddCommentForm fullWidth onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
 
-              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={effectiveMode === "analyst"} />
+              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} />
             </div>
           </div>
         )}
