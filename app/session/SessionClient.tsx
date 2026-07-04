@@ -3536,7 +3536,7 @@ export default function SessionClient({ user }: { user: User }) {
   }, [user.name]);
 
   /* In dev: override supersedes the time gate */
-  const effectiveMode = IS_DEV && modeOverride !== null ? modeOverride : mode;
+  const effectiveMode: Mode = IS_DEV && modeOverride !== null ? modeOverride : mode;
 
   /* Look up the trade_id UUID from the selected optimal row to pre-fill forms */
   const selectedTradeId = selId
