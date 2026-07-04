@@ -2645,6 +2645,18 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [srv.running, fetchState]);
 
+  /* ── API actions ────────────────────────────────────── */
+  const callAPI = useCallback(async (body: Record<string, unknown>) => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/session/alarm", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) setSrv(await res.json() as SrvState);
+    } catch {} finally { setSyncing(false); }
+  }, []);
+
   /* ── Local countdown + flash detection ─────────────── */
   useEffect(() => {
     if (tickRef.current) clearInterval(tickRef.current);
@@ -2714,18 +2726,6 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     return () => { if (tickRef.current) clearInterval(tickRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srv.running, srv.started_at, srv.interval_min, srv.focus_min, srv.enforce_focus, srv.challenge_status, srv.challenge_cycle, showToast, callAPI]);
-
-  /* ── API actions ────────────────────────────────────── */
-  const callAPI = useCallback(async (body: Record<string, unknown>) => {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/session/alarm", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) setSrv(await res.json() as SrvState);
-    } catch {} finally { setSyncing(false); }
-  }, []);
 
   const handleStart = useCallback(() => {
     if (typeof Notification !== "undefined" && Notification.permission === "default")
