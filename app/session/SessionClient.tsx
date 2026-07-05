@@ -2729,10 +2729,6 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const lastAckRef           = useRef<number>(-1);
   const volumeRef            = useRef<number>(0.7);
   const challengeSilencedRef = useRef<boolean>(false);
-  /* Freeze tracking: accumulated ms the alarm has been paused in analyst mode */
-  const frozenOffsetMs = useRef<number>(0);
-  const frozenSince    = useRef<number | null>(null);
-
   useEffect(() => { volumeRef.current           = volume;             }, [volume]);
   useEffect(() => { lastAckRef.current          = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
   useEffect(() => { challengeSilencedRef.current = challengeSilenced;  }, [challengeSilenced]);
@@ -2748,25 +2744,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challengeSilenced]);
 
-  /* Freeze / unfreeze when analyst mode toggles */
-  useEffect(() => {
-    if (!srv.running) return;
-    if (isAnalystMode) {
-      if (frozenSince.current === null) frozenSince.current = Date.now();
-    } else {
-      if (frozenSince.current !== null) {
-        frozenOffsetMs.current += Date.now() - frozenSince.current;
-        frozenSince.current = null;
-      }
-    }
-  }, [isAnalystMode, srv.running]);
-
-  /* Reset freeze counters when alarm starts/stops */
-  useEffect(() => {
-    frozenOffsetMs.current = 0;
-    frozenSince.current    = isAnalystMode ? Date.now() : null;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srv.started_at]);
+  /* Freeze logic temporarily disabled */
 
   /* Sync local config from server when alarm is stopped */
   useEffect(() => {
@@ -2825,10 +2803,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     const triggerSec = (srv.interval_min - srv.focus_min) * 60;
 
     const tick = () => {
-      /* Subtract accumulated frozen time so analyst periods don't count */
-      const currentFrozen = frozenSince.current !== null ? Date.now() - frozenSince.current : 0;
-      const adjustedMs    = Date.now() - epoch - frozenOffsetMs.current - currentFrozen;
-      const elapsed       = adjustedMs / 1000;
+      const elapsed       = (Date.now() - epoch) / 1000;
       const cycleNum      = Math.floor(elapsed / cycleSec);
       const cyclePos      = elapsed % cycleSec;
 
@@ -2841,9 +2816,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         setFocusRemain(null);
       }
 
-      /* Suppress flash and beep while frozen in analyst mode */
-      const frozen        = frozenSince.current !== null;
-      const inFocusWindow = !frozen && cyclePos >= triggerSec && cycleNum > lastAckRef.current;
+      const inFocusWindow = cyclePos >= triggerSec && cycleNum > lastAckRef.current;
       // Keep flash active while enforce_focus challenge is pending (even after focus window ends)
       const challengeKeepFlash = srv.enforce_focus && srv.challenge_status === "pending";
       // Challenge silenced: no overlay, auto-pass
@@ -3288,21 +3261,6 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         {/* ── Always-visible body ── */}
         <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
 
-          {/* Frozen banner */}
-          {isAnalystMode && running && (
-            <div style={{
-              padding: "6px 10px", borderRadius: 5,
-              background: "rgba(240,160,48,0.06)",
-              border: "1px solid rgba(240,160,48,0.22)",
-              display: "flex", alignItems: "center", gap: 7,
-            }}>
-              <span style={{ fontSize: 13 }}>❄︎</span>
-              <div>
-                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "var(--amber)", letterSpacing: "0.04em" }}>FROZEN — ANALYST MODE</p>
-                <p style={{ margin: 0, fontSize: 9.5, color: "var(--ink-3)" }}>Resumes next operator session</p>
-              </div>
-            </div>
-          )}
 
           {/* Dual countdown tiles */}
           <div style={{ display: "flex", gap: 8 }}>
