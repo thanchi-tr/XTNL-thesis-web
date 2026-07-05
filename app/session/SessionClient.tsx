@@ -2716,6 +2716,8 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const [intervalMin,       setIntervalMin]       = useState(15);
   const [focusMin,          setFocusMin]          = useState(2);
   const [flash,             setFlash]             = useState(false);
+  const [flashDismissing,   setFlashDismissing]   = useState(false);
+  const flashPrevRef = useRef(false);
   const [countdown,         setCountdown]         = useState<number | null>(null);
   const [focusRemain,       setFocusRemain]       = useState<number | null>(null);
   const [showSettings,      setShowSettings]      = useState(false);
@@ -2735,6 +2737,16 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   useEffect(() => { volumeRef.current           = volume;             }, [volume]);
   useEffect(() => { lastAckRef.current          = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
   useEffect(() => { challengeSilencedRef.current = challengeSilenced;  }, [challengeSilenced]);
+
+  /* Play a short fade-out before unmounting the overlay */
+  useEffect(() => {
+    if (flash) { flashPrevRef.current = true; return; }
+    if (!flashPrevRef.current) return;
+    flashPrevRef.current = false;
+    setFlashDismissing(true);
+    const t = setTimeout(() => setFlashDismissing(false), 260);
+    return () => clearTimeout(t);
+  }, [flash]);
 
   // When toggled to silent mid-session, dismiss any active flash immediately
   useEffect(() => {
@@ -2925,14 +2937,16 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     <>
       {/* ── Alarm overlay — portalled to document.body to escape the sticky sidebar
            stacking context; z-index 9999 is evaluated at the root level here ── */}
-      {flash && createPortal(
+      {(flash || flashDismissing) && createPortal(
         <div
           role="alertdialog"
           aria-label="Focus Window Alarm"
-          onClick={handleAck}
+          onClick={flashDismissing ? undefined : handleAck}
           style={{
             position: "fixed", inset: 0, zIndex: 9999,
             background: "var(--canvas)",
+            animation: flashDismissing ? "alarmFadeOut 0.26s cubic-bezier(0.4,0,1,1) both" : undefined,
+            pointerEvents: flashDismissing ? "none" : undefined,
             backgroundImage: [
               "radial-gradient(ellipse 80% 55% at 50% 38%, rgba(0,204,122,0.07) 0%, transparent 68%)",
               "radial-gradient(ellipse 44% 32% at 90% 90%, rgba(0,130,255,0.016) 0%, transparent 50%)",
@@ -3099,6 +3113,10 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         @keyframes alarmSlideIn {
           from { opacity: 0; transform: translateY(18px); }
           to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes alarmFadeOut {
+          from { opacity: 1; }
+          to   { opacity: 0; }
         }
         @keyframes alarmGlow {
           0%,100% { opacity: 1; transform: scale(1); }

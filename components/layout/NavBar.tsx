@@ -23,6 +23,12 @@ export default function NavBar() {
   const [dropdownOpen,  setDropdownOpen]  = useState(false);
   const [watchModal,    setWatchModal]    = useState(false);
   const [alarmRunning,  setAlarmRunning]  = useState(false);
+
+  type AlarmData = { running: boolean; started_at: string | null; interval_min: number; focus_min: number; challenge_status: string | null; challenge_cycle: number; };
+  const [alarmData,      setAlarmData]      = useState<AlarmData>({ running: false, started_at: null, interval_min: 15, focus_min: 2, challenge_status: null, challenge_cycle: -1 });
+  const [alarmPopupOpen, setAlarmPopupOpen] = useState(false);
+  const [challengeAlert, setChallengeAlert] = useState(false);
+  const [, forceCountdown] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   type DeviceRecord = { deviceId: string; deviceName: string; registeredAt: string; dropped: boolean };
@@ -106,10 +112,11 @@ export default function NavBar() {
         const res = await fetch("/api/session/alarm");
         if (!active) return;
         if (res.ok) {
-          const data = await res.json() as { running?: boolean };
+          const data = await res.json() as AlarmData;
           setAlarmRunning(!!data.running);
-          // Poll more frequently while alarm is running so badge disappears promptly on stop
-          schedule(data.running ? 10_000 : 30_000);
+          setAlarmData({ running: !!data.running, started_at: data.started_at ?? null, interval_min: data.interval_min ?? 15, focus_min: data.focus_min ?? 2, challenge_status: data.challenge_status ?? null, challenge_cycle: data.challenge_cycle ?? -1 });
+          setChallengeAlert(!!(data.running && data.challenge_status === "pending"));
+          schedule(data.running ? 8_000 : 30_000);
         } else {
           schedule(30_000);
         }
@@ -125,6 +132,32 @@ export default function NavBar() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [authed]);
+
+  /* Dismiss challenge alert when user is on /session */
+  useEffect(() => { if (pathname === "/session") setChallengeAlert(false); }, [pathname]);
+
+  /* Tick every second while popup or challenge alert is visible to keep countdown live */
+  useEffect(() => {
+    if (!alarmPopupOpen && !challengeAlert) return;
+    const id = setInterval(() => forceCountdown(n => n + 1), 1_000);
+    return () => clearInterval(id);
+  }, [alarmPopupOpen, challengeAlert]);
+
+  function computeAlarmTimer() {
+    const { started_at, interval_min, focus_min } = alarmData;
+    const fallback = { countdown: "—", inFocus: false, cycle: 0, intervalMin: interval_min ?? 15, focusMin: focus_min ?? 2 };
+    if (!started_at || !interval_min) return fallback;
+    const elapsed = Date.now() - new Date(started_at).getTime();
+    const intervalMs = interval_min * 60_000;
+    if (intervalMs <= 0) return fallback;
+    const posInCycle = elapsed % intervalMs;
+    const focusMs = (focus_min ?? 2) * 60_000;
+    const inFocus = posInCycle >= (intervalMs - focusMs);
+    const remaining = intervalMs - posInCycle;
+    const m = Math.floor(remaining / 60_000);
+    const s = Math.floor((remaining / 1_000) % 60);
+    return { countdown: `${m}:${String(s).padStart(2, "0")}`, inFocus, cycle: Math.floor(elapsed / intervalMs) + 1, intervalMin: interval_min, focusMin: focus_min ?? 2 };
+  }
 
   return (
     <>
@@ -170,35 +203,36 @@ export default function NavBar() {
                 style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
               >
                 {label}
-                {href === "/session" && alarmRunning && (
-                  <span
-                    title="Focus alarm active"
-                    style={{
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      width: 16, height: 16, borderRadius: "50%",
-                      background: "rgba(0,204,122,0.12)",
-                      border: "1px solid rgba(0,204,122,0.3)",
-                      color: "var(--green)",
-                      animation: "navAlarmPulse 2s ease-in-out infinite",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <svg width="8" height="8" viewBox="0 0 36 36" fill="none" aria-hidden>
-                      <path d="M18 3.5V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                      <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
-                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                        fill="rgba(0,204,122,0.12)"/>
-                      <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
-                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                    </svg>
-                  </span>
-                )}
               </Link>
             ))}
           </div>
 
           {/* ── Desktop CTAs ──────────────────────────── */}
           <div className="nav-desktop" style={{ alignItems: "center", gap: 10, flexShrink: 0 }}>
+            {authed && alarmRunning && (
+              <button
+                title="View alarm timer"
+                onClick={() => setAlarmPopupOpen(true)}
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 28, height: 28, borderRadius: "50%",
+                  background: "rgba(0,204,122,0.12)",
+                  border: "1px solid rgba(0,204,122,0.3)",
+                  color: "var(--green)",
+                  animation: "navAlarmPulse 2s ease-in-out infinite",
+                  cursor: "pointer", padding: 0, flexShrink: 0,
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 36 36" fill="none" aria-hidden>
+                  <path d="M18 3.5V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                    fill="rgba(0,204,122,0.12)"/>
+                  <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                </svg>
+              </button>
+            )}
             {authed ? (
               /* User dropdown */
               <div ref={dropdownRef} style={{ position: "relative" }}>
@@ -321,8 +355,9 @@ export default function NavBar() {
           {/* ── Hamburger ─────────────────────────────── */}
           <div className="nav-hamburger" style={{ alignItems: "center", gap: 6, marginRight: -8 }}>
             {alarmRunning && (
-              <span
-                title="Focus alarm active"
+              <button
+                title="View alarm timer"
+                onClick={() => setAlarmPopupOpen(true)}
                 style={{
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
                   width: 22, height: 22, borderRadius: "50%",
@@ -330,7 +365,7 @@ export default function NavBar() {
                   border: "1px solid rgba(0,204,122,0.3)",
                   color: "var(--green)",
                   animation: "navAlarmPulse 2s ease-in-out infinite",
-                  flexShrink: 0,
+                  flexShrink: 0, cursor: "pointer", padding: 0,
                 }}
               >
                 <svg width="10" height="10" viewBox="0 0 36 36" fill="none" aria-hidden>
@@ -341,7 +376,7 @@ export default function NavBar() {
                   <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
                     stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                 </svg>
-              </span>
+              </button>
             )}
             <button
               onClick={() => setDrawerOpen(!drawerOpen)}
@@ -356,6 +391,34 @@ export default function NavBar() {
           </div>
         </div>
       </nav>
+
+      {/* ── Challenge alert banner ───────────────────────── */}
+      {challengeAlert && pathname !== "/session" && (
+        <div style={{
+          position: "fixed", top: "var(--nav-h)", left: 0, right: 0, zIndex: 150,
+          background: "rgba(4,8,15,0.92)", backdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(0,204,122,0.25)",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+          padding: "9px 16px", flexWrap: "wrap" as const,
+        }}>
+          <svg width="11" height="11" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M18 3.5V6" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
+            <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="rgba(0,204,122,0.12)"/>
+            <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+          <span style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>
+            Focus challenge ready
+          </span>
+          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>— navigate to</span>
+          <Link href="/session" onClick={() => setChallengeAlert(false)} style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}>
+            Session
+          </Link>
+          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>to see the challenge number</span>
+          <button onClick={() => setChallengeAlert(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)", padding: "2px 4px", lineHeight: 1, marginLeft: 4 }}>
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
+          </button>
+        </div>
+      )}
 
       {/* ── Mobile drawer ─────────────────────────────────── */}
       <div
@@ -413,6 +476,77 @@ export default function NavBar() {
 
       {/* ── Login modal ───────────────────────────────────── */}
       <LoginModal open={modalOpen} onClose={() => setModalOpen(false)} />
+
+      {/* ── Alarm timer popup ────────────────────────────── */}
+      {alarmPopupOpen && (() => {
+        const timer = computeAlarmTimer();
+        return (
+          <div
+            onClick={() => setAlarmPopupOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: "rgba(4,8,15,0.98)", border: "1px solid rgba(0,204,122,0.2)", borderRadius: 12, padding: "28px 28px 24px", maxWidth: 360, width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,0.7)" }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, background: "rgba(0,204,122,0.1)", border: "1px solid rgba(0,204,122,0.25)" }}>
+                    <svg width="15" height="15" viewBox="0 0 36 36" fill="none">
+                      <path d="M18 3.5V6" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
+                      <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="rgba(0,204,122,0.12)"/>
+                      <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
+                    </svg>
+                  </span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--ink-0)" }}>Focus Alarm</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>XTNL Sovereign Trust</div>
+                  </div>
+                </div>
+                <button onClick={() => setAlarmPopupOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: 4, lineHeight: 1 }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
+                </button>
+              </div>
+
+              {/* Countdown */}
+              <div style={{ textAlign: "center", padding: "18px 0 22px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: timer.inFocus ? "var(--green)" : "var(--ink-4)", letterSpacing: "0.12em", textTransform: "uppercase" as const, marginBottom: 10 }}>
+                  {timer.inFocus ? "Focus Window Active" : "Next Focus Window"}
+                </div>
+                <div style={{ fontSize: 46, fontWeight: 800, color: timer.inFocus ? "var(--green)" : "var(--ink-0)", fontFamily: "var(--font-mono)", letterSpacing: "-0.03em", lineHeight: 1 }}>
+                  {timer.countdown}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 8 }}>
+                  {timer.inFocus ? "focus window running" : "until focus window"}
+                </div>
+              </div>
+
+              {/* Stats row */}
+              <div style={{ display: "flex", justifyContent: "space-around", padding: "14px 12px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", marginBottom: 20 }}>
+                {([
+                  ["Interval", `${timer.intervalMin}m`],
+                  ["Focus", `${timer.focusMin}m`],
+                  ["Cycle", `#${timer.cycle}`],
+                ] as [string, string][]).map(([label, val]) => (
+                  <div key={label} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 9.5, color: "var(--ink-4)", marginBottom: 4, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{label}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "var(--ink-1)", fontFamily: "var(--font-mono)" }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+
+              <Link
+                href="/session"
+                onClick={() => setAlarmPopupOpen(false)}
+                style={{ display: "block", textAlign: "center", padding: "10px", borderRadius: 7, background: "rgba(0,204,122,0.1)", border: "1px solid rgba(0,204,122,0.25)", color: "#00CC7A", fontSize: 12, fontWeight: 600, textDecoration: "none", letterSpacing: "0.04em" }}
+              >
+                Go to Session
+              </Link>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Connected Devices modal ───────────────────────────────── */}
       {watchModal && (
