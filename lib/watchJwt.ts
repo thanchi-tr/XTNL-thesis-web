@@ -24,11 +24,21 @@ export async function signWatchToken(
 }
 
 export async function verifyWatchToken(token: string): Promise<WatchClaims | null> {
+  const { claims } = await verifyWatchTokenReason(token);
+  return claims;
+}
+
+/** Same as verifyWatchToken but returns the jose rejection reason so API routes
+ *  can include it in the 401 response body — visible in watch Logcat. */
+export async function verifyWatchTokenReason(
+  token: string
+): Promise<{ claims: WatchClaims; reason: null } | { claims: null; reason: string }> {
   try {
     const { payload } = await jwtVerify(token, secret(), { issuer: "xtnl-watch" });
-    return { userId: payload.userId as string };
+    return { claims: { userId: payload.userId as string }, reason: null };
   } catch (e) {
-    console.error("[verifyWatchToken] rejected:", e instanceof Error ? e.message : String(e));
-    return null;
+    const reason = e instanceof Error ? e.message : String(e);
+    console.error("[verifyWatchToken] rejected:", reason);
+    return { claims: null, reason };
   }
 }

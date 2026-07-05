@@ -5,7 +5,7 @@
  */
 import { NextResponse }           from "next/server";
 import { supabase, OPERATOR_USER_ID } from "@/lib/supabase";
-import { verifyWatchToken }       from "@/lib/watchJwt";
+import { verifyWatchTokenReason } from "@/lib/watchJwt";
 
 export type AlarmState = {
   running:               boolean;
@@ -81,15 +81,16 @@ function currentCycleInfo(state: AlarmState): { cycle: number; inFocus: boolean 
   return { cycle, inFocus };
 }
 
-async function auth(req: Request) {
+async function auth(req: Request): Promise<{ claims: { userId: string }; reason: null } | { claims: null; reason: string }> {
   const header = req.headers.get("Authorization") ?? "";
   const token  = header.startsWith("Bearer ") ? header.slice(7) : null;
-  if (!token) return null;
-  return verifyWatchToken(token);
+  if (!token) return { claims: null, reason: "No Bearer token in Authorization header" };
+  return verifyWatchTokenReason(token);
 }
 
 export async function GET(req: Request) {
-  if (!await auth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { claims, reason } = await auth(req);
+  if (!claims) return NextResponse.json({ error: "Unauthorized", reason }, { status: 401 });
   try {
     let state = await readState();
 
@@ -129,7 +130,8 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
-  if (!await auth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { claims: putClaims, reason: putReason } = await auth(req);
+  if (!putClaims) return NextResponse.json({ error: "Unauthorized", reason: putReason }, { status: 401 });
   try {
     const body = await req.json() as {
       action:     string;
