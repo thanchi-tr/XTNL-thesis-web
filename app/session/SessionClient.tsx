@@ -2721,7 +2721,8 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const [syncing,           setSyncing]           = useState(false);
   const [challengeSilenced, setChallengeSilenced] = useState(false);
 
-  const challengeStartedCycle = useRef(-1); // which cycle we already called challenge_start for
+  const challengeStartedCycle      = useRef(-1); // which cycle we already called challenge_start for
+  const challengeResultNotifiedCycle = useRef(-1); // which cycle we already fired pass/fail toast for
 
   const tickRef              = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef              = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2843,15 +2844,21 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         }
       }
 
-      // Auto-dismiss when challenge is resolved
+      // Auto-dismiss when challenge is resolved — guarded so toast + ack fire exactly once per cycle
       if (srv.enforce_focus) {
         if (srv.challenge_status === "pass" && srv.challenge_cycle === cycleNum) {
           setFlash(false);
-          if (!challengeSilencedRef.current) showToast("success", "Focus challenge passed ✓");
-          void callAPI({ action: "ack", cycle: cycleNum });
+          if (challengeResultNotifiedCycle.current !== cycleNum) {
+            challengeResultNotifiedCycle.current = cycleNum;
+            if (!challengeSilencedRef.current) showToast("success", "Focus challenge passed ✓");
+            if (lastAckRef.current < cycleNum) void callAPI({ action: "ack", cycle: cycleNum });
+          }
         } else if (srv.challenge_status === "fail" && srv.challenge_cycle === cycleNum) {
           setFlash(false);
-          if (!challengeSilencedRef.current) showToast("error", "Focus challenge failed — fail compliance logged");
+          if (challengeResultNotifiedCycle.current !== cycleNum) {
+            challengeResultNotifiedCycle.current = cycleNum;
+            if (!challengeSilencedRef.current) showToast("error", "Focus challenge failed — fail compliance logged");
+          }
         }
       }
     };
@@ -2865,7 +2872,9 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const handleStart = useCallback(() => {
     if (typeof Notification !== "undefined" && Notification.permission === "default")
       Notification.requestPermission().catch(() => {});
-    soundFiredCycle.current = -1;
+    soundFiredCycle.current              = -1;
+    challengeStartedCycle.current        = -1;
+    challengeResultNotifiedCycle.current = -1;
     void callAPI({ action: "start", intervalMin, focusMin });
   }, [callAPI, intervalMin, focusMin]);
 
