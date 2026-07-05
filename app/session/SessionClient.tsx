@@ -2555,6 +2555,82 @@ function playAlarmBeeps(volume: number) {
   }
 }
 
+function AttentionChallengeToggle({ showToast }: { showToast: ShowToast }) {
+  const [enforceFocus, setEnforceFocus] = useState(false);
+  const [syncing,      setSyncing]      = useState(false);
+
+  useEffect(() => {
+    fetch("/api/session/alarm")
+      .then(r => r.json())
+      .then((s: { enforce_focus?: boolean }) => {
+        if (typeof s.enforce_focus === "boolean") setEnforceFocus(s.enforce_focus);
+      })
+      .catch(() => {});
+  }, []);
+
+  const toggle = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    const next = !enforceFocus;
+    setEnforceFocus(next);
+    try {
+      const r = await fetch("/api/session/alarm", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle_enforce_focus" }),
+      });
+      const s = await r.json() as { enforce_focus?: boolean };
+      if (typeof s.enforce_focus === "boolean") setEnforceFocus(s.enforce_focus);
+    } catch {
+      setEnforceFocus(!next);
+      showToast("error", "Failed to update challenge setting");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "10px 14px", borderRadius: 6,
+      background: enforceFocus ? "rgba(0,204,122,0.07)" : "var(--sub)",
+      outline: `1px solid ${enforceFocus ? "rgba(0,204,122,0.25)" : "var(--line-hi)"}`,
+      transition: "background 0.2s, outline-color 0.2s",
+    }}>
+      <div>
+        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: enforceFocus ? "var(--green)" : "var(--ink-1)", letterSpacing: "0.01em" }}>
+          Attention Challenge
+        </p>
+        <p style={{ margin: "2px 0 0", fontSize: 9.5, color: "var(--ink-4)" }}>
+          {enforceFocus ? "Watch tap challenge active" : "Tap challenge disabled"}
+        </p>
+      </div>
+      <button
+        type="button"
+        disabled={syncing}
+        onClick={() => { void toggle(); }}
+        aria-label={enforceFocus ? "Disable attention challenge" : "Enable attention challenge"}
+        style={{
+          width: 38, height: 22, borderRadius: 11,
+          background: enforceFocus ? "var(--green)" : "var(--raised)",
+          border: "1px solid var(--line-hi)",
+          cursor: syncing ? "wait" : "pointer",
+          position: "relative", flexShrink: 0,
+          transition: "background 0.2s",
+        }}
+      >
+        <span style={{
+          display: "block", width: 16, height: 16, borderRadius: "50%",
+          background: enforceFocus ? "#04080F" : "var(--ink-3)",
+          position: "absolute", top: 2,
+          left: enforceFocus ? 18 : 2,
+          transition: "left 0.2s",
+        }} />
+      </button>
+    </div>
+  );
+}
+
 function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void }) {
   type SrvState = {
     running:               boolean;
@@ -3849,33 +3925,7 @@ export default function SessionClient({ user }: { user: User }) {
             <div className="session-sidebar session-sidebar-340">
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
 
-              {/* Entry Checklist toggle */}
-              <button
-                type="button"
-                onClick={() => setShowChecklist(o => !o)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 9, width: "100%",
-                  padding: "10px 14px", borderRadius: 6, border: "none",
-                  background: showChecklist ? "rgba(0,204,122,0.07)" : "var(--sub)",
-                  outline: `1px solid ${showChecklist ? "rgba(0,204,122,0.25)" : "var(--line-hi)"}`,
-                  cursor: "pointer", textAlign: "left" as const,
-                  transition: "background 0.15s, outline-color 0.15s",
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
-                  <path d="M3 4h10M3 8h7M3 12h4" stroke={showChecklist ? "var(--green)" : "var(--ink-3)"} strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <span style={{ fontSize: 13, fontWeight: 600, color: showChecklist ? "var(--green)" : "var(--ink-1)", flex: 1, letterSpacing: "0.01em" }}>
-                  Entry Checklist
-                </span>
-                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden
-                  style={{ transition: "transform 0.2s", transform: showChecklist ? "rotate(180deg)" : "none", color: "var(--ink-3)", flexShrink: 0 }}>
-                  <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-              {showChecklist && (
-                <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchJournal} showToast={showToast} sessionContract={sessionContract} />
-              )}
+              <AttentionChallengeToggle showToast={showToast} />
 
               <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst failCompliance={challengeStatus === "fail"} onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
 
