@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import { getSessionStatus } from "@/lib/sessionStatus";
 
@@ -2922,8 +2923,9 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
 
   return (
     <>
-      {/* ── Alarm overlay ── */}
-      {flash && (
+      {/* ── Alarm overlay — portalled to document.body to escape the sticky sidebar
+           stacking context; z-index 9999 is evaluated at the root level here ── */}
+      {flash && createPortal(
         <div
           role="alertdialog"
           aria-label="Focus Window Alarm"
@@ -2958,6 +2960,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               ].join(","),
               animation: "alarmSlideIn 0.32s cubic-bezier(0.4,0,0.2,1) both",
               position: "relative" as const,
+              zIndex: 1,
               overflow: "hidden",
             }}
           >
@@ -3082,13 +3085,14 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
             )}
           </div>
 
-          {/* Subtle screen-edge glow */}
+          {/* Subtle screen-edge glow — zIndex 2 to sit above card (zIndex 1) within overlay stacking context */}
           <div style={{
-            position: "fixed", inset: 0, pointerEvents: "none",
+            position: "fixed", inset: 0, pointerEvents: "none", zIndex: 2,
             boxShadow: "inset 0 0 48px rgba(0,204,122,0.07)",
             animation: "alarmEdge 2.4s ease-in-out infinite",
           }} />
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`

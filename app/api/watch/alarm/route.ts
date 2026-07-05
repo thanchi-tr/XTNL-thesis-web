@@ -33,7 +33,8 @@ const DEFAULT: AlarmState = {
   challenge_expires_at: null,
 };
 
-const PREFIX = "alarm_state:";
+const PREFIX         = "alarm_state:";
+const DEVICES_PREFIX = "watch_devices:";
 
 function strip(state: AlarmState): Omit<AlarmState, "challenge_number"> & { challenge_number: null } {
   return { ...state, challenge_number: null };
@@ -81,6 +82,17 @@ function currentCycleInfo(state: AlarmState): { cycle: number; inFocus: boolean 
   return { cycle, inFocus };
 }
 
+async function isDeviceDropped(deviceId: string): Promise<boolean> {
+  const { data } = await supabase.from("comments").select("content")
+    .like("content", `${DEVICES_PREFIX}%`)
+    .order("Entry", { ascending: false }).limit(1).single();
+  if (!data) return false;
+  try {
+    const devices = JSON.parse(data.content.slice(DEVICES_PREFIX.length)) as { deviceId: string; dropped: boolean }[];
+    return devices.find(d => d.deviceId === deviceId)?.dropped === true;
+  } catch { return false; }
+}
+
 async function auth(req: Request): Promise<{ claims: { userId: string }; reason: null } | { claims: null; reason: string }> {
   const header = req.headers.get("Authorization") ?? "";
   const token  = header.startsWith("Bearer ") ? header.slice(7) : null;
@@ -91,6 +103,13 @@ async function auth(req: Request): Promise<{ claims: { userId: string }; reason:
 export async function GET(req: Request) {
   const { claims, reason } = await auth(req);
   if (!claims) return NextResponse.json({ error: "Unauthorized", reason }, { status: 401 });
+
+  // Instant disconnect: if the operator dropped this device, reject immediately.
+  const deviceId = req.headers.get("X-Device-Id");
+  if (deviceId && await isDeviceDropped(deviceId)) {
+    return NextResponse.json({ error: "Unauthorized", reason: "Device dropped" }, { status: 401 });
+  }
+
   try {
     let state = await readState();
 
