@@ -182,7 +182,7 @@ export async function PUT(req: Request) {
       const cycle           = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
       const challengeNumber = typeof body.challengeNumber === "number" ? Math.floor(body.challengeNumber) : 1;
       if (current.challenge_cycle >= cycle) return NextResponse.json(current); // already started
-      const expiresAt = new Date(Date.now() + 2 * 60_000).toISOString();
+      const expiresAt = new Date(Date.now() + 30_000).toISOString();
       const next: AlarmState = {
         ...current,
         challenge_number:     challengeNumber,

@@ -1686,17 +1686,19 @@ function JournalTimeline({
 
   /* ── Operator view filters ── */
   const weekMs = operatorView ? weekStartMs() : 0;
+  const isSystemRow = (content: string) =>
+    content.startsWith("session_contract:") ||
+    content.startsWith("alarm_state:") ||
+    content.startsWith("watch_device:") ||
+    content.startsWith("analysis_session:");
+
   const visibleComments = operatorView
     ? comments.filter(c =>
         !c.content.startsWith("Analyst comment:") &&
-        !c.content.startsWith("session_contract:") &&
-        !c.content.startsWith("alarm_state:") &&
+        !isSystemRow(c.content) &&
         new Date(c.Entry).getTime() >= weekMs
       )
-    : comments.filter(c =>
-        !c.content.startsWith("session_contract:") &&
-        !c.content.startsWith("alarm_state:")
-      );
+    : comments.filter(c => !isSystemRow(c.content));
   const visibleTrades = operatorView
     ? effectiveTrades.filter(t => new Date(t.entry).getTime() >= weekMs)
     : effectiveTrades;
@@ -2571,29 +2573,43 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     enforce_focus: false, challenge_number: null, challenge_cycle: -1, challenge_status: null, challenge_expires_at: null,
   };
 
-  const [srv,          setSrv]          = useState<SrvState>(SRV0);
-  const [intervalMin,  setIntervalMin]  = useState(15);
-  const [focusMin,     setFocusMin]     = useState(2);
-  const [flash,        setFlash]        = useState(false);
-  const [countdown,    setCountdown]    = useState<number | null>(null);
-  const [focusRemain,  setFocusRemain]  = useState<number | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [volume,       setVolume]       = useState(0.7);
-  const [syncing,      setSyncing]      = useState(false);
+  const [srv,               setSrv]               = useState<SrvState>(SRV0);
+  const [intervalMin,       setIntervalMin]       = useState(15);
+  const [focusMin,          setFocusMin]          = useState(2);
+  const [flash,             setFlash]             = useState(false);
+  const [countdown,         setCountdown]         = useState<number | null>(null);
+  const [focusRemain,       setFocusRemain]       = useState<number | null>(null);
+  const [showSettings,      setShowSettings]      = useState(false);
+  const [volume,            setVolume]            = useState(0.7);
+  const [syncing,           setSyncing]           = useState(false);
+  const [challengeSilenced, setChallengeSilenced] = useState(false);
 
   const challengeStartedCycle = useRef(-1); // which cycle we already called challenge_start for
 
-  const tickRef         = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
-  const soundFiredCycle = useRef<number>(-1);
-  const lastAckRef      = useRef<number>(-1);
-  const volumeRef       = useRef<number>(0.7);
+  const tickRef              = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef              = useRef<ReturnType<typeof setInterval> | null>(null);
+  const soundFiredCycle      = useRef<number>(-1);
+  const lastAckRef           = useRef<number>(-1);
+  const volumeRef            = useRef<number>(0.7);
+  const challengeSilencedRef = useRef<boolean>(false);
   /* Freeze tracking: accumulated ms the alarm has been paused in analyst mode */
   const frozenOffsetMs = useRef<number>(0);
   const frozenSince    = useRef<number | null>(null);
 
-  useEffect(() => { volumeRef.current  = volume;             }, [volume]);
-  useEffect(() => { lastAckRef.current = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
+  useEffect(() => { volumeRef.current           = volume;             }, [volume]);
+  useEffect(() => { lastAckRef.current          = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
+  useEffect(() => { challengeSilencedRef.current = challengeSilenced;  }, [challengeSilenced]);
+
+  // When toggled to silent mid-session, dismiss any active flash immediately
+  useEffect(() => {
+    if (!challengeSilenced || !flash || !srv.started_at) return;
+    const cycleNum = Math.floor(
+      (Date.now() - new Date(srv.started_at).getTime()) / 1000 / (srv.interval_min * 60)
+    );
+    setFlash(false);
+    void callAPI({ action: "ack", cycle: cycleNum });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challengeSilenced]);
 
   /* Freeze / unfreeze when analyst mode toggles */
   useEffect(() => {
@@ -2690,21 +2706,27 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
       const inFocusWindow = !frozen && cyclePos >= triggerSec && cycleNum > lastAckRef.current;
       // Keep flash active while enforce_focus challenge is pending (even after focus window ends)
       const challengeKeepFlash = srv.enforce_focus && srv.challenge_status === "pending";
-      const shouldFlash   = inFocusWindow || challengeKeepFlash;
+      // Challenge silenced: no overlay, auto-pass
+      const shouldFlash   = !challengeSilencedRef.current && (inFocusWindow || challengeKeepFlash);
       setFlash(shouldFlash);
 
       if (inFocusWindow && soundFiredCycle.current < cycleNum) {
         soundFiredCycle.current = cycleNum;
-        playAlarmBeeps(volumeRef.current);
-        showToast("success", "Focus window — return your attention to the session");
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-          new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true });
-        }
-        // Start enforce_focus challenge: generate number client-side and push to server
-        if (srv.enforce_focus && challengeStartedCycle.current < cycleNum) {
-          challengeStartedCycle.current = cycleNum;
-          const n = Math.floor(Math.random() * 5) + 1;
-          void callAPI({ action: "challenge_start", cycle: cycleNum, challengeNumber: n });
+        if (challengeSilencedRef.current) {
+          // Silent mode: auto-pass the focus window without any alert
+          void callAPI({ action: "ack", cycle: cycleNum });
+        } else {
+          playAlarmBeeps(volumeRef.current);
+          showToast("success", "Focus window — return your attention to the session");
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true });
+          }
+          // Start enforce_focus challenge: generate number client-side and push to server
+          if (srv.enforce_focus && challengeStartedCycle.current < cycleNum) {
+            challengeStartedCycle.current = cycleNum;
+            const n = Math.floor(Math.random() * 5) + 1;
+            void callAPI({ action: "challenge_start", cycle: cycleNum, challengeNumber: n });
+          }
         }
       }
 
@@ -2712,11 +2734,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
       if (srv.enforce_focus) {
         if (srv.challenge_status === "pass" && srv.challenge_cycle === cycleNum) {
           setFlash(false);
-          showToast("success", "Focus challenge passed ✓");
+          if (!challengeSilencedRef.current) showToast("success", "Focus challenge passed ✓");
           void callAPI({ action: "ack", cycle: cycleNum });
         } else if (srv.challenge_status === "fail" && srv.challenge_cycle === cycleNum) {
           setFlash(false);
-          showToast("error", "Focus challenge failed — fail compliance logged");
+          if (!challengeSilencedRef.current) showToast("error", "Focus challenge failed — fail compliance logged");
         }
       }
     };
@@ -2902,7 +2924,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                   Tap the number on your Galaxy Watch, then submit.
                 </p>
                 <p style={{ margin: 0, fontSize: 10.5, color: "var(--ink-4)" }}>
-                  2-minute window · watch is listening…
+                  30-second window · watch is listening…
                 </p>
               </>
             ) : (
@@ -2976,6 +2998,32 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               ACTIVE
             </span>
           )}
+          {/* Challenge mute toggle */}
+          <button
+            type="button"
+            title={challengeSilenced ? "Attention challenge silenced — click to enable" : "Click to silence attention challenge"}
+            onClick={() => setChallengeSilenced(s => !s)}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "2px 8px", borderRadius: 3, border: "none",
+              background: challengeSilenced ? "rgba(255,100,100,0.12)" : "rgba(0,204,122,0.08)",
+              color: challengeSilenced ? "#ff6464" : "var(--green)",
+              fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em",
+              cursor: "pointer", flexShrink: 0,
+              transition: "background 0.15s, color 0.15s",
+            }}
+          >
+            {challengeSilenced ? (
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <path d="M2 2l12 12M6.5 4.5A5 5 0 0 1 13 8.5v2L14.5 12H5M3 8a5 5 0 0 1 .5-2.2M9.5 13.5a1.5 1.5 0 0 1-3 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <path d="M8 2.5a5 5 0 0 1 5 5v2l1.5 1.5H1.5L3 9.5v-2a5 5 0 0 1 5-5ZM6.5 13a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+            {challengeSilenced ? "SILENT" : "ALERT"}
+          </button>
           {/* Gear — toggles settings panel */}
           <button
             type="button"

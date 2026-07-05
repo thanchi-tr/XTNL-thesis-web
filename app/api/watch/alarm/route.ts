@@ -99,7 +99,7 @@ export async function GET(req: Request) {
       // Auto-generate challenge when watch enters a new focus cycle
       if (info?.inFocus && state.challenge_cycle < info.cycle) {
         const n         = Math.floor(Math.random() * 5) + 1;
-        const expiresAt = new Date(Date.now() + 2 * 60_000).toISOString();
+        const expiresAt = new Date(Date.now() + 30_000).toISOString();
         state = {
           ...state,
           challenge_number:     n,

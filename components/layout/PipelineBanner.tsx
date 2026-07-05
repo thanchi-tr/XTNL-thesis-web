@@ -4,8 +4,40 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession }                               from "next-auth/react";
 import { getSessionStatus }                         from "@/lib/sessionStatus";
 
+/* ─── Performance state helpers ───────────────────────────────────── */
+type CelebrationMetrics = { capture: number; rating: number };
+
+function parseAuditMetrics(raw: string): CelebrationMetrics {
+  const val = (key: string) =>
+    raw.match(new RegExp(`\\*\\s*${key.replace(/[/()]/g, "\\$&")}\\s*:\\s*(.+)`))?.[1]?.trim() ?? "";
+  return {
+    rating:  parseFloat(val("Rating"))       || 0,
+    capture: parseFloat(val("Capture Rate")) || 0,
+  };
+}
+
+type PerfState = { label: string; color: string; bg: string; urgent: boolean };
+
+function captureState(pct: number): PerfState {
+  if (pct < 40)  return { label: "DEPLOY COUNTER MEASURE", color: "#ff4d4d", bg: "rgba(255,77,77,0.08)",   urgent: true  };
+  if (pct >= 95) return { label: "SUPER PERFORMANCE",      color: "#FFD700", bg: "rgba(255,215,0,0.07)",   urgent: false };
+  if (pct >= 82) return { label: "CONGRATULATIONS",        color: "var(--green)", bg: "rgba(0,204,122,0.07)", urgent: false };
+  return               { label: "WITHIN RANGE",            color: "var(--ink-3)", bg: "rgba(255,255,255,0.03)", urgent: false };
+}
+
+function efficiencyState(rating: number): PerfState {
+  if (rating < 0.65)  return { label: "DEPLOY COUNTER MEASURE", color: "#ff4d4d", bg: "rgba(255,77,77,0.08)",   urgent: true  };
+  if (rating >= 0.95) return { label: "SUPERB PERFORMANCE",     color: "#FFD700", bg: "rgba(255,215,0,0.07)",   urgent: false };
+  if (rating >= 0.82) return { label: "BASELINE MET",           color: "var(--green)", bg: "rgba(0,204,122,0.07)", urgent: false };
+  return                     { label: "WITHIN RANGE",           color: "var(--ink-3)", bg: "rgba(255,255,255,0.03)", urgent: false };
+}
+
 /* ─── Celebration overlay ─────────────────────────────────────────── */
-function CelebrationOverlay({ reportTs, onDone }: { reportTs: string; onDone: () => void }) {
+function CelebrationOverlay({ reportTs, metrics, onDone }: {
+  reportTs: string;
+  metrics:  CelebrationMetrics | null;
+  onDone:   () => void;
+}) {
   const [pct, setPct]           = useState(100);
   const [exiting, setExiting]   = useState(false);
   const rafRef                  = useRef<number>(0);
@@ -141,6 +173,38 @@ function CelebrationOverlay({ reportTs, onDone }: { reportTs: string; onDone: ()
             </div>
           </div>
 
+          {/* Performance state panel */}
+          {metrics && (() => {
+            const cs = captureState(metrics.capture);
+            const es = efficiencyState(metrics.rating);
+            return (
+              <div style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, animation: "_xfade 0.5s 0.45s ease both" }}>
+                {[
+                  { key: "CAPTURE RATE", value: `${metrics.capture.toFixed(1)}%`, state: cs },
+                  { key: "EFFICIENCY",   value: `${(metrics.rating * 100).toFixed(1)}%`, state: es },
+                ].map(({ key, value, state }) => (
+                  <div key={key} style={{
+                    background: state.bg,
+                    border: `1px solid ${state.urgent ? "rgba(255,77,77,0.3)" : "rgba(255,255,255,0.07)"}`,
+                    borderRadius: 8, padding: "14px 16px",
+                    display: "flex", flexDirection: "column", gap: 6,
+                    boxShadow: state.urgent ? "0 0 20px rgba(255,77,77,0.12)" : "none",
+                  }}>
+                    <div style={{ fontSize: 8, letterSpacing: "0.18em", color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+                      {key}
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: state.color, fontFamily: "var(--font-mono)", letterSpacing: "-0.01em" }}>
+                      {value}
+                    </div>
+                    <div style={{ fontSize: 8.5, fontWeight: 700, color: state.color, fontFamily: "var(--font-mono)", letterSpacing: "0.1em", opacity: 0.9 }}>
+                      {state.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* Countdown bar */}
           <div style={{ width: "100%", animation: "_xfade 0.5s 0.5s ease both" }}>
             <div style={{ width: "100%", height: 1.5, background: "rgba(255,255,255,0.05)", borderRadius: 1, overflow: "hidden" }}>
@@ -217,11 +281,12 @@ export default function PipelineBanner() {
   const [analystDay,       setAnalystDay]       = useState(false);
   const [sessionActive,    setSessionActive]    = useState(false);
   const [pipe,             setPipe]             = useState<PipelineData | null>(null);
-  const [analysisDone,     setAnalysisDone]     = useState(false);
-  const [analysisChecking, setAnalysisChecking] = useState(false);
-  const [staleModal,       setStaleModal]       = useState(false);
-  const [celebration,      setCelebration]      = useState(false);
-  const [celebrationTs,    setCelebrationTs]    = useState("");
+  const [analysisDone,       setAnalysisDone]       = useState(false);
+  const [analysisChecking,   setAnalysisChecking]   = useState(false);
+  const [staleModal,         setStaleModal]         = useState(false);
+  const [celebration,        setCelebration]        = useState(false);
+  const [celebrationTs,      setCelebrationTs]      = useState("");
+  const [celebrationMetrics, setCelebrationMetrics] = useState<CelebrationMetrics | null>(null);
   const [collapsed,        setCollapsed]        = useState(false);
   const [isMobile,         setIsMobile]         = useState(false);
 
@@ -294,17 +359,20 @@ export default function PipelineBanner() {
   async function handleAnalysisSession() {
     setAnalysisChecking(true);
     try {
-      const r = await fetch("/api/session/audit-report");
-      if (!r.ok) throw new Error("fetch failed");
-      const raw = await r.text();
+      const auditRes = await fetch("/api/session/audit-report");
+      if (!auditRes.ok) throw new Error("fetch failed");
+      const raw = await auditRes.text();
       if (isCurrentWeekReport(raw)) {
-        const ts = raw.match(/TIMESTAMP:\s*(.+)/)?.[1]?.trim() ?? "";
+        const ts      = raw.match(/TIMESTAMP:\s*(.+)/)?.[1]?.trim() ?? "";
+        const metrics = parseAuditMetrics(raw);
+
         window.dispatchEvent(new CustomEvent("audit-report-ready", { detail: raw }));
         window.dispatchEvent(new CustomEvent("analysis-session-complete"));
         setAnalysisDone(true);
         // Persist server-side so all devices + refreshes reflect done state
         fetch("/api/session/analysis-session", { method: "POST" }).catch(() => {});
         setCelebrationTs(ts);
+        setCelebrationMetrics(metrics);
         setCelebration(true);
       } else {
         setStaleModal(true);
@@ -365,7 +433,7 @@ export default function PipelineBanner() {
   return (
     <>
     {celebration && (
-      <CelebrationOverlay reportTs={celebrationTs} onDone={() => { setCelebration(false); setCollapsed(true); }} />
+      <CelebrationOverlay reportTs={celebrationTs} metrics={celebrationMetrics} onDone={() => { setCelebration(false); setCollapsed(true); }} />
     )}
     {staleModal && (
       <div
