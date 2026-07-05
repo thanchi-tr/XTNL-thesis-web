@@ -7,20 +7,13 @@ const secret = () =>
 
 export interface WatchClaims { userId: string }
 
-/** Next 02:00 AEST as a real UTC Date (uses fixed UTC+10 offset) */
-function next2AmAEST(): Date {
-  const AEST = 10 * 3_600_000;
-  const nowAestMs = Date.now() + AEST;
-  const d = new Date(nowAestMs);
-  d.setUTCHours(2, 0, 0, 0);                       // 02:00 in AEST-shifted space
-  if (d.getTime() <= nowAestMs) d.setUTCDate(d.getUTCDate() + 1);
-  return new Date(d.getTime() - AEST);              // back to real UTC
-}
-
 export async function signWatchToken(
   userId: string
 ): Promise<{ token: string; expiresAt: string }> {
-  const expiresAt = next2AmAEST();
+  // 30-day expiry — long-lived so tokens don't expire mid-trading-session.
+  // The previous next2AmAEST() approach could produce a token that expired within
+  // seconds if auth happened between midnight and 2 AM AEST.
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   const token = await new SignJWT({ userId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -34,7 +27,8 @@ export async function verifyWatchToken(token: string): Promise<WatchClaims | nul
   try {
     const { payload } = await jwtVerify(token, secret(), { issuer: "xtnl-watch" });
     return { userId: payload.userId as string };
-  } catch {
+  } catch (e) {
+    console.error("[verifyWatchToken] rejected:", e instanceof Error ? e.message : String(e));
     return null;
   }
 }
