@@ -25,6 +25,11 @@ export default function NavBar() {
   const [alarmRunning,  setAlarmRunning]  = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  type DeviceRecord = { deviceId: string; deviceName: string; registeredAt: string; dropped: boolean };
+  const [devices,      setDevices]      = useState<DeviceRecord[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [droppingId,   setDroppingId]   = useState<string | null>(null);
+
   const pathname           = usePathname();
   const { data: session }  = useSession();
 
@@ -65,6 +70,24 @@ export default function NavBar() {
   }, [drawerOpen, modalOpen]);
 
   const authed = session?.twoFactorVerified;
+
+  /* Fetch connected devices whenever the modal opens */
+  useEffect(() => {
+    if (!watchModal || !authed) return;
+    setDevicesLoading(true);
+    fetch("/api/watch/devices")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((data: DeviceRecord[]) => { setDevices(data); setDevicesLoading(false); })
+      .catch(() => setDevicesLoading(false));
+  }, [watchModal, authed]);
+
+  async function handleDropDevice(deviceId: string) {
+    setDroppingId(deviceId);
+    try {
+      const res = await fetch(`/api/watch/devices/${deviceId}`, { method: "DELETE" });
+      if (res.ok) setDevices(prev => prev.filter(d => d.deviceId !== deviceId));
+    } finally { setDroppingId(null); }
+  }
 
   /* Alarm running state — lightweight poll (only when authed) */
   useEffect(() => {
@@ -242,7 +265,7 @@ export default function NavBar() {
                         <line x1="5" y1="12" x2="11" y2="12"/>
                         <circle cx="8" cy="13.2" r="0.6" fill="currentColor" stroke="none"/>
                       </svg>
-                      Add Watch
+                      Connected Devices
                     </button>
                     <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
                     <button
@@ -373,7 +396,7 @@ export default function NavBar() {
       {/* ── Login modal ───────────────────────────────────── */}
       <LoginModal open={modalOpen} onClose={() => setModalOpen(false)} />
 
-      {/* ── Add Watch modal ───────────────────────────────── */}
+      {/* ── Connected Devices modal ───────────────────────────────── */}
       {watchModal && (
         <div
           onClick={() => setWatchModal(false)}
@@ -389,8 +412,9 @@ export default function NavBar() {
             style={{
               background: "rgba(4,8,15,0.98)", border: "1px solid rgba(0,204,122,0.2)",
               borderRadius: 12, padding: "28px 28px 24px",
-              maxWidth: 380, width: "100%",
+              maxWidth: 420, width: "100%",
               boxShadow: "0 24px 64px rgba(0,0,0,0.7)",
+              maxHeight: "85vh", overflowY: "auto",
             }}
           >
             {/* Header */}
@@ -409,7 +433,7 @@ export default function NavBar() {
                   </svg>
                 </span>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--ink-0)", letterSpacing: "0.01em" }}>Connect Galaxy Watch</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--ink-0)", letterSpacing: "0.01em" }}>Connected Devices</div>
                   <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 1 }}>XTNL Sovereign Trust — Wear OS</div>
                 </div>
               </div>
@@ -423,34 +447,96 @@ export default function NavBar() {
               </button>
             </div>
 
-            {/* Steps */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {([
-                ["Install the app", "Build and install the XTNL watch app via Android Studio onto your Galaxy Watch."],
-                ["Open XTNL on watch", "Launch the app — you'll see the XTNL Sovereign Trust screen."],
-                ["Tap CONNECT", "The watch requests a pairing code and displays a QR code."],
-                ["Scan with your phone", "Use the camera app to scan the QR — it opens this website automatically."],
-                ["Tap Authorize Watch", "Confirm on the page that opens. The watch links instantly."],
-              ] as [string, string][]).map(([title, desc], i) => (
-                <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                  <span style={{
-                    flexShrink: 0, width: 22, height: 22, borderRadius: "50%",
-                    background: "rgba(0,204,122,0.12)", border: "1px solid rgba(0,204,122,0.3)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 700, color: "#00CC7A",
-                    fontFamily: "var(--font-mono)", marginTop: 1,
-                  }}>
-                    {i + 1}
-                  </span>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-1)", marginBottom: 2 }}>{title}</div>
-                    <div style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.5 }}>{desc}</div>
-                  </div>
+            {/* ── Connected watches list ── */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink-4)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
+                Active watches
+              </div>
+              {devicesLoading ? (
+                <div style={{ fontSize: 11, color: "var(--ink-4)", padding: "12px 0" }}>Loading…</div>
+              ) : devices.length === 0 ? (
+                <div style={{
+                  padding: "14px 16px", borderRadius: 8,
+                  background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)",
+                  fontSize: 11, color: "var(--ink-4)",
+                }}>
+                  No watches connected to this session.
                 </div>
-              ))}
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {devices.map(d => (
+                    <div key={d.deviceId} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "12px 14px", borderRadius: 8,
+                      background: "rgba(0,204,122,0.04)", border: "1px solid rgba(0,204,122,0.15)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#00CC7A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="5" y="1" width="6" height="14" rx="1.5"/>
+                          <line x1="5" y1="4" x2="11" y2="4"/>
+                          <line x1="5" y1="12" x2="11" y2="12"/>
+                          <circle cx="8" cy="13.2" r="0.6" fill="#00CC7A" stroke="none"/>
+                        </svg>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-1)" }}>{d.deviceName}</div>
+                          <div style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}>
+                            Since {new Date(d.registeredAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDropDevice(d.deviceId)}
+                        disabled={droppingId === d.deviceId}
+                        style={{
+                          padding: "5px 10px", borderRadius: 5, fontSize: 10, fontWeight: 600,
+                          background: droppingId === d.deviceId ? "rgba(255,80,80,0.06)" : "rgba(255,80,80,0.1)",
+                          border: "1px solid rgba(255,80,80,0.25)",
+                          color: "var(--red)", cursor: droppingId === d.deviceId ? "not-allowed" : "pointer",
+                          opacity: droppingId === d.deviceId ? 0.6 : 1,
+                          transition: "opacity 0.15s",
+                        }}
+                      >
+                        {droppingId === d.deviceId ? "…" : "Disconnect"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+            {/* ── Add new watch section ── */}
+            <div style={{ paddingTop: 18, borderTop: "1px solid var(--line)" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink-4)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+                Connect a new watch
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {([
+                  ["Install the app", "Build and install the XTNL watch app via Android Studio onto your Galaxy Watch."],
+                  ["Open XTNL on watch", "Launch the app — you'll see the XTNL Sovereign Trust screen."],
+                  ["Tap CONNECT", "The watch requests a pairing code and displays a QR code."],
+                  ["Scan with your phone", "Use the camera app to scan the QR — it opens this website automatically."],
+                  ["Tap Authorize Watch", "Confirm on the page that opens. The watch links instantly."],
+                ] as [string, string][]).map(([title, desc], i) => (
+                  <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                    <span style={{
+                      flexShrink: 0, width: 20, height: 20, borderRadius: "50%",
+                      background: "rgba(0,204,122,0.08)", border: "1px solid rgba(0,204,122,0.2)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 9, fontWeight: 700, color: "#00CC7A",
+                      fontFamily: "var(--font-mono)", marginTop: 1,
+                    }}>
+                      {i + 1}
+                    </span>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-2)", marginBottom: 2 }}>{title}</div>
+                      <div style={{ fontSize: 10, color: "var(--ink-3)", lineHeight: 1.5 }}>{desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 20 }}>
               <button
                 onClick={() => setWatchModal(false)}
                 style={{
@@ -460,7 +546,7 @@ export default function NavBar() {
                   letterSpacing: "0.04em",
                 }}
               >
-                Got it
+                Done
               </button>
             </div>
           </div>

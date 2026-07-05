@@ -1690,6 +1690,7 @@ function JournalTimeline({
     content.startsWith("session_contract:") ||
     content.startsWith("alarm_state:") ||
     content.startsWith("watch_device:") ||
+    content.startsWith("watch_devices:") ||
     content.startsWith("analysis_session:");
 
   const visibleComments = operatorView
