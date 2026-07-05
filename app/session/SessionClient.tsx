@@ -2866,7 +2866,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
           // Start enforce_focus challenge: generate number client-side and push to server
           if (srv.enforce_focus && challengeStartedCycle.current < cycleNum) {
             challengeStartedCycle.current = cycleNum;
-            const n = Math.floor(Math.random() * 5) + 1;
+            const n = Math.floor(Math.random() * 5) + 3;
             void callAPI({ action: "challenge_start", cycle: cycleNum, challengeNumber: n });
           }
         }
