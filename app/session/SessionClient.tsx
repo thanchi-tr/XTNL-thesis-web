@@ -4019,7 +4019,7 @@ export default function SessionClient({ user }: { user: User }) {
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
 
               <EntryChecklistToggle showToast={showToast} locked={isDriftAlert} refreshSignal={driftRefreshSignal} />
-              <AttentionChallengeToggle showToast={showToast} locked={isDriftAlert} refreshSignal={driftRefreshSignal} />
+              <AttentionChallengeToggle showToast={showToast} refreshSignal={driftRefreshSignal} />
 
               <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst failCompliance={challengeStatus === "fail"} onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
 
