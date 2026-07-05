@@ -2555,98 +2555,159 @@ function playAlarmBeeps(volume: number) {
   }
 }
 
-function AttentionChallengeToggle({ showToast }: { showToast: ShowToast }) {
-  const [enforceFocus, setEnforceFocus] = useState(false);
-  const [syncing,      setSyncing]      = useState(false);
+function AnalystToggle({
+  showToast, label, subOn, subOff, fetchKey, apiAction, locked, refreshSignal, commentLabel,
+}: {
+  showToast: ShowToast;
+  label: string;
+  subOn: string;
+  subOff: string;
+  fetchKey: string;
+  apiAction: string;
+  locked?: boolean;
+  refreshSignal?: number;
+  commentLabel: string;
+}) {
+  const [enabled, setEnabled] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
+  const fetchState = useCallback(() => {
     fetch("/api/session/alarm")
       .then(r => r.json())
-      .then((s: { enforce_focus?: boolean }) => {
-        if (typeof s.enforce_focus === "boolean") setEnforceFocus(s.enforce_focus);
+      .then((s: Record<string, unknown>) => {
+        if (typeof s[fetchKey] === "boolean") setEnabled(s[fetchKey] as boolean);
       })
       .catch(() => {});
-  }, []);
+  }, [fetchKey]);
+
+  useEffect(() => { fetchState(); }, [fetchState]);
+  useEffect(() => { if ((refreshSignal ?? 0) > 0) fetchState(); }, [refreshSignal, fetchState]);
 
   const toggle = async () => {
-    if (syncing) return;
+    if (syncing || locked) return;
     setSyncing(true);
-    const next = !enforceFocus;
-    setEnforceFocus(next);
+    const next = !enabled;
+    setEnabled(next);
     try {
       const r = await fetch("/api/session/alarm", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "toggle_enforce_focus" }),
+        body: JSON.stringify({ action: apiAction }),
       });
-      const s = await r.json() as { enforce_focus?: boolean };
-      if (typeof s.enforce_focus === "boolean") setEnforceFocus(s.enforce_focus);
+      const s = await r.json() as Record<string, unknown>;
+      if (typeof s[fetchKey] === "boolean") setEnabled(s[fetchKey] as boolean);
+      if (next) {
+        const now = new Date().toISOString();
+        void fetch("/api/session/comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: `friction enforce: ${commentLabel}`, created_at: now }),
+        });
+      }
     } catch {
-      setEnforceFocus(!next);
-      showToast("error", "Failed to update challenge setting");
+      setEnabled(!next);
+      showToast("error", `Failed to update setting`);
     } finally {
       setSyncing(false);
     }
   };
 
+  const isOn = locked || enabled;
+
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
       padding: "10px 14px", borderRadius: 6,
-      background: enforceFocus ? "rgba(0,204,122,0.07)" : "var(--sub)",
-      outline: `1px solid ${enforceFocus ? "rgba(0,204,122,0.25)" : "var(--line-hi)"}`,
+      background: isOn ? "rgba(0,204,122,0.07)" : "var(--sub)",
+      outline: `1px solid ${locked ? "rgba(220,60,60,0.4)" : isOn ? "rgba(0,204,122,0.25)" : "var(--line-hi)"}`,
       transition: "background 0.2s, outline-color 0.2s",
     }}>
-      <div>
-        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: enforceFocus ? "var(--green)" : "var(--ink-1)", letterSpacing: "0.01em" }}>
-          Attention Challenge
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: locked ? "var(--red)" : isOn ? "var(--green)" : "var(--ink-1)", letterSpacing: "0.01em" }}>
+          {label}
         </p>
         <p style={{ margin: "2px 0 0", fontSize: 9.5, color: "var(--ink-4)" }}>
-          {enforceFocus ? "Watch tap challenge active" : "Tap challenge disabled"}
+          {locked ? "⚠ System locked — drift threshold breached" : isOn ? subOn : subOff}
         </p>
       </div>
       <button
         type="button"
-        disabled={syncing}
+        disabled={syncing || locked}
         onClick={() => { void toggle(); }}
-        aria-label={enforceFocus ? "Disable attention challenge" : "Enable attention challenge"}
+        aria-label={isOn ? `Disable ${label}` : `Enable ${label}`}
         style={{
-          width: 38, height: 22, borderRadius: 11,
-          background: enforceFocus ? "var(--green)" : "var(--raised)",
-          border: "1px solid var(--line-hi)",
-          cursor: syncing ? "wait" : "pointer",
-          position: "relative", flexShrink: 0,
+          width: 38, height: 22, borderRadius: 11, flexShrink: 0, marginLeft: 10,
+          background: isOn ? (locked ? "var(--red)" : "var(--green)") : "var(--raised)",
+          border: `1px solid ${locked ? "rgba(220,60,60,0.5)" : "var(--line-hi)"}`,
+          cursor: locked ? "not-allowed" : syncing ? "wait" : "pointer",
+          position: "relative",
           transition: "background 0.2s",
         }}
       >
-        <span style={{
-          display: "block", width: 16, height: 16, borderRadius: "50%",
-          background: enforceFocus ? "#04080F" : "var(--ink-3)",
-          position: "absolute", top: 2,
-          left: enforceFocus ? 18 : 2,
-          transition: "left 0.2s",
-        }} />
+        {locked
+          ? <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff" }}>🔒</span>
+          : <span style={{
+              display: "block", width: 16, height: 16, borderRadius: "50%",
+              background: isOn ? "#04080F" : "var(--ink-3)",
+              position: "absolute", top: 2, left: isOn ? 18 : 2,
+              transition: "left 0.2s",
+            }} />
+        }
       </button>
     </div>
   );
 }
 
-function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void }) {
+function EntryChecklistToggle({ showToast, locked, refreshSignal }: { showToast: ShowToast; locked?: boolean; refreshSignal?: number }) {
+  return (
+    <AnalystToggle
+      showToast={showToast}
+      label="Detail anchor log for target SOP"
+      subOn="Operator can submit entry plan"
+      subOff="Entry checklist hidden from operator"
+      fetchKey="entry_checklist_enabled"
+      apiAction="toggle_entry_checklist"
+      commentLabel="Detail anchor log for target SOP"
+      locked={locked}
+      refreshSignal={refreshSignal}
+    />
+  );
+}
+
+function AttentionChallengeToggle({ showToast, locked, refreshSignal }: { showToast: ShowToast; locked?: boolean; refreshSignal?: number }) {
+  return (
+    <AnalystToggle
+      showToast={showToast}
+      label="Watch challenge to enforce focus"
+      subOn="Watch tap challenge active"
+      subOff="Tap challenge disabled"
+      fetchKey="enforce_focus"
+      apiAction="toggle_enforce_focus"
+      commentLabel="Watch challenge to enforce focus"
+      locked={locked}
+      refreshSignal={refreshSignal}
+    />
+  );
+}
+
+function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange, onEntryChecklistEnabledChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void; onEntryChecklistEnabledChange?: (enabled: boolean) => void }) {
   type SrvState = {
-    running:               boolean;
-    started_at:            string | null;
-    interval_min:          number;
-    focus_min:             number;
-    last_ack_cycle:        number;
-    enforce_focus:         boolean;
-    challenge_number:      number | null;
-    challenge_cycle:       number;
-    challenge_status:      "pending" | "pass" | "fail" | null;
-    challenge_expires_at:  string | null;
+    running:                  boolean;
+    started_at:               string | null;
+    interval_min:             number;
+    focus_min:                number;
+    last_ack_cycle:           number;
+    enforce_focus:            boolean;
+    entry_checklist_enabled:  boolean;
+    challenge_number:         number | null;
+    challenge_cycle:          number;
+    challenge_status:         "pending" | "pass" | "fail" | null;
+    challenge_expires_at:     string | null;
   };
   const SRV0: SrvState = {
     running: false, started_at: null, interval_min: 15, focus_min: 2, last_ack_cycle: -1,
-    enforce_focus: false, challenge_number: null, challenge_cycle: -1, challenge_status: null, challenge_expires_at: null,
+    enforce_focus: false, entry_checklist_enabled: false,
+    challenge_number: null, challenge_cycle: -1, challenge_status: null, challenge_expires_at: null,
   };
 
   const [srv,               setSrv]               = useState<SrvState>(SRV0);
@@ -2720,6 +2781,9 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
 
   /* Notify parent of challenge status changes */
   useEffect(() => { onChallengeStatusChange?.(srv.challenge_status); }, [srv.challenge_status, onChallengeStatusChange]);
+
+  /* Notify parent of entry checklist enabled state */
+  useEffect(() => { onEntryChecklistEnabledChange?.(srv.entry_checklist_enabled); }, [srv.entry_checklist_enabled, onEntryChecklistEnabledChange]);
 
   /* ── Polling ─────────────────────────────────────── */
   const fetchState = useCallback(async () => {
@@ -3660,6 +3724,53 @@ export default function SessionClient({ user }: { user: User }) {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [fetchAuditReport]);
 
+  /* ── Drift-threshold enforcement ────────────────────
+     If capture < 40% OR efficiency rating < 0.65, both
+     functions are auto-enabled and locked against analyst override.
+  ─────────────────────────────────────────────────── */
+  const isDriftAlert = frictionReport
+    ? frictionReport.exec.capture < 40 || frictionReport.exec.rating < 0.65
+    : false;
+
+  const driftAutoTriggeredRef  = useRef(false);
+  const [driftRefreshSignal, setDriftRefreshSignal] = useState(0);
+
+  useEffect(() => {
+    if (!isDriftAlert) { driftAutoTriggeredRef.current = false; return; }
+    if (driftAutoTriggeredRef.current) return;
+    driftAutoTriggeredRef.current = true;
+
+    void (async () => {
+      try {
+        const stateRes = await fetch("/api/session/alarm");
+        const s = await stateRes.json() as { entry_checklist_enabled?: boolean; enforce_focus?: boolean };
+        const now = new Date().toISOString();
+
+        if (!s.entry_checklist_enabled) {
+          await fetch("/api/session/alarm", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "toggle_entry_checklist" }),
+          });
+          await fetch("/api/session/comments", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "customer automatic trigger: Detail anchor log for target SOP", created_at: now }),
+          });
+        }
+        if (!s.enforce_focus) {
+          await fetch("/api/session/alarm", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "toggle_enforce_focus" }),
+          });
+          await fetch("/api/session/comments", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: "customer automatic trigger: Watch challenge to enforce focus", created_at: new Date().toISOString() }),
+          });
+        }
+        setDriftRefreshSignal(n => n + 1);
+      } catch { /* silent — non-blocking */ }
+    })();
+  }, [isDriftAlert]);
+
   /* ── Toast notifications ─────────────────────────── */
   const [toasts,   setToasts]  = useState<ToastMsg[]>([]);
   const toastId = useRef(0);
@@ -3925,7 +4036,8 @@ export default function SessionClient({ user }: { user: User }) {
             <div className="session-sidebar session-sidebar-340">
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
 
-              <AttentionChallengeToggle showToast={showToast} />
+              <EntryChecklistToggle showToast={showToast} locked={isDriftAlert} refreshSignal={driftRefreshSignal} />
+              <AttentionChallengeToggle showToast={showToast} locked={isDriftAlert} refreshSignal={driftRefreshSignal} />
 
               <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst failCompliance={challengeStatus === "fail"} onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
 
@@ -3994,38 +4106,14 @@ export default function SessionClient({ user }: { user: User }) {
             {/* ── Sidebar: always visible regardless of main tab ── */}
             <div className="session-sidebar session-sidebar-340">
 
-              {/* Entry Checklist toggle */}
-              <button
-                type="button"
-                onClick={() => setShowChecklist(o => !o)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 9, width: "100%",
-                  padding: "10px 14px", borderRadius: 6, border: "none",
-                  background: showChecklist ? "rgba(0,204,122,0.07)" : "var(--sub)",
-                  outline: `1px solid ${showChecklist ? "rgba(0,204,122,0.25)" : "var(--line-hi)"}`,
-                  cursor: "pointer", textAlign: "left" as const,
-                  transition: "background 0.15s, outline-color 0.15s",
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
-                  <path d="M3 4h10M3 8h7M3 12h4" stroke={showChecklist ? "var(--green)" : "var(--ink-3)"} strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <span style={{ fontSize: 13, fontWeight: 600, color: showChecklist ? "var(--green)" : "var(--ink-1)", flex: 1, letterSpacing: "0.01em" }}>
-                  Entry Checklist
-                </span>
-                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden
-                  style={{ transition: "transform 0.2s", transform: showChecklist ? "rotate(180deg)" : "none", color: "var(--ink-3)", flexShrink: 0 }}>
-                  <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-
+              {/* Entry Checklist — shown when analyst has enabled it; operator cannot toggle */}
               {showChecklist && (
                 <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchComments} showToast={showToast} sessionContract={sessionContract} />
               )}
 
               <AddCommentForm fullWidth failCompliance={challengeStatus === "fail"} onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
 
-              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} onChallengeStatusChange={setChallengeStatus} />
+              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} onChallengeStatusChange={setChallengeStatus} onEntryChecklistEnabledChange={setShowChecklist} />
             </div>
           </div>
         )}

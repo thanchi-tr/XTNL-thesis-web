@@ -10,29 +10,31 @@ function authed(session: Session | null): boolean {
 }
 
 export type AlarmState = {
-  running:               boolean;
-  started_at:            string | null;
-  interval_min:          number;
-  focus_min:             number;
-  last_ack_cycle:        number;
-  enforce_focus:         boolean;
-  challenge_number:      number | null;  // browser sees this; watch endpoint strips it
-  challenge_cycle:       number;
-  challenge_status:      "pending" | "pass" | "fail" | null;
-  challenge_expires_at:  string | null;
+  running:                  boolean;
+  started_at:               string | null;
+  interval_min:             number;
+  focus_min:                number;
+  last_ack_cycle:           number;
+  enforce_focus:            boolean;
+  entry_checklist_enabled:  boolean;
+  challenge_number:         number | null;  // browser sees this; watch endpoint strips it
+  challenge_cycle:          number;
+  challenge_status:         "pending" | "pass" | "fail" | null;
+  challenge_expires_at:     string | null;
 };
 
 const DEFAULT: AlarmState = {
-  running:              false,
-  started_at:           null,
-  interval_min:         15,
-  focus_min:            2,
-  last_ack_cycle:       -1,
-  enforce_focus:        false,
-  challenge_number:     null,
-  challenge_cycle:      -1,
-  challenge_status:     null,
-  challenge_expires_at: null,
+  running:                 false,
+  started_at:              null,
+  interval_min:            15,
+  focus_min:               2,
+  last_ack_cycle:          -1,
+  enforce_focus:           false,
+  entry_checklist_enabled: false,
+  challenge_number:        null,
+  challenge_cycle:         -1,
+  challenge_status:        null,
+  challenge_expires_at:    null,
 };
 
 const PREFIX = "alarm_state:";
@@ -174,6 +176,12 @@ export async function PUT(req: Request) {
 
     if (body.action === "toggle_enforce_focus") {
       const next: AlarmState = { ...current, enforce_focus: !current.enforce_focus };
+      await writeState(next, userId);
+      return NextResponse.json(next);
+    }
+
+    if (body.action === "toggle_entry_checklist") {
+      const next: AlarmState = { ...current, entry_checklist_enabled: !current.entry_checklist_enabled };
       await writeState(next, userId);
       return NextResponse.json(next);
     }
