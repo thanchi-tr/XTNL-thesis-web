@@ -89,23 +89,41 @@ export default function NavBar() {
     } finally { setDroppingId(null); }
   }
 
-  /* Alarm running state — lightweight poll (only when authed) */
+  /* Alarm running state — lightweight poll (only when authed, tab visible) */
   useEffect(() => {
     if (!authed) { setAlarmRunning(false); return; }
     let active = true;
-    const poll = async () => {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = (ms: number) => {
+      if (timerId) clearTimeout(timerId);
+      timerId = setTimeout(tick, ms);
+    };
+
+    const tick = async () => {
+      if (!active || document.visibilityState === "hidden") { schedule(30_000); return; }
       try {
         const res = await fetch("/api/session/alarm");
         if (!active) return;
         if (res.ok) {
           const data = await res.json() as { running?: boolean };
           setAlarmRunning(!!data.running);
+          // Poll more frequently while alarm is running so badge disappears promptly on stop
+          schedule(data.running ? 10_000 : 30_000);
+        } else {
+          schedule(30_000);
         }
-      } catch { /* network blip — ignore */ }
+      } catch { schedule(30_000); }
     };
-    poll();
-    const id = setInterval(poll, 5000);
-    return () => { active = false; clearInterval(id); };
+
+    const onVisible = () => { if (document.visibilityState === "visible") void tick(); };
+    document.addEventListener("visibilitychange", onVisible);
+    void tick();
+    return () => {
+      active = false;
+      if (timerId) clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [authed]);
 
   return (

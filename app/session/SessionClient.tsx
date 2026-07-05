@@ -2775,10 +2775,24 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
 
   useEffect(() => { void fetchState(); }, [fetchState]);
 
+  // Pause polling when the tab is hidden to avoid server hammering from background tabs.
+  // Intervals: 2 s while alarm running (needs accurate countdown + focus alerts),
+  //            15 s while idle (config rarely changes, badge lag acceptable).
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(fetchState, srv.running ? 2000 : 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    const interval = srv.running ? 2_000 : 15_000;
+    pollRef.current = setInterval(() => {
+      if (document.visibilityState !== "hidden") void fetchState();
+    }, interval);
+
+    const onVisible = () => { if (document.visibilityState === "visible") void fetchState(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [srv.running, fetchState]);
 
   /* ── API actions ────────────────────────────────────── */
