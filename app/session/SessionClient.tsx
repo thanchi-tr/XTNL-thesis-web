@@ -3846,9 +3846,52 @@ export default function SessionClient({ user }: { user: User }) {
               <LiveTable tz={baseTZ} isAnalyst={effectiveMode === "analyst"} onRefresh={fetchLive} onHydrate={v => setHydrateValues({ ...v })} />
               <JournalTimeline trades={optimalRows} tradingLoading={loadingOpt} comments={commentRows} commentsLoading={loadingComm} tz={baseTZ} analystMode={effectiveMode === "analyst"} liveRows={liveRows} onDeleteComment={deleteComment} onRefresh={fetchJournal} />
             </div>
-            <div className="session-sidebar">
+            <div className="session-sidebar session-sidebar-340">
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
+
+              {/* Entry Checklist toggle */}
+              <button
+                type="button"
+                onClick={() => setShowChecklist(o => !o)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 9, width: "100%",
+                  padding: "10px 14px", borderRadius: 6, border: "none",
+                  background: showChecklist ? "rgba(0,204,122,0.07)" : "var(--sub)",
+                  outline: `1px solid ${showChecklist ? "rgba(0,204,122,0.25)" : "var(--line-hi)"}`,
+                  cursor: "pointer", textAlign: "left" as const,
+                  transition: "background 0.15s, outline-color 0.15s",
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <path d="M3 4h10M3 8h7M3 12h4" stroke={showChecklist ? "var(--green)" : "var(--ink-3)"} strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 600, color: showChecklist ? "var(--green)" : "var(--ink-1)", flex: 1, letterSpacing: "0.01em" }}>
+                  Entry Checklist
+                </span>
+                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden
+                  style={{ transition: "transform 0.2s", transform: showChecklist ? "rotate(180deg)" : "none", color: "var(--ink-3)", flexShrink: 0 }}>
+                  <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+              {showChecklist && (
+                <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchJournal} showToast={showToast} sessionContract={sessionContract} />
+              )}
+
               <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst failCompliance={challengeStatus === "fail"} onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
+
+              {/* ── DEBUG: Alarm & challenge block — remove in subsequent version ── */}
+              <div style={{ border: "1px dashed rgba(240,160,32,0.45)", borderRadius: 8, overflow: "hidden" }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "5px 11px",
+                  background: "rgba(240,160,32,0.07)",
+                  borderBottom: "1px dashed rgba(240,160,32,0.25)",
+                }}>
+                  <span style={{ fontSize: 8.5, fontWeight: 800, color: "var(--amber)", letterSpacing: "0.1em" }}>⚙ DEBUG</span>
+                  <span style={{ fontSize: 8.5, color: "var(--ink-4)" }}>Alarm &amp; challenge · removed next version</span>
+                </div>
+                <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} onChallengeStatusChange={setChallengeStatus} />
+              </div>
             </div>
           </div>
         )}
