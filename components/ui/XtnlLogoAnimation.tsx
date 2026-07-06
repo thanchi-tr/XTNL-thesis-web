@@ -146,7 +146,7 @@ export function XtnlLogoAnimation({ mode: _mode, onDone }: Props) {
 
       {/* ── Phase 4 wrapper — scale-up 22% ──── */}
       <div className="xa-logo-scale">
-        <svg viewBox="0 0 80 80" width="260" height="260" fill="none" aria-hidden>
+        <svg viewBox="0 0 80 80" width="244" height="244" fill="none" aria-hidden>
 
           {/* ── Phase 1: white dots appear one by one ─────────────────────── */}
           <circle className="xa-wd xa-wd-a" cx="27" cy="8"  r="3.4" />
@@ -234,7 +234,7 @@ export function XtnlLogoAnimation({ mode: _mode, onDone }: Props) {
             style={{
               animationDelay: `${1820 + i * 120}ms`,
               fontFamily: "var(--font-mono, monospace)",
-              fontSize: 30,
+              fontSize: 37,
               fontWeight: 800,
               letterSpacing: i < 3 ? "0.22em" : "0",
               color: "var(--ink-0, #eef2f8)",
