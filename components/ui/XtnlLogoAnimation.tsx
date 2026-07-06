@@ -11,14 +11,13 @@ interface Props {
 /*
  * Animation timeline (all timings in ms):
  *
- * Phase 1 — white dots appear one by one    0 – 860 ms
- * Phase 2 — green nodes grow, verts appear  950 – 1560 ms
- * Phase 3 — lines draw from left vertex     1440 – 2590 ms
- * Phase 4 — logo scales up 22%              2640 – 2940 ms
- * Phase 5 — X T N L fade in letter-by-letter 2700 – 3410 ms
- * Hold                                       3410 – 3500 ms
- * Fade-out                                   3500 – 4000 ms
- * onDone callback                            4050 ms
+ * Phase 1 — white dots appear one by one     0 – 480 ms
+ * Phase 2 — green nodes grow, verts appear   540 – 1060 ms
+ * Phase 3 — lines draw from left vertex      990 – 1740 ms
+ * Phase 4 — logo scales up 22%              1780 – 2040 ms
+ * Phase 5 — X T N L fade in letter-by-letter 1820 – 2410 ms
+ * Fade-out                                   2500 – 2900 ms
+ * onDone callback                            2950 ms
  */
 
 const CSS = `
@@ -28,13 +27,13 @@ const CSS = `
   opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
-  animation: xa-dot 220ms cubic-bezier(0.34,1.56,0.64,1) both;
+  animation: xa-dot 160ms cubic-bezier(0.34,1.56,0.64,1) both;
 }
 .xa-wd-a { animation-delay:   0ms; }
-.xa-wd-b { animation-delay: 160ms; }
-.xa-wd-c { animation-delay: 320ms; }
-.xa-wd-d { animation-delay: 480ms; }
-.xa-wd-e { animation-delay: 640ms; }
+.xa-wd-b { animation-delay:  80ms; }
+.xa-wd-c { animation-delay: 160ms; }
+.xa-wd-d { animation-delay: 240ms; }
+.xa-wd-e { animation-delay: 320ms; }
 @keyframes xa-dot {
   from { opacity: 0; transform: scale(0); }
   to   { opacity: 1; transform: scale(1); }
@@ -45,10 +44,10 @@ const CSS = `
   opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
-  animation: xa-node-grow 400ms cubic-bezier(0.34,1.56,0.64,1) both;
+  animation: xa-node-grow 330ms cubic-bezier(0.34,1.56,0.64,1) both;
 }
-.xa-node-a { animation-delay:  950ms; }
-.xa-node-b { animation-delay: 1070ms; }
+.xa-node-a { animation-delay: 540ms; }
+.xa-node-b { animation-delay: 640ms; }
 @keyframes xa-node-grow {
   from { opacity: 0; transform: scale(0);    }
   65%  {             transform: scale(1.10); }
@@ -60,11 +59,11 @@ const CSS = `
   opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
-  animation: xa-vert-in 260ms ease both;
+  animation: xa-vert-in 220ms ease both;
 }
-.xa-vert-l { animation-delay: 1180ms; }
-.xa-vert-r { animation-delay: 1240ms; }
-.xa-vert-b { animation-delay: 1300ms; }
+.xa-vert-l { animation-delay: 720ms; }
+.xa-vert-r { animation-delay: 780ms; }
+.xa-vert-b { animation-delay: 840ms; }
 @keyframes xa-vert-in {
   from { opacity: 0; transform: scale(0.4); }
   to   { opacity: 1; transform: scale(1);   }
@@ -79,22 +78,22 @@ const CSS = `
 @keyframes xa-l-cross-a { from { stroke-dashoffset: 57; } to { stroke-dashoffset: 0; } }
 @keyframes xa-l-lower-r { from { stroke-dashoffset: 32; } to { stroke-dashoffset: 0; } }
 
-.xa-l-mid     { stroke-dasharray: 46; animation: xa-l-mid     160ms ease 1440ms both; }
-.xa-l-lower-l { stroke-dasharray: 32; animation: xa-l-lower-l 130ms ease 1620ms both; }
-.xa-l-cross-b { stroke-dasharray: 52; animation: xa-l-cross-b 170ms ease 1770ms both; }
-.xa-l-upper-l { stroke-dasharray: 33; animation: xa-l-upper-l 130ms ease 1960ms both; }
-.xa-l-upper-r { stroke-dasharray: 33; animation: xa-l-upper-r 130ms ease 2110ms both; }
-.xa-l-cross-a { stroke-dasharray: 57; animation: xa-l-cross-a 190ms ease 2260ms both; }
-.xa-l-lower-r { stroke-dasharray: 32; animation: xa-l-lower-r 120ms ease 2470ms both; }
+.xa-l-mid     { stroke-dasharray: 46; animation: xa-l-mid      130ms ease  990ms both; }
+.xa-l-lower-l { stroke-dasharray: 32; animation: xa-l-lower-l  100ms ease 1110ms both; }
+.xa-l-cross-b { stroke-dasharray: 52; animation: xa-l-cross-b  140ms ease 1210ms both; }
+.xa-l-upper-l { stroke-dasharray: 33; animation: xa-l-upper-l  100ms ease 1330ms both; }
+.xa-l-upper-r { stroke-dasharray: 33; animation: xa-l-upper-r  100ms ease 1430ms both; }
+.xa-l-cross-a { stroke-dasharray: 57; animation: xa-l-cross-a  150ms ease 1530ms both; }
+.xa-l-lower-r { stroke-dasharray: 32; animation: xa-l-lower-r   90ms ease 1650ms both; }
 
 .xa-poly {
   opacity: 0;
-  animation: xa-vert-in 200ms ease 2110ms both;
+  animation: xa-vert-in 200ms ease 1430ms both;
 }
 
 /* ── Phase 4: scale-up wrapper ───────────────────────────────────────────── */
 .xa-logo-scale {
-  animation: xa-scale-up 300ms cubic-bezier(0.34,1.56,0.64,1) 2640ms both;
+  animation: xa-scale-up 260ms cubic-bezier(0.34,1.56,0.64,1) 1780ms both;
 }
 @keyframes xa-scale-up {
   from { transform: scale(1);    }
@@ -105,7 +104,7 @@ const CSS = `
 .xa-letter {
   opacity: 0;
   display: inline-block;
-  animation: xa-letter-in 260ms ease both;
+  animation: xa-letter-in 230ms ease both;
 }
 @keyframes xa-letter-in {
   from { opacity: 0; transform: translateY(9px); }
@@ -114,7 +113,7 @@ const CSS = `
 
 /* ── Overlay exit ────────────────────────────────────────────────────────── */
 .xa-exit {
-  animation: xa-fade-out 500ms ease both;
+  animation: xa-fade-out 400ms ease both;
   pointer-events: none;
 }
 @keyframes xa-fade-out {
@@ -127,10 +126,11 @@ export function XtnlLogoAnimation({ mode: _mode, onDone }: Props) {
   const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setExiting(true), 3500);
-    const t2 = setTimeout(() => onDone?.(), 4050);
+    const t1 = setTimeout(() => setExiting(true), 2500);
+    const t2 = setTimeout(() => onDone?.(), 2950);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [onDone]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -232,7 +232,7 @@ export function XtnlLogoAnimation({ mode: _mode, onDone }: Props) {
             key={ch}
             className="xa-letter"
             style={{
-              animationDelay: `${2700 + i * 150}ms`,
+              animationDelay: `${1820 + i * 120}ms`,
               fontFamily: "var(--font-mono, monospace)",
               fontSize: 30,
               fontWeight: 800,
