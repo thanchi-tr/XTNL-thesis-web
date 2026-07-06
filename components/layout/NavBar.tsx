@@ -24,8 +24,9 @@ export default function NavBar() {
   const [watchModal,    setWatchModal]    = useState(false);
   const [alarmRunning,  setAlarmRunning]  = useState(false);
 
-  type AlarmData = { running: boolean; started_at: string | null; interval_min: number; focus_min: number; challenge_status: string | null; challenge_cycle: number; };
-  const [alarmData,      setAlarmData]      = useState<AlarmData>({ running: false, started_at: null, interval_min: 15, focus_min: 2, challenge_status: null, challenge_cycle: -1 });
+  type AlarmData = { running: boolean; started_at: string | null; scheduled_start: string | null; interval_min: number; focus_min: number; challenge_status: string | null; challenge_cycle: number; };
+  const [alarmData,      setAlarmData]      = useState<AlarmData>({ running: false, started_at: null, scheduled_start: null, interval_min: 15, focus_min: 2, challenge_status: null, challenge_cycle: -1 });
+  const [alarmScheduled, setAlarmScheduled] = useState(false);
   const [alarmPopupOpen, setAlarmPopupOpen] = useState(false);
   const [challengeAlert,    setChallengeAlert]    = useState(false);
   const [focusWindowAlert,  setFocusWindowAlert]  = useState(false);
@@ -119,7 +120,8 @@ export default function NavBar() {
         if (res.ok) {
           const data = await res.json() as AlarmData;
           setAlarmRunning(!!data.running);
-          setAlarmData({ running: !!data.running, started_at: data.started_at ?? null, interval_min: data.interval_min ?? 15, focus_min: data.focus_min ?? 2, challenge_status: data.challenge_status ?? null, challenge_cycle: data.challenge_cycle ?? -1 });
+          setAlarmScheduled(!data.running && !!data.scheduled_start);
+          setAlarmData({ running: !!data.running, started_at: data.started_at ?? null, scheduled_start: data.scheduled_start ?? null, interval_min: data.interval_min ?? 15, focus_min: data.focus_min ?? 2, challenge_status: data.challenge_status ?? null, challenge_cycle: data.challenge_cycle ?? -1 });
           setChallengeAlert(!!(data.running && data.challenge_status === "pending"));
           // Detect focus window: same math as the service loop
           let inFocus = false;
@@ -130,7 +132,7 @@ export default function NavBar() {
             inFocus = (elapsed % intervalMs) >= (intervalMs - focusMs);
           }
           setFocusWindowAlert(inFocus);
-          schedule(data.running ? 8_000 : 30_000);
+          schedule(data.running ? 8_000 : data.scheduled_start ? 12_000 : 30_000);
         } else {
           schedule(30_000);
         }
@@ -195,6 +197,10 @@ export default function NavBar() {
         @keyframes navAlarmPulse {
           0%,100% { box-shadow: 0 0 0 0 rgba(0,204,122,0.55), 0 0 0 0 rgba(0,204,122,0.2); opacity: 1; }
           60%      { box-shadow: 0 0 0 5px rgba(0,204,122,0),  0 0 0 9px rgba(0,204,122,0); opacity: 0.75; }
+        }
+        @keyframes navScheduledPulse {
+          0%,100% { box-shadow: 0 0 0 0 rgba(240,160,48,0.50), 0 0 0 0 rgba(240,160,48,0.18); opacity: 1; }
+          60%      { box-shadow: 0 0 0 5px rgba(240,160,48,0),  0 0 0 9px rgba(240,160,48,0); opacity: 0.72; }
         }
         @keyframes popupIn {
           from { opacity: 0; transform: translateY(-8px) scale(0.97); }
@@ -270,6 +276,30 @@ export default function NavBar() {
                     stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                 </svg>
               </button>
+            )}
+            {authed && alarmScheduled && !alarmRunning && (
+              <Link
+                href="/session"
+                title="Alarm scheduled — click to manage"
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 28, height: 28, borderRadius: "50%",
+                  background: "rgba(240,160,48,0.12)",
+                  border: "1px solid rgba(240,160,48,0.30)",
+                  color: "var(--amber)",
+                  animation: "navScheduledPulse 2.8s ease-in-out infinite",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 36 36" fill="none" aria-hidden>
+                  <path d="M18 3.5V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                    fill="rgba(240,160,48,0.12)"/>
+                  <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                </svg>
+              </Link>
             )}
             {authed ? (
               /* User dropdown */
