@@ -6,6 +6,7 @@ export default function XtnlIntroOverlay() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
+    if (window.location.pathname.startsWith("/session")) return;
     if (sessionStorage.getItem("xtnl_intro_shown")) return;
     sessionStorage.setItem("xtnl_intro_shown", "1");
     setShow(true);
