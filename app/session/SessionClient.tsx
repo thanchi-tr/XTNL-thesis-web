@@ -2725,8 +2725,9 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const [syncing,           setSyncing]           = useState(false);
   const [challengeSilenced, setChallengeSilenced] = useState(false);
 
-  const challengeStartedCycle      = useRef(-1); // which cycle we already called challenge_start for
+  const challengeStartedCycle       = useRef(-1); // which cycle we already called challenge_start for
   const challengeResultNotifiedCycle = useRef(-1); // which cycle we already fired pass/fail toast for
+  const challengePostedAtRef         = useRef<number | null>(null); // wall-clock ms when challenge became pending
 
   const tickRef              = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef              = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2747,6 +2748,15 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     const t = setTimeout(() => setFlashDismissing(false), 260);
     return () => clearTimeout(t);
   }, [flash]);
+
+  /* Track when challenge became pending so the countdown ring knows its origin */
+  useEffect(() => {
+    if (srv.challenge_status === "pending" && srv.challenge_cycle >= 0) {
+      if (challengePostedAtRef.current === null) challengePostedAtRef.current = Date.now();
+    } else {
+      challengePostedAtRef.current = null;
+    }
+  }, [srv.challenge_status, srv.challenge_cycle]);
 
   // When toggled to silent mid-session, dismiss any active flash immediately
   useEffect(() => {
@@ -2907,6 +2917,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     soundFiredCycle.current              = -1;
     challengeStartedCycle.current        = -1;
     challengeResultNotifiedCycle.current = -1;
+    challengePostedAtRef.current         = null;
     void callAPI({ action: "start", intervalMin, focusMin });
   }, [callAPI, intervalMin, focusMin]);
 
@@ -2961,6 +2972,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         >
           {/* Card */}
           <div
+            className="alarm-card"
             onClick={e => { e.stopPropagation(); handleAck(); }}
             style={{
               background: "var(--card)",
@@ -3062,32 +3074,79 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
             <div style={{ width: "100%", height: 1, background: "var(--line)", marginBottom: 24 }} />
 
             {srv.enforce_focus && srv.challenge_status === "pending" ? (
-              /* ── Enforce Focus: show challenge number ── */
-              <>
-                <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
-                  Tap this many times on your watch
-                </p>
-                <div style={{
-                  width: 96, height: 96, borderRadius: "50%",
-                  background: "rgba(0,204,122,0.12)",
-                  border: "2px solid rgba(0,204,122,0.4)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  marginBottom: 16,
-                  boxShadow: "0 0 32px rgba(0,204,122,0.18)",
-                  animation: "challengeNumIn 0.42s cubic-bezier(0.4,0,0.2,1) both",
-                  willChange: "transform, opacity",
-                }}>
-                  <span style={{ fontSize: 52, fontWeight: 800, color: "var(--green)", lineHeight: 1 }}>
-                    {srv.challenge_number ?? "…"}
-                  </span>
-                </div>
-                <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--ink-2)" }}>
-                  Tap the number on your Galaxy Watch, then submit.
-                </p>
-                <p style={{ margin: 0, fontSize: 10.5, color: "var(--ink-4)" }}>
-                  30-second window · watch is listening…
-                </p>
-              </>
+              /* ── Enforce Focus: countdown ring + challenge number ── */
+              (() => {
+                const elapsed   = challengePostedAtRef.current ? (Date.now() - challengePostedAtRef.current) / 1000 : 0;
+                const remaining = Math.max(0, 30 - Math.floor(elapsed));
+                const r         = 50;
+                const circ      = 2 * Math.PI * r;   // ≈ 314.16
+                const dashOff   = circ * (1 - remaining / 30); // depletes as time passes
+                const urgent    = remaining <= 10;
+                const ringClr   = remaining > 10 ? "var(--green)" : remaining > 5 ? "#f5a623" : "var(--red, #e53e3e)";
+                return (
+                  <>
+                    <p style={{ margin: "0 0 10px", fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
+                      Tap this many times on your watch
+                    </p>
+                    {/* SVG countdown ring + number */}
+                    <div className="alarm-bubble" style={{
+                      position: "relative", width: 120, height: 120, marginBottom: 14,
+                      animation: "challengeNumIn 0.42s cubic-bezier(0.4,0,0.2,1) both",
+                      willChange: "transform, opacity",
+                    }}>
+                      <svg width="120" height="120" viewBox="0 0 120 120"
+                        style={{ position: "absolute", inset: 0, transform: "rotate(-90deg)" }}
+                        aria-hidden
+                      >
+                        {/* Track */}
+                        <circle cx="60" cy="60" r={r} fill="none"
+                          stroke="rgba(0,204,122,0.1)" strokeWidth="3.5" />
+                        {/* Depleting arc */}
+                        <circle cx="60" cy="60" r={r} fill="none"
+                          stroke={ringClr} strokeWidth="3.5" strokeLinecap="round"
+                          strokeDasharray={`${circ}`}
+                          strokeDashoffset={dashOff}
+                          style={{ transition: "stroke-dashoffset 1s linear, stroke 0.4s" }}
+                        />
+                      </svg>
+                      {/* Inner fill */}
+                      <div style={{
+                        position: "absolute", inset: 10,
+                        borderRadius: "50%",
+                        background: "rgba(0,204,122,0.09)",
+                        boxShadow: `0 0 28px rgba(0,204,122,0.15)`,
+                      }} />
+                      {/* Number + countdown */}
+                      <div style={{
+                        position: "absolute", inset: 0,
+                        display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center", gap: 1,
+                      }}>
+                        <span style={{
+                          fontSize: 46, fontWeight: 800, color: "var(--green)", lineHeight: 1,
+                          textShadow: "0 0 20px rgba(0,204,122,0.45)",
+                        }}>
+                          {srv.challenge_number ?? "…"}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, lineHeight: 1,
+                          color: urgent ? ringClr : "var(--ink-3)",
+                          fontFamily: "var(--font-mono), monospace",
+                          transition: "color 0.3s",
+                        }}>
+                          {remaining}s
+                        </span>
+                      </div>
+                    </div>
+                    <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--ink-2)" }}>
+                      Tap the number on your Galaxy Watch, then submit.
+                    </p>
+                    <p style={{ margin: 0, fontSize: 10.5, color: "var(--ink-4)" }}>
+                      {remaining > 0 ? "Watch is listening…" : "Time expired — challenge closed"}
+                    </p>
+                  </>
+                );
+              })()
             ) : (
               /* ── Standard dismiss ── */
               <>
@@ -3151,6 +3210,24 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         @keyframes alarmEdge {
           0%,100% { box-shadow: inset 0 0 48px rgba(0,204,122,0.07); }
           50%      { box-shadow: inset 0 0 80px rgba(0,204,122,0.14); }
+        }
+        /* Mobile: compact layout so card fits on phone screens */
+        @media (max-width: 520px) {
+          .alarm-card {
+            padding: 28px 20px 22px !important;
+            max-width: calc(100vw - 24px) !important;
+            width: calc(100vw - 24px) !important;
+            border-radius: 10px !important;
+          }
+          .alarm-bubble {
+            width: 96px !important;
+            height: 96px !important;
+            margin-bottom: 10px !important;
+          }
+          .alarm-bubble svg {
+            width: 96px !important;
+            height: 96px !important;
+          }
         }
       `}</style>
 
