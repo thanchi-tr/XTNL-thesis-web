@@ -1412,8 +1412,9 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
   const [deleting,     setDeleting]     = useState(false);
   const [copiedPlanId, setCopiedPlanId] = useState(false);
 
-  const analyst     = comment.content.startsWith("Analyst comment:");
-  const isEntryPlan = comment.content.startsWith("entry_plan:");
+  const analyst      = comment.content.startsWith("Analyst comment:");
+  const isEntryPlan  = comment.content.startsWith("entry_plan:");
+  const isFocusAlert = !analyst && !isEntryPlan && comment.content.startsWith("[Focus Alert]");
   let planData: {
     id?: string;
     immediate?: boolean;
@@ -1462,8 +1463,8 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
       <div style={{
         position: "absolute", left: -14, top: 9,
         width: 8, height: 8, borderRadius: "50%",
-        background: cardExpanded ? accent : "var(--sub)",
-        border: `2px solid ${accent}`,
+        background: cardExpanded ? accent : isFocusAlert ? "rgba(240,58,87,0.12)" : "var(--sub)",
+        border: `2px solid ${isFocusAlert && !cardExpanded ? "rgba(240,58,87,0.30)" : accent}`,
         boxShadow: cardExpanded
           ? `0 0 0 4px ${analyst ? "rgba(240,160,48,0.18)" : isEntryPlan ? "rgba(0,204,122,0.18)" : "rgba(77,156,245,0.18)"}`
           : "none",
@@ -1483,9 +1484,9 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
           borderTop:    `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
           borderRight:  `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
           borderBottom: `1px solid ${cardExpanded ? accent + "44" : "transparent"}`,
-          borderLeft:   `2px solid ${accent}`,
+          borderLeft:   `2px solid ${isFocusAlert && !cardExpanded ? "rgba(240,58,87,0.28)" : accent}`,
           borderRadius: 5,
-          padding: cardExpanded ? "8px 12px" : "3px 10px",
+          padding: cardExpanded ? "8px 12px" : isFocusAlert ? "2px 10px" : "3px 10px",
           transition: "background 0.15s, border-color 0.15s, box-shadow 0.15s",
           boxShadow: cardExpanded ? "0 6px 28px rgba(0,0,0,0.38)" : "none",
           minWidth: 0, width: "100%",
@@ -1495,21 +1496,30 @@ function TLComment({ comment, top, axisX, focused, dimmed, onFocus, onBlur, tz, 
         }}>
 
         {!cardExpanded ? (
-          /* ── Collapsed: single row — timestamp · text ── */
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+          /* ── Collapsed: single row — timestamp · badge · text ── */
+          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
             <span style={{
-              fontSize: 10, fontFamily: "var(--font-mono)", color: accent,
-              flexShrink: 0, whiteSpace: "nowrap",
+              fontSize: 9.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)",
+              flexShrink: 0, whiteSpace: "nowrap", letterSpacing: "0.01em",
             }}>
               {fmtTz(comment.Entry, tz)}
             </span>
+            {isFocusAlert && (
+              <span style={{ fontSize: 8, fontWeight: 700, background: "rgba(240,58,87,0.08)", border: "1px solid rgba(240,58,87,0.20)", borderRadius: 3, padding: "1px 5px", color: "rgba(240,58,87,0.7)", flexShrink: 0, letterSpacing: "0.05em" }}>
+                ALERT
+              </span>
+            )}
             {isEntryPlan ? (
               <span style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 600, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
                 ⚡ Entry Plan{planData?.immediate ? " · Immediate" : ""}{planData?.entries?.length ? ` · ${planData.entries.length} entries` : ""}
               </span>
             ) : (
-              <span style={{ fontSize: 12, color: "var(--ink-1)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
-                {text}
+              <span style={{
+                fontSize: isFocusAlert ? 11 : 12,
+                color: isFocusAlert ? "var(--ink-3)" : "var(--ink-1)",
+                overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", flex: 1, minWidth: 0,
+              }}>
+                {isFocusAlert ? text.replace(/^\[Focus Alert\]\s*/, "") : text}
               </span>
             )}
             {analyst && <span className="chip chip-amber" style={{ fontSize: 7.5, flexShrink: 0 }}>A</span>}
@@ -1851,34 +1861,25 @@ function JournalTimeline({
           <div style={{ position: "relative", width: "100%", height: totalPx + TL_PAD + totalExtra, minHeight: 280, overflow: "hidden" }}>
 
             {/* Axis */}
-            <div style={{ position: "absolute", left: AXIS_X, top: 0, bottom: 0, width: 2, background: "var(--line-hi)", borderRadius: 1 }} />
+            <div style={{ position: "absolute", left: AXIS_X, top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.08)", borderRadius: 1 }} />
 
-            {/* Day dividers — pill label + full-width line */}
+            {/* Day dividers — left-anchored label + hairline */}
             {ticks.map((t, i) => (
-              <div key={i} style={{ position: "absolute", top: t.y, left: 0, right: 0, height: 20, pointerEvents: "none" }}>
-                {/* Line left of label */}
-                <div style={{ position: "absolute", top: 10, left: 8, right: `calc(100% - ${AXIS_X / 2 - 4}px)`, height: 1, background: "var(--line-hi)" }} />
-                {/* Line right of label */}
-                <div style={{ position: "absolute", top: 10, left: `${AXIS_X / 2 + 4}px`, right: 8, height: 1, background: "var(--line-hi)" }} />
-                {/* Pill */}
+              <div key={i} style={{ position: "absolute", top: t.y, left: 0, right: 0, height: 18, pointerEvents: "none" }}>
+                {/* Hairline spanning the right zone */}
+                <div style={{ position: "absolute", top: 9, left: AXIS_X + 12, right: 16, height: 1, background: "rgba(255,255,255,0.045)" }} />
+                {/* Day label — left zone, uppercase monospace */}
                 <span style={{
-                  position: "absolute",
-                  left: "50%", transform: `translateX(calc(-50% - ${(AXIS_X / 2)}px))`,
-                  top: 3,
-                  background: "var(--sub)",
-                  border: "1px solid var(--line-hi)",
-                  borderRadius: 20,
-                  padding: "1px 10px",
-                  fontSize: 9.5,
-                  fontFamily: "var(--font-mono)",
-                  color: "var(--ink-1)",
+                  position: "absolute", left: 8, top: 3,
+                  fontSize: 8.5, fontWeight: 700, letterSpacing: "0.07em",
+                  textTransform: "uppercase" as const,
+                  fontFamily: "var(--font-mono)", color: "var(--ink-3)",
                   whiteSpace: "nowrap",
-                  letterSpacing: "0.02em",
                 }}>
                   {t.label}
                 </span>
-                {/* Axis notch */}
-                <div style={{ position: "absolute", left: AXIS_X - 1, top: 6, width: 3, height: 9, background: "var(--line-hi)", borderRadius: 1 }} />
+                {/* Axis tick */}
+                <div style={{ position: "absolute", left: AXIS_X - 1, top: 5, width: 3, height: 8, background: "rgba(255,255,255,0.10)", borderRadius: 1 }} />
               </div>
             ))}
 

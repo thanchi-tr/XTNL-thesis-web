@@ -619,7 +619,7 @@ export default function NavBar() {
             <Link
               key={href} href={href} className="nav-link-mobile"
               onClick={() => setDrawerOpen(false)}
-              style={{ transitionDelay: drawerOpen ? `${i * 40}ms` : "0ms", opacity: drawerOpen ? 1 : 0, transform: drawerOpen ? "none" : "translateX(-8px)", transition: "opacity 0.25s ease, transform 0.25s ease, color 0.15s" }}
+              style={{ opacity: drawerOpen ? 1 : 0, transform: drawerOpen ? "none" : "translateX(-8px)", transitionProperty: "opacity, transform", transitionDuration: "0.25s, 0.25s", transitionTimingFunction: "ease, ease", transitionDelay: drawerOpen ? `${i * 40}ms` : "0ms" }}
             >
               {label}
             </Link>

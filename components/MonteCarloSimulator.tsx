@@ -13,9 +13,9 @@ import { useSimulator } from "@/context/SimulatorContext";
 
 /* ─── Presets ──────────────────────────────────────────────── */
 const PRESETS = [
-  { label: "Baseline",    icon: "◎", p: { operatorMeanEff: 0.82, edgeDecayPctPerQtr: 3,   baseRiskPct: 0.70 } },
-  { label: "Pessimistic", icon: "↘", p: { operatorMeanEff: 0.70, edgeDecayPctPerQtr: 6,   baseRiskPct: 0.50 } },
-  { label: "Optimistic",  icon: "↗", p: { operatorMeanEff: 0.92, edgeDecayPctPerQtr: 1.5, baseRiskPct: 0.85 } },
+  { label: "Baseline",    p: { operatorMeanEff: 0.82, edgeDecayPctPerQtr: 3,   baseRiskPct: 0.70 } },
+  { label: "Pessimistic", p: { operatorMeanEff: 0.70, edgeDecayPctPerQtr: 6,   baseRiskPct: 0.50 } },
+  { label: "Optimistic",  p: { operatorMeanEff: 0.92, edgeDecayPctPerQtr: 1.5, baseRiskPct: 0.85 } },
 ];
 
 /* ─── Module-level helpers ─────────────────────────────────── */
@@ -25,13 +25,14 @@ const fmtEq = (v: number) =>
   : `${v.toFixed(2)}×`;
 
 /* ─── Sub-components ───────────────────────────────────────── */
-function SectionHead({ icon, title, sub }: { icon: string; title: string; sub?: string }) {
+function SectionHead({ title, sub }: { title: string; sub?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <p className="label-xs" style={{ color: "rgba(0,204,122,0.85)", marginBottom: 3 }}>
-        {icon} {title}
-      </p>
-      {sub && <p style={{ fontSize: 10, color: "rgba(142,163,190,0.55)", lineHeight: 1.5 }}>{sub}</p>}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: sub ? 4 : 0 }}>
+        <span style={{ width: 2, height: 10, borderRadius: 1, background: "rgba(0,204,122,0.65)", flexShrink: 0 }} />
+        <p className="label-xs" style={{ color: "var(--ink-1)" }}>{title}</p>
+      </div>
+      {sub && <p style={{ fontSize: 10, color: "rgba(142,163,190,0.40)", lineHeight: 1.5, paddingLeft: 9 }}>{sub}</p>}
     </div>
   );
 }
@@ -67,9 +68,9 @@ function StatCard({ label, value, accent = "#00cc7a", sub }: {
 function ChartTip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: number }) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: "#1a2d45", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, padding: "10px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)" }}>
-      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 5 }}>Week {label}</p>
-      <p style={{ fontSize: 15, color: "#fff", fontWeight: 700 }}>{payload[0].value.toFixed(3)}×</p>
+    <div style={{ background: "#07101c", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, padding: "10px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)" }}>
+      <p style={{ fontSize: 10, color: "rgba(142,163,190,0.65)", marginBottom: 5 }}>Week {label}</p>
+      <p style={{ fontSize: 15, color: "var(--ink-0)", fontWeight: 700 }}>{payload[0].value.toFixed(3)}×</p>
     </div>
   );
 }
@@ -85,8 +86,8 @@ function FanTip({ active, payload, label }: { active?: boolean; payload?: { data
     ["P5",  get("p5"),  "#f03a57"],
   ];
   return (
-    <div style={{ background: "#1a2d45", border: "1px solid rgba(0,204,122,0.22)", borderRadius: 6, padding: "10px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)", minWidth: 168 }}>
-      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 7 }}>Week {label}</p>
+    <div style={{ background: "#07101c", border: "1px solid rgba(0,204,122,0.15)", borderRadius: 6, padding: "10px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)", minWidth: 168 }}>
+      <p style={{ fontSize: 10, color: "rgba(142,163,190,0.65)", marginBottom: 7 }}>Week {label}</p>
       {rows.map(([k, v, c]) => v !== undefined && (
         <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 3 }}>
           <span style={{ fontSize: 9, color: c }}>{k}</span>
@@ -104,14 +105,14 @@ function EffTip({ active, payload, label }: { active?: boolean; payload?: { valu
   const tier = eff >= 0.95 ? "Excellence" : eff >= 0.80 ? "Normal" : eff >= 0.50 ? "Reduced" : "Critical/Halt";
   const c    = eff >= 0.95 ? "#00e88c" : eff >= 0.80 ? "#00cc7a" : eff >= 0.50 ? "#f0a030" : "#f03a57";
   return (
-    <div style={{ background: "#1a2d45", border: `1px solid ${c}45`, borderRadius: 6, padding: "12px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)", minWidth: 160 }}>
-      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 8 }}>Week {label}</p>
+    <div style={{ background: "#07101c", border: `1px solid ${c}35`, borderRadius: 6, padding: "12px 14px", fontFamily: "ui-monospace,monospace", boxShadow: "0 12px 40px rgba(0,0,0,0.8)", minWidth: 160 }}>
+      <p style={{ fontSize: 10, color: "rgba(142,163,190,0.65)", marginBottom: 8 }}>Week {label}</p>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 5 }}>
-        <span style={{ fontSize: 10, color: "#8ea3be" }}>Efficiency</span>
+        <span style={{ fontSize: 10, color: "rgba(142,163,190,0.65)" }}>Efficiency</span>
         <span className="mono" style={{ fontSize: 13, color: c, fontWeight: 800 }}>{(eff*100).toFixed(1)}%</span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 8 }}>
-        <span style={{ fontSize: 10, color: "#8ea3be" }}>Regime Penalty</span>
+        <span style={{ fontSize: 10, color: "rgba(142,163,190,0.65)" }}>Regime Penalty</span>
         <span className="mono" style={{ fontSize: 13, color: reg < 1 ? "#f03a57" : "#8ea3be", fontWeight: 700 }}>{reg.toFixed(2)}×</span>
       </div>
       <p style={{ fontSize: 9, color: c, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase" }}>{tier}</p>
@@ -123,9 +124,9 @@ function HistTip({ active, payload }: { active?: boolean; payload?: { payload: {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div style={{ background: "#1a2d45", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "8px 12px", fontFamily: "ui-monospace,monospace" }}>
-      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 3 }}>{d.label}</p>
-      <p style={{ fontSize: 13, color: d.isMedian ? "#00cc7a" : "#fff", fontWeight: 700 }}>
+    <div style={{ background: "#07101c", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, padding: "8px 12px", fontFamily: "ui-monospace,monospace" }}>
+      <p style={{ fontSize: 10, color: "rgba(142,163,190,0.65)", marginBottom: 3 }}>{d.label}</p>
+      <p style={{ fontSize: 13, color: d.isMedian ? "#00cc7a" : "var(--ink-0)", fontWeight: 700 }}>
         {d.count} paths{d.isMedian ? " ← median" : ""}
       </p>
     </div>
@@ -136,9 +137,9 @@ function DDHistTip({ active, payload }: { active?: boolean; payload?: { payload:
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div style={{ background: "#1a2d45", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "8px 12px", fontFamily: "ui-monospace,monospace" }}>
-      <p style={{ fontSize: 10, color: "#8ea3be", marginBottom: 3 }}>Max DD ~{d.label}</p>
-      <p style={{ fontSize: 13, color: d.isMean ? "#f03a57" : "#fff", fontWeight: 700 }}>
+    <div style={{ background: "#07101c", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, padding: "8px 12px", fontFamily: "ui-monospace,monospace" }}>
+      <p style={{ fontSize: 10, color: "rgba(142,163,190,0.65)", marginBottom: 3 }}>Max DD ~{d.label}</p>
+      <p style={{ fontSize: 13, color: d.isMean ? "#f03a57" : "var(--ink-0)", fontWeight: 700 }}>
         {d.count} paths{d.isMean ? " ← mean" : ""}
       </p>
     </div>
@@ -320,14 +321,14 @@ export default function MonteCarloSimulator() {
       {/* ── Presets ──────────────────────────────────────── */}
       <div style={{ padding: "8px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <span className="label-xs" style={{ marginRight: 4 }}>Scenario:</span>
-        {PRESETS.map(({ label, icon, p: preset }) => (
+        {PRESETS.map(({ label, p: preset }) => (
           <button key={label} className="btn btn-ghost" style={{ fontSize: 10, padding: "4px 12px" }} onClick={() => applyPreset(preset)}>
-            {icon} {label}
+            {label}
           </button>
         ))}
         {!authed && (
-          <span style={{ marginLeft: "auto", fontSize: 9, color: "rgba(142,163,190,0.38)", fontStyle: "italic" }}>
-            Preset-only mode
+          <span className="label-xs" style={{ marginLeft: "auto", color: "rgba(142,163,190,0.30)" }}>
+            Preset-only
           </span>
         )}
       </div>
@@ -360,7 +361,7 @@ export default function MonteCarloSimulator() {
 
           {/* ── Operator ─────────────────────────────── */}
           <div>
-            <SectionHead icon="🧠" title="Operator (OU Process)" sub="Efficiency tracks a mean-reverting random walk: θ=0.35 (reversion), σ=7.5% (weekly volatility). Shocks persist ~3 weeks before normalising." />
+            <SectionHead title="Operator (OU Process)" sub="Mean-reverting OU · θ=0.35, σ=7.5% · shocks persist ~3 weeks" />
             <SliderControl
               label="Mean Efficiency μ_eff"
               value={p.operatorMeanEff}
@@ -381,7 +382,7 @@ export default function MonteCarloSimulator() {
 
           {/* ── Edge ─────────────────────────────────── */}
           <div>
-            <SectionHead icon="🎯" title="Edge Parameters" sub="All trades simulated individually within each week — losing streak tracks per-trade. MC95 losing streak threshold = 12 trades (from live SESSION_FILTERED data)." />
+            <SectionHead title="Edge Parameters" sub="Trades simulated individually per week · MC95 losing streak = 12 trades" />
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <SliderControl label="Base Risk θ  (% of account)" value={p.baseRiskPct} displayValue={`${p.baseRiskPct.toFixed(2)}%`} min={0.1} max={2.0} step={0.01} tooltip="CVaR-derived position size per 1R trade. Live: 0.70%." onChange={(v) => update("baseRiskPct", v)} readOnly={!authed} />
               <SliderControl label="Expectancy μ  (R per trade)" value={p.expPerTrade} displayValue={`${p.expPerTrade.toFixed(3)} R`} min={0.1} max={2.0} step={0.01} tooltip="Mean R-multiple per trade. Erodes quarterly by edge decay. Live: 0.982 R." onChange={(v) => update("expPerTrade", v)} readOnly={!authed} />
@@ -395,7 +396,7 @@ export default function MonteCarloSimulator() {
 
           {/* ── Commission ───────────────────────────── */}
           <div>
-            <SectionHead icon="💰" title="Commission Distribution" sub="Mirrors current_commission_generator.py. Gate: eff ≥ 88%. Commission deducted from equity each qualifying week after the start delay." />
+            <SectionHead title="Commission Distribution" sub="Gate: eff ≥ 88% · deducted each qualifying week after start delay" />
             <SliderControl label="Distribution Starts  (week)" value={p.commissionStartWeek} displayValue={`W${p.commissionStartWeek} (Yr ${Math.ceil(p.commissionStartWeek/52)})`} min={0} max={260} step={4} tooltip="Weeks before commission payments begin." onChange={(v) => update("commissionStartWeek", v)} readOnly={!authed} />
             <div style={{ marginTop: 10, padding: "8px 10px", background: "rgba(0,204,122,0.04)", borderRadius: 4, border: "1px solid rgba(0,204,122,0.10)" }}>
               <InfoBadge label="Base rate" value="20% of recommend_r" />
@@ -409,7 +410,7 @@ export default function MonteCarloSimulator() {
 
           {/* ── Capital Injection ────────────────────── */}
           <div>
-            <SectionHead icon="💎" title="Capital Injection" sub="Mirrors memory_generator.py 4-week gate logic. Pool grows with excellence (1.20× volatility-shielded scaling). Resets to baseline on any disqualifying week." />
+            <SectionHead title="Capital Injection" sub="4-week gate · pool scales 1.20× with excellence · resets on fail" />
             <SliderControl label="Frozen Pool  (% of initial cap)" value={p.frozenPoolPct} displayValue={p.frozenPoolPct === 0 ? "Off" : `${(p.frozenPoolPct*100).toFixed(0)}% / period`} min={0} max={1.0} step={0.05} tooltip="Capital injected each qualifying 4-week period." onChange={(v) => update("frozenPoolPct", v)} readOnly={!authed} />
             {p.frozenPoolPct > 0 && (
               <div style={{ marginTop: 10, padding: "8px 10px", background: "rgba(0,204,122,0.04)", borderRadius: 4, border: "1px solid rgba(0,204,122,0.10)" }}>
@@ -426,7 +427,7 @@ export default function MonteCarloSimulator() {
 
           {/* ── Risk Controls ────────────────────────── */}
           <div>
-            <SectionHead icon="🛡️" title="Risk Controls" />
+            <SectionHead title="Risk Controls" />
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <SliderControl label="Tax Rate  (ATO annual)" value={p.taxRatePct} displayValue={`${p.taxRatePct.toFixed(0)}%`} min={0} max={47} step={1} tooltip="Applied to realised gains each year-end. 47% = ATO top marginal + 2% Medicare." onChange={(v) => update("taxRatePct", v)} readOnly={!authed} />
               <SliderControl label="DD Halt  (% threshold)" value={p.maxDDLimit} displayValue={p.maxDDLimit === 0 ? "Off" : `-${p.maxDDLimit}%`} min={0} max={60} step={5} tooltip="Halt a simulation path if drawdown exceeds this percentage from peak." onChange={(v) => update("maxDDLimit", v)} readOnly={!authed} />
