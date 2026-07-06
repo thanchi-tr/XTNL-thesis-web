@@ -210,6 +210,14 @@ export default function NavBar() {
           from { opacity: 0; transform: translateY(-100%); }
           to   { opacity: 1; transform: translateY(0); }
         }
+        @keyframes toastSlideIn {
+          from { opacity: 0; transform: translateY(16px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        @keyframes toastPulseGlow {
+          0%,100% { box-shadow: 0 0 0 0 rgba(0,204,122,0.30); }
+          55%      { box-shadow: 0 0 0 6px rgba(0,204,122,0); }
+        }
       `}</style>
       <nav
         style={{
@@ -446,6 +454,30 @@ export default function NavBar() {
                 </svg>
               </button>
             )}
+            {alarmScheduled && !alarmRunning && (
+              <Link
+                href="/session"
+                title="Alarm scheduled"
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 22, height: 22, borderRadius: "50%",
+                  background: "rgba(240,160,48,0.12)",
+                  border: "1px solid rgba(240,160,48,0.30)",
+                  color: "var(--amber)",
+                  animation: "navScheduledPulse 2.8s ease-in-out infinite",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="10" height="10" viewBox="0 0 36 36" fill="none" aria-hidden>
+                  <path d="M18 3.5V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                    fill="rgba(240,160,48,0.12)"/>
+                  <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                </svg>
+              </Link>
+            )}
             <button
               onClick={() => setDrawerOpen(!drawerOpen)}
               aria-label={drawerOpen ? "Close menu" : "Open menu"}
@@ -460,43 +492,114 @@ export default function NavBar() {
         </div>
       </nav>
 
-      {/* ── Focus window / challenge alert banner ────────── */}
-      {(focusWindowAlert || challengeAlert) && pathname !== "/session" && (
-        <div style={{
-          position: "fixed", top: "var(--nav-h)", left: 0, right: 0, zIndex: 150,
-          background: "rgba(4,8,15,0.95)", backdropFilter: "blur(14px)",
-          borderBottom: "1px solid rgba(0,204,122,0.3)",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-          padding: "9px 16px", flexWrap: "wrap" as const,
-          animation: "bannerSlideDown 0.22s cubic-bezier(0.4,0,0.2,1) both",
-        }}>
-          <svg width="11" height="11" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}>
-            <path d="M18 3.5V6" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
-            <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="rgba(0,204,122,0.12)"/>
-            <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
-          </svg>
-          <span style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}>
-            {focusWindowAlert ? "Focus window active" : "Focus challenge ready"}
-          </span>
-          {challengeAlert && focusWindowAlert && (
-            <span style={{ fontSize: 10.5, color: "var(--ink-3)" }}>· challenge ready</span>
-          )}
-          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>—</span>
-          <Link
-            href="/session"
-            onClick={() => { setChallengeAlert(false); setFocusWindowAlert(false); }}
-            style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
-          >
-            Go to Session
-          </Link>
-          <button
-            onClick={() => { setChallengeAlert(false); setFocusWindowAlert(false); }}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)", padding: "2px 4px", lineHeight: 1, marginLeft: 4 }}
-          >
-            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
-          </button>
-        </div>
-      )}
+      {/* ── Focus window / challenge alert toast ─────────── */}
+      {(focusWindowAlert || challengeAlert) && pathname !== "/session" && (() => {
+        const timer = computeAlarmTimer();
+        return (
+          <div style={{
+            position: "fixed", bottom: 28, right: 24, zIndex: 150,
+            width: 300,
+            background: "rgba(4,8,15,0.97)",
+            backdropFilter: "blur(20px) saturate(180%)",
+            WebkitBackdropFilter: "blur(20px) saturate(180%)",
+            border: "1px solid rgba(0,204,122,0.32)",
+            borderRadius: 12,
+            boxShadow: "0 12px 48px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,204,122,0.06)",
+            animation: "toastSlideIn 0.30s cubic-bezier(0.34,1.26,0.64,1) both",
+            overflow: "hidden",
+          }}>
+            {/* Accent bar */}
+            <div style={{
+              height: 3,
+              background: "linear-gradient(90deg, var(--green) 0%, rgba(0,204,122,0.25) 100%)",
+              animation: "toastPulseGlow 2.2s ease-in-out infinite",
+            }} />
+
+            <div style={{ padding: "16px 16px 14px" }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+                {/* Bell icon */}
+                <div style={{
+                  width: 42, height: 42, borderRadius: 10, flexShrink: 0,
+                  background: "rgba(0,204,122,0.10)",
+                  border: "1px solid rgba(0,204,122,0.28)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  animation: "navAlarmPulse 2s ease-in-out infinite",
+                }}>
+                  <svg width="22" height="22" viewBox="0 0 36 36" fill="none" aria-hidden>
+                    <path d="M18 3.5V6" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
+                    <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z"
+                      stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                      fill="rgba(0,204,122,0.15)"/>
+                    <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5"
+                      stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
+                  </svg>
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--green)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
+                    {challengeAlert ? "FOCUS CHALLENGE" : "FOCUS WINDOW"}
+                  </p>
+                  <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.4 }}>
+                    {challengeAlert
+                      ? "Watch tap challenge is ready — respond now"
+                      : "Focus window is active — head to the session"}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => { setChallengeAlert(false); setFocusWindowAlert(false); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)", padding: 2, lineHeight: 1, flexShrink: 0, marginTop: 1 }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+                    <line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/>
+                  </svg>
+                </button>
+              </div>
+
+              {/* Timer strip */}
+              {timer.countdown !== "—" && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "7px 10px", borderRadius: 6, marginBottom: 12,
+                  background: "rgba(0,204,122,0.05)",
+                  border: "1px solid rgba(0,204,122,0.12)",
+                }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>
+                    {timer.inFocus ? "Focus left" : "Next"}
+                  </span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 700, color: timer.inFocus ? "var(--green)" : "var(--ink-1)" }}>
+                    {timer.countdown}
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-4)", fontFamily: "var(--font-mono)" }}>
+                    {timer.intervalMin}m · {timer.focusMin}m focus
+                  </span>
+                </div>
+              )}
+
+              {/* CTA */}
+              <Link
+                href="/session"
+                onClick={() => { setChallengeAlert(false); setFocusWindowAlert(false); }}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  padding: "10px 0",
+                  background: "rgba(0,204,122,0.12)",
+                  border: "1px solid rgba(0,204,122,0.28)",
+                  borderRadius: 7,
+                  color: "var(--green)", fontSize: 12.5, fontWeight: 700,
+                  letterSpacing: "0.04em", textDecoration: "none",
+                }}
+              >
+                Go to Session
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 7h10M8 3l4 4-4 4"/>
+                </svg>
+              </Link>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Mobile drawer ─────────────────────────────────── */}
       <div
