@@ -2696,6 +2696,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   type SrvState = {
     running:                  boolean;
     started_at:               string | null;
+    scheduled_start:          string | null;
     interval_min:             number;
     focus_min:                number;
     last_ack_cycle:           number;
@@ -2707,8 +2708,8 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     challenge_expires_at:     string | null;
   };
   const SRV0: SrvState = {
-    running: false, started_at: null, interval_min: 15, focus_min: 2, last_ack_cycle: -1,
-    enforce_focus: false, entry_checklist_enabled: false,
+    running: false, started_at: null, scheduled_start: null, interval_min: 15, focus_min: 2,
+    last_ack_cycle: -1, enforce_focus: false, entry_checklist_enabled: false,
     challenge_number: null, challenge_cycle: -1, challenge_status: null, challenge_expires_at: null,
   };
 
@@ -2724,6 +2725,13 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const [volume,            setVolume]            = useState(0.7);
   const [syncing,           setSyncing]           = useState(false);
   const [challengeSilenced, setChallengeSilenced] = useState(false);
+  const [scheduleMode,      setScheduleMode]      = useState<"immediate" | "schedule">("immediate");
+  const [scheduleTime,      setScheduleTime]      = useState<string>(() => {
+    const d = new Date(Date.now() + 60 * 60_000);
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  });
+  const [scheduleTick,      setScheduleTick]      = useState(0);
 
   const challengeStartedCycle       = useRef(-1); // which cycle we already called challenge_start for
   const challengeResultNotifiedCycle = useRef(-1); // which cycle we already fired pass/fail toast for
@@ -2804,7 +2812,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
 
-    const interval = srv.running ? 2_000 : 15_000;
+    const interval = srv.running ? 2_000 : (srv.scheduled_start ? 5_000 : 15_000);
     pollRef.current = setInterval(() => {
       if (document.visibilityState !== "hidden") void fetchState();
     }, interval);
@@ -2816,7 +2824,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
       if (pollRef.current) clearInterval(pollRef.current);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [srv.running, fetchState]);
+  }, [srv.running, srv.scheduled_start, fetchState]);
 
   /* ── API actions ────────────────────────────────────── */
   const callAPI = useCallback(async (body: Record<string, unknown>) => {
@@ -2923,6 +2931,18 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
 
   const handleStop = useCallback(() => void callAPI({ action: "stop" }), [callAPI]);
 
+  const handleSchedule = useCallback(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default")
+      Notification.requestPermission().catch(() => {});
+    const [h, m] = scheduleTime.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+    void callAPI({ action: "schedule", scheduledStart: d.toISOString(), intervalMin, focusMin });
+  }, [callAPI, scheduleTime, intervalMin, focusMin]);
+
+  const handleCancelSchedule = useCallback(() => void callAPI({ action: "cancel_schedule" }), [callAPI]);
+
   const handleAck = useCallback(() => {
     if (!srv.started_at) { setFlash(false); return; }
     const cycleNum = Math.floor((Date.now() - new Date(srv.started_at).getTime()) / 1000 / (srv.interval_min * 60));
@@ -2934,7 +2954,15 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     void callAPI({ action: "toggle_enforce_focus" });
   }, [callAPI]);
 
+  /* Tick every second to rerender the schedule countdown */
+  useEffect(() => {
+    if (!srv.scheduled_start || srv.running) return;
+    const id = setInterval(() => setScheduleTick(n => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [srv.scheduled_start, srv.running]);
+
   const running      = srv.running;
+  const isScheduled  = !running && !!srv.scheduled_start;
   const dispInterval = running ? srv.interval_min : intervalMin;
   const dispFocus    = running ? srv.focus_min    : focusMin;
 
@@ -2946,6 +2974,24 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function formatScheduledTime(isoStr: string): string {
+    return new Date(isoStr).toLocaleTimeString("en-AU", {
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short",
+    });
+  }
+
+  function fmtScheduleRemaining(isoStr: string): string {
+    // scheduleTick is a state counter that triggers re-renders every second
+    const _tick = scheduleTick; void _tick;
+    const diff = Math.max(0, Math.floor((new Date(isoStr).getTime() - Date.now()) / 1000));
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    const s = diff % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   }
 
   return (
@@ -3256,6 +3302,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               ACTIVE
             </span>
           )}
+          {isScheduled && (
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--amber)", background: "rgba(240,160,48,0.12)", padding: "2px 7px", borderRadius: 3, letterSpacing: "0.06em" }}>
+              SCHEDULED
+            </span>
+          )}
           {/* Challenge mute toggle */}
           <button
             type="button"
@@ -3433,23 +3484,117 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
             </div>
           </div>
 
-          {/* Start / Stop */}
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={running ? handleStop : handleStart}
-            style={{
-              width: "100%", padding: "9px 0", borderRadius: 6, border: "none",
-              background: running ? "rgba(240,58,87,0.1)" : "rgba(0,204,122,0.1)",
-              color: running ? "var(--red)" : "var(--green)",
-              outline: `1px solid ${running ? "rgba(240,58,87,0.28)" : "rgba(0,204,122,0.22)"}`,
-              fontSize: 12.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
-              transition: "background 0.15s, color 0.15s, outline-color 0.15s",
-              letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
-            }}
-          >
-            {syncing ? "Syncing…" : running ? "Stop Alarm" : "Start Alarm"}
-          </button>
+          {/* Start / Stop / Schedule */}
+          {running ? (
+            /* ── Running: stop button ── */
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={handleStop}
+              style={{
+                width: "100%", padding: "9px 0", borderRadius: 6, border: "none",
+                background: "rgba(240,58,87,0.1)", color: "var(--red)",
+                outline: "1px solid rgba(240,58,87,0.28)",
+                fontSize: 12.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
+                transition: "background 0.15s, color 0.15s, outline-color 0.15s",
+                letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
+              }}
+            >
+              {syncing ? "Syncing…" : "Stop Alarm"}
+            </button>
+          ) : isScheduled ? (
+            /* ── Scheduled: countdown + cancel ── */
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{
+                padding: "9px 12px", borderRadius: 6,
+                background: "rgba(240,160,48,0.07)",
+                outline: "1px solid rgba(240,160,48,0.22)",
+                display: "flex", flexDirection: "column", gap: 3,
+              }}>
+                <p style={{ margin: 0, fontSize: 9.5, fontWeight: 600, color: "var(--amber)", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>
+                  Scheduled for {formatScheduledTime(srv.scheduled_start!)}
+                </p>
+                <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 700, color: "var(--ink-1)" }}>
+                  Starts in {fmtScheduleRemaining(srv.scheduled_start!)}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={syncing}
+                onClick={handleCancelSchedule}
+                style={{
+                  width: "100%", padding: "7px 0", borderRadius: 6, border: "none",
+                  background: "rgba(240,58,87,0.07)", color: "var(--red)",
+                  outline: "1px solid rgba(240,58,87,0.22)",
+                  fontSize: 11.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
+                  letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
+                }}
+              >
+                {syncing ? "Syncing…" : "Cancel Schedule"}
+              </button>
+            </div>
+          ) : (
+            /* ── Idle: mode toggle + optional time picker + action ── */
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {/* Mode tabs */}
+              <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", outline: "1px solid var(--line-hi)", background: "var(--raised)" }}>
+                {(["immediate", "schedule"] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setScheduleMode(mode)}
+                    style={{
+                      flex: 1, padding: "6px 0", border: "none",
+                      background: scheduleMode === mode ? "rgba(0,204,122,0.12)" : "transparent",
+                      color: scheduleMode === mode ? "var(--green)" : "var(--ink-3)",
+                      fontSize: 10.5, fontWeight: 700,
+                      cursor: "pointer", letterSpacing: "0.04em",
+                      transition: "background 0.15s, color 0.15s",
+                    }}
+                  >
+                    {mode === "immediate" ? "Start Now" : "Schedule"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Time picker — only in schedule mode */}
+              {scheduleMode === "schedule" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 9.5, fontWeight: 600, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const, flexShrink: 0 }}>
+                    Start at
+                  </label>
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={e => setScheduleTime(e.target.value)}
+                    style={{
+                      flex: 1, padding: "5px 8px", borderRadius: 4,
+                      background: "var(--card)", border: "1px solid var(--line-hi)",
+                      color: "var(--ink-1)", fontSize: 13, fontFamily: "var(--font-mono)",
+                      fontWeight: 700, outline: "none",
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Action button */}
+              <button
+                type="button"
+                disabled={syncing}
+                onClick={scheduleMode === "immediate" ? handleStart : handleSchedule}
+                style={{
+                  width: "100%", padding: "9px 0", borderRadius: 6, border: "none",
+                  background: "rgba(0,204,122,0.1)", color: "var(--green)",
+                  outline: "1px solid rgba(0,204,122,0.22)",
+                  fontSize: 12.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
+                  transition: "background 0.15s, color 0.15s, outline-color 0.15s",
+                  letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
+                }}
+              >
+                {syncing ? "Syncing…" : scheduleMode === "immediate" ? "Start Alarm" : "Schedule Alarm"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>

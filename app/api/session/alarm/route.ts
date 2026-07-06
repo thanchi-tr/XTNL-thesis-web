@@ -12,6 +12,7 @@ function authed(session: Session | null): boolean {
 export type AlarmState = {
   running:                  boolean;
   started_at:               string | null;
+  scheduled_start:          string | null;  // ISO — auto-starts alarm when GET is called after this time
   interval_min:             number;
   focus_min:                number;
   last_ack_cycle:           number;
@@ -26,6 +27,7 @@ export type AlarmState = {
 const DEFAULT: AlarmState = {
   running:                 false,
   started_at:              null,
+  scheduled_start:         null,
   interval_min:            15,
   focus_min:               2,
   last_ack_cycle:          -1,
@@ -96,6 +98,24 @@ export async function GET() {
     if (!authed(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const state = await readState();
+    const userId = OPERATOR_USER_ID ?? (((session as AuthedSession).user) as { id?: string } | undefined)?.id;
+
+    // Auto-start: scheduled time has arrived
+    if (!state.running && state.scheduled_start && Date.now() >= new Date(state.scheduled_start).getTime()) {
+      const next: AlarmState = {
+        ...state,
+        running:              true,
+        started_at:           state.scheduled_start,  // honour exact scheduled moment
+        scheduled_start:      null,
+        last_ack_cycle:       -1,
+        challenge_number:     null,
+        challenge_cycle:      -1,
+        challenge_status:     null,
+        challenge_expires_at: null,
+      };
+      await writeState(next, userId);
+      return NextResponse.json(next);
+    }
 
     // Auto-expire pending challenge
     if (
@@ -103,7 +123,6 @@ export async function GET() {
       state.challenge_expires_at &&
       Date.now() > new Date(state.challenge_expires_at).getTime()
     ) {
-      const userId = OPERATOR_USER_ID ?? (((session as AuthedSession).user) as { id?: string } | undefined)?.id;
       const newState: AlarmState = { ...state, challenge_status: "fail", last_ack_cycle: state.challenge_cycle };
       await writeState(newState, userId);
       await submitFailComment(userId);
@@ -133,6 +152,7 @@ export async function PUT(req: Request) {
       cycle?:           unknown;
       challengeNumber?: unknown;
       taps?:            unknown;
+      scheduledStart?:  unknown;
     };
 
     const current = await readState();
@@ -147,6 +167,7 @@ export async function PUT(req: Request) {
         ...current,
         running:              true,
         started_at:           new Date().toISOString(),
+        scheduled_start:      null,
         interval_min:         iMin,
         focus_min:            Math.max(1, fMin),
         last_ack_cycle:       -1,
@@ -159,9 +180,39 @@ export async function PUT(req: Request) {
       return NextResponse.json(next);
     }
 
+    if (body.action === "schedule") {
+      if (current.running) return NextResponse.json({ error: "Cannot schedule while alarm is running." }, { status: 400 });
+      const raw = typeof body.scheduledStart === "string" ? body.scheduledStart : null;
+      if (!raw) return NextResponse.json({ error: "scheduledStart required." }, { status: 400 });
+      const scheduledMs = new Date(raw).getTime();
+      if (isNaN(scheduledMs) || scheduledMs <= Date.now()) {
+        return NextResponse.json({ error: "scheduledStart must be a valid future ISO timestamp." }, { status: 400 });
+      }
+      const iMin = typeof body.intervalMin === "number" && body.intervalMin >= 2
+        ? Math.min(Math.floor(body.intervalMin), 120) : current.interval_min;
+      const fMin = typeof body.focusMin === "number" && body.focusMin >= 1
+        ? Math.min(Math.floor(body.focusMin), iMin - 1) : Math.min(current.focus_min, iMin - 1);
+      const next: AlarmState = {
+        ...current,
+        running:              false,
+        scheduled_start:      raw,
+        interval_min:         iMin,
+        focus_min:            Math.max(1, fMin),
+      };
+      await writeState(next, userId);
+      return NextResponse.json(next);
+    }
+
+    if (body.action === "cancel_schedule") {
+      if (!current.scheduled_start) return NextResponse.json(current);
+      const next: AlarmState = { ...current, scheduled_start: null };
+      await writeState(next, userId);
+      return NextResponse.json(next);
+    }
+
     if (body.action === "stop") {
       if (!current.running) return NextResponse.json(current);
-      const next: AlarmState = { ...current, running: false, started_at: null };
+      const next: AlarmState = { ...current, running: false, started_at: null, scheduled_start: null };
       await writeState(next, userId);
       return NextResponse.json(next);
     }
