@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { XtnlLogoAnimation } from "@/components/ui/XtnlLogoAnimation";
+import { DatetimePicker } from "@/components/ui/DatetimePicker";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import { getSessionStatus } from "@/lib/sessionStatus";
 
@@ -2011,27 +2012,11 @@ function RecordTradeForm({ selectedId, hydrate, onSuccess, showToast, baseTZ }: 
         <div><label style={LBL}>Trade ID</label><input style={INP} placeholder="Enter value" value={tradeId} onChange={e => setTradeId(e.target.value)} /></div>
         <div>
           <label style={{ ...LBL, color: "var(--red)" }}>Entry *</label>
-          <input
-            type="datetime-local" style={INP} value={entry} required
-            onChange={e => setEntry(e.target.value)}
-            onPaste={e => {
-              const parsed = parseFlexDatetime(e.clipboardData.getData("text"));
-              if (parsed) { e.preventDefault(); setEntry(parsed); }
-            }}
-            title="Type or paste a date — e.g. Jun 26 · 12:15 PM"
-          />
+          <DatetimePicker value={entry} onChange={setEntry} style={INP} required />
         </div>
         <div>
           <label style={{ ...LBL, color: "var(--red)" }}>Exit *</label>
-          <input
-            type="datetime-local" style={INP} value={exit_} required
-            onChange={e => setExit(e.target.value)}
-            onPaste={e => {
-              const parsed = parseFlexDatetime(e.clipboardData.getData("text"));
-              if (parsed) { e.preventDefault(); setExit(parsed); }
-            }}
-            title="Type or paste a date — e.g. Jun 26 · 12:15 PM"
-          />
+          <DatetimePicker value={exit_} onChange={setExit} style={INP} required />
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div><label style={{ ...LBL, color: "var(--red)" }}>ExemptR *</label><input type="number" step="0.01" style={INP} value={exemptR} onChange={e => setExemptR(e.target.value)} required /></div>
@@ -2255,14 +2240,7 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, failCompliance,
         {isAnalyst && (
           <div>
             <label style={LBL}>Created At</label>
-            <input
-              type="datetime-local" style={INP} value={createdAt}
-              onChange={e => setCreatedAt(e.target.value)}
-              onPaste={e => {
-                const parsed = parseFlexDatetime(e.clipboardData.getData("text"));
-                if (parsed) { e.preventDefault(); setCreatedAt(parsed); }
-              }}
-            />
+            <DatetimePicker value={createdAt} onChange={setCreatedAt} style={INP} />
           </div>
         )}
 
@@ -2469,14 +2447,7 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
                     )}
                   </span>
                 </div>
-                <input
-                  type="datetime-local" style={INP} value={dts[i]}
-                  onChange={e => setDt(i, e.target.value)}
-                  onPaste={ev => {
-                    const parsed = parseFlexDatetime(ev.clipboardData.getData("text"));
-                    if (parsed) { ev.preventDefault(); setDt(i, parsed); }
-                  }}
-                />
+                <DatetimePicker value={dts[i]} onChange={v => setDt(i, v)} style={INP} />
               </div>
             );
           })}
