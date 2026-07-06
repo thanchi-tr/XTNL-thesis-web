@@ -9,6 +9,7 @@ import Calculator   from "@/components/ui/Calculator";
 import SessionProvider          from "@/components/SessionProvider";
 import { SimulatorProvider }   from "@/context/SimulatorContext";
 import FounderWelcome          from "@/components/FounderWelcome";
+import XtnlIntroOverlay        from "@/components/ui/XtnlIntroOverlay";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <ScrollToTop />
             <Calculator />
             <FounderWelcome />
+            <XtnlIntroOverlay />
           </SimulatorProvider>
         </SessionProvider>
       </body>

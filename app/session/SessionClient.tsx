@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { XtnlLogoAnimation } from "@/components/ui/XtnlLogoAnimation";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import { getSessionStatus } from "@/lib/sessionStatus";
 
@@ -2693,135 +2694,7 @@ function AttentionChallengeToggle({ showToast, locked, refreshSignal }: { showTo
 }
 
 function XtnlChallengePassedAnimation({ onDone }: { onDone: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 3100);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9998,
-      background: "var(--canvas)",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      gap: 28,
-      pointerEvents: "none",
-      animation: "xtnlPassBg 3.1s ease both",
-    }}>
-      <style>{`
-        @keyframes xtnlPassBg {
-          0%  { opacity: 0; }
-          8%  { opacity: 1; }
-          80% { opacity: 1; }
-          100%{ opacity: 0; }
-        }
-        @keyframes xtnlPassLineA {
-          0%,7%  { stroke-dashoffset: 57; }
-          24%    { stroke-dashoffset: 0;  }
-          100%   { stroke-dashoffset: 0;  }
-        }
-        @keyframes xtnlPassLineB {
-          0%,10% { stroke-dashoffset: 52; }
-          27%    { stroke-dashoffset: 0;  }
-          100%   { stroke-dashoffset: 0;  }
-        }
-        @keyframes xtnlPassUpperDiamond {
-          0%,20% { stroke-dashoffset: 33; }
-          37%    { stroke-dashoffset: 0;  }
-          100%   { stroke-dashoffset: 0;  }
-        }
-        @keyframes xtnlPassLowerDiamond {
-          0%,27% { stroke-dashoffset: 32; }
-          43%    { stroke-dashoffset: 0;  }
-          100%   { stroke-dashoffset: 0;  }
-        }
-        @keyframes xtnlPassMidline {
-          0%,30% { stroke-dashoffset: 46; }
-          46%    { stroke-dashoffset: 0;  }
-          100%   { stroke-dashoffset: 0;  }
-        }
-        @keyframes xtnlPassVertex {
-          0%,37% { opacity: 0; }
-          53%    { opacity: 1; }
-          100%   { opacity: 1; }
-        }
-        @keyframes xtnlPassNode {
-          0%,43%  { opacity: 0; transform: scale(0);   }
-          62%     { opacity: 1; transform: scale(1.12); }
-          70%     {             transform: scale(1);    }
-          100%    { opacity: 1; transform: scale(1);    }
-        }
-        @keyframes xtnlPassText {
-          0%,57%  { opacity: 0; transform: translateY(7px); }
-          72%     { opacity: 1; transform: translateY(0);   }
-          80%     { opacity: 1; }
-          100%    { opacity: 0; }
-        }
-      `}</style>
-
-      <svg viewBox="0 0 80 80" width="280" height="280" fill="none" aria-hidden>
-        {/* Lower diamond sides */}
-        <line x1="63" y1="52" x2="40" y2="74" stroke="rgba(0,204,122,0.09)" strokeWidth="1.5" strokeLinecap="round"
-          style={{ strokeDasharray: 32, animation: "xtnlPassLowerDiamond 3.1s ease both" }} />
-        <line x1="17" y1="52" x2="40" y2="74" stroke="rgba(0,204,122,0.09)" strokeWidth="1.5" strokeLinecap="round"
-          style={{ strokeDasharray: 32, animation: "xtnlPassLowerDiamond 3.1s ease both" }} />
-        {/* Upper diamond sides */}
-        <line x1="40" y1="29" x2="63" y2="52" stroke="rgba(0,204,122,0.15)" strokeWidth="1.3" strokeLinecap="round"
-          style={{ strokeDasharray: 33, animation: "xtnlPassUpperDiamond 3.1s ease both" }} />
-        <line x1="40" y1="29" x2="17" y2="52" stroke="rgba(0,204,122,0.15)" strokeWidth="1.3" strokeLinecap="round"
-          style={{ strokeDasharray: 33, animation: "xtnlPassUpperDiamond 3.1s ease both" }} />
-        {/* Midline */}
-        <line x1="17" y1="52" x2="63" y2="52" stroke="rgba(0,204,122,0.22)" strokeWidth="1"
-          style={{ strokeDasharray: 46, animation: "xtnlPassMidline 3.1s ease both" }} />
-        {/* Cross lines */}
-        <line x1="27" y1="8" x2="63" y2="52" stroke="rgba(0,204,122,0.52)" strokeWidth="1.5" strokeLinecap="round"
-          style={{ strokeDasharray: 57, animation: "xtnlPassLineA 3.1s ease both" }} />
-        <line x1="51" y1="13" x2="17" y2="52" stroke="rgba(0,204,122,0.28)" strokeWidth="1.5" strokeLinecap="round"
-          style={{ strokeDasharray: 52, animation: "xtnlPassLineB 3.1s ease both" }} />
-        {/* Vertices */}
-        <circle cx="40" cy="74" r="3" fill="none" stroke="rgba(0,204,122,0.22)" strokeWidth="1"
-          style={{ animation: "xtnlPassVertex 3.1s ease both" }} />
-        <circle cx="17" cy="52" r="1.8" fill="rgba(0,204,122,0.22)"
-          style={{ animation: "xtnlPassVertex 3.1s ease both" }} />
-        <circle cx="63" cy="52" r="3.2" fill="none" stroke="rgba(77,156,245,0.45)" strokeWidth="1"
-          style={{ animation: "xtnlPassVertex 3.1s ease both" }} />
-        <circle cx="63" cy="52" r="1.8" fill="rgba(77,156,245,0.70)"
-          style={{ animation: "xtnlPassVertex 3.1s ease both" }} />
-        {/* Node A */}
-        <g style={{ transformBox: "fill-box" as const, transformOrigin: "center", animation: "xtnlPassNode 3.1s ease both" }}>
-          <circle cx="27" cy="8" r="8" fill="rgba(0,204,122,0.10)" />
-          <circle cx="27" cy="8" r="5" fill="rgba(0,204,122,0.72)" filter="url(#xtnlGlow)" />
-          <circle cx="27" cy="8" r="2.8" fill="#b0ffe0" />
-        </g>
-        {/* Node B */}
-        <g style={{ transformBox: "fill-box" as const, transformOrigin: "center", animation: "xtnlPassNode 3.1s ease 0.07s both" }}>
-          <circle cx="51" cy="13" r="7" fill="rgba(0,204,122,0.08)" />
-          <circle cx="51" cy="13" r="4.5" fill="rgba(0,204,122,0.65)" filter="url(#xtnlGlow)" />
-          <circle cx="51" cy="13" r="2.2" fill="#b0ffe0" />
-        </g>
-        <defs>
-          <filter id="xtnlGlow" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-      </svg>
-
-      <div style={{ textAlign: "center", animation: "xtnlPassText 3.1s ease both" }}>
-        <div style={{
-          fontFamily: "var(--font-mono, monospace)", fontSize: 20, fontWeight: 700,
-          color: "var(--green)", letterSpacing: "0.3em",
-        }}>
-          XTNL
-        </div>
-        <div style={{
-          fontFamily: "var(--font-mono, monospace)", fontSize: 11, fontWeight: 600,
-          color: "rgba(0,204,122,0.55)", letterSpacing: "0.22em", marginTop: 7,
-        }}>
-          CHALLENGE PASSED
-        </div>
-      </div>
-    </div>
-  );
+  return <XtnlLogoAnimation mode="success" onDone={onDone} />;
 }
 
 function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange, onEntryChecklistEnabledChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void; onEntryChecklistEnabledChange?: (enabled: boolean) => void }) {
