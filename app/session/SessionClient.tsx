@@ -2848,8 +2848,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
       const inFocusWindow = cyclePos >= triggerSec && cycleNum > lastAckRef.current;
       // Keep flash active while enforce_focus challenge is pending (even after focus window ends)
       const challengeKeepFlash = srv.enforce_focus && srv.challenge_status === "pending";
-      // Challenge silenced: no overlay, auto-pass
-      const shouldFlash   = !challengeSilencedRef.current && (inFocusWindow || challengeKeepFlash);
+      // Resolved = watch already submitted pass or fail — overlay must close immediately
+      const challengeResolved  = srv.enforce_focus
+        && (srv.challenge_status === "pass" || srv.challenge_status === "fail")
+        && srv.challenge_cycle >= 0;
+      const shouldFlash = !challengeSilencedRef.current && !challengeResolved && (inFocusWindow || challengeKeepFlash);
       setFlash(shouldFlash);
 
       if (inFocusWindow && soundFiredCycle.current < cycleNum) {
@@ -2861,7 +2864,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
           playAlarmBeeps(volumeRef.current);
           showToast("success", "Focus window — return your attention to the session");
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-            new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true });
+            new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true, silent: volumeRef.current <= 0 });
           }
           // Start enforce_focus challenge: generate number client-side and push to server
           if (srv.enforce_focus && challengeStartedCycle.current < cycleNum) {
@@ -2872,19 +2875,20 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         }
       }
 
-      // Auto-dismiss when challenge is resolved — guarded so toast + ack fire exactly once per cycle
-      if (srv.enforce_focus) {
-        if (srv.challenge_status === "pass" && srv.challenge_cycle === cycleNum) {
+      // Auto-dismiss when challenge is resolved — use srv.challenge_cycle as dedup key
+      // (avoids cycleNum mismatch when the focus window has already rolled to the next cycle)
+      if (srv.enforce_focus && srv.challenge_cycle >= 0) {
+        if (srv.challenge_status === "pass") {
           setFlash(false);
-          if (challengeResultNotifiedCycle.current !== cycleNum) {
-            challengeResultNotifiedCycle.current = cycleNum;
+          if (challengeResultNotifiedCycle.current !== srv.challenge_cycle) {
+            challengeResultNotifiedCycle.current = srv.challenge_cycle;
             if (!challengeSilencedRef.current) showToast("success", "Focus challenge passed ✓");
-            if (lastAckRef.current < cycleNum) void callAPI({ action: "ack", cycle: cycleNum });
+            if (lastAckRef.current < srv.challenge_cycle) void callAPI({ action: "ack", cycle: srv.challenge_cycle });
           }
-        } else if (srv.challenge_status === "fail" && srv.challenge_cycle === cycleNum) {
+        } else if (srv.challenge_status === "fail") {
           setFlash(false);
-          if (challengeResultNotifiedCycle.current !== cycleNum) {
-            challengeResultNotifiedCycle.current = cycleNum;
+          if (challengeResultNotifiedCycle.current !== srv.challenge_cycle) {
+            challengeResultNotifiedCycle.current = srv.challenge_cycle;
             if (!challengeSilencedRef.current) showToast("error", "Focus challenge failed — fail compliance logged");
           }
         }
@@ -2972,7 +2976,8 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                 "0 20px 56px rgba(0,0,0,0.65)",
                 "0 0 80px rgba(0,204,122,0.09)",
               ].join(","),
-              animation: "alarmSlideIn 0.32s cubic-bezier(0.4,0,0.2,1) both",
+              animation: "alarmSlideIn 0.38s cubic-bezier(0.4,0,0.2,1) both",
+              willChange: "transform, opacity",
               position: "relative" as const,
               zIndex: 1,
               overflow: "hidden",
@@ -3000,7 +3005,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               <svg
                 width="36" height="36" viewBox="0 0 36 36"
                 fill="none" xmlns="http://www.w3.org/2000/svg"
-                style={{ position: "relative", zIndex: 1 }}
+                style={{ position: "relative", zIndex: 1, animation: "alarmBellRing 3s ease-in-out infinite", transformOrigin: "top center" }}
                 aria-hidden
               >
                 {/* Handle */}
@@ -3069,6 +3074,8 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                   display: "flex", alignItems: "center", justifyContent: "center",
                   marginBottom: 16,
                   boxShadow: "0 0 32px rgba(0,204,122,0.18)",
+                  animation: "challengeNumIn 0.42s cubic-bezier(0.4,0,0.2,1) both",
+                  willChange: "transform, opacity",
                 }}>
                   <span style={{ fontSize: 52, fontWeight: 800, color: "var(--green)", lineHeight: 1 }}>
                     {srv.challenge_number ?? "…"}
@@ -3111,20 +3118,35 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
 
       <style>{`
         @keyframes alarmSlideIn {
-          from { opacity: 0; transform: translateY(18px); }
-          to   { opacity: 1; transform: translateY(0); }
+          0%   { opacity: 0; transform: translateY(22px) scale(0.96); }
+          65%  { opacity: 1; transform: translateY(-3px) scale(1.005); }
+          100% { opacity: 1; transform: translateY(0)   scale(1); }
         }
         @keyframes alarmFadeOut {
-          from { opacity: 1; }
-          to   { opacity: 0; }
+          from { opacity: 1; transform: scale(1); }
+          to   { opacity: 0; transform: scale(0.97); }
         }
         @keyframes alarmGlow {
-          0%,100% { opacity: 1; transform: scale(1); }
-          50%      { opacity: 0.55; transform: scale(1.18); }
+          0%,100% { opacity: 0.65; transform: scale(1);    filter: blur(0px); }
+          50%      { opacity: 1;    transform: scale(1.26); filter: blur(3px); }
         }
         @keyframes alarmAccent {
-          0%,100% { opacity: 0.6; }
-          50%      { opacity: 1; }
+          0%,100% { opacity: 0.4; transform: scaleX(0.4); }
+          50%      { opacity: 1;   transform: scaleX(1); }
+        }
+        @keyframes alarmBellRing {
+          0%,65%,100% { transform: rotate(0deg); }
+          70%  { transform: rotate(-15deg); }
+          77%  { transform: rotate(15deg); }
+          83%  { transform: rotate(-9deg); }
+          89%  { transform: rotate(9deg); }
+          94%  { transform: rotate(-4deg); }
+          97%  { transform: rotate(4deg); }
+        }
+        @keyframes challengeNumIn {
+          0%  { opacity: 0; transform: scale(0.55); }
+          70% { transform: scale(1.08); }
+          100%{ opacity: 1; transform: scale(1); }
         }
         @keyframes alarmEdge {
           0%,100% { box-shadow: inset 0 0 48px rgba(0,204,122,0.07); }

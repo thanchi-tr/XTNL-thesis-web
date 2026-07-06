@@ -27,9 +27,14 @@ export default function NavBar() {
   type AlarmData = { running: boolean; started_at: string | null; interval_min: number; focus_min: number; challenge_status: string | null; challenge_cycle: number; };
   const [alarmData,      setAlarmData]      = useState<AlarmData>({ running: false, started_at: null, interval_min: 15, focus_min: 2, challenge_status: null, challenge_cycle: -1 });
   const [alarmPopupOpen, setAlarmPopupOpen] = useState(false);
-  const [challengeAlert, setChallengeAlert] = useState(false);
+  const [challengeAlert,    setChallengeAlert]    = useState(false);
+  const [focusWindowAlert,  setFocusWindowAlert]  = useState(false);
   const [, forceCountdown] = useState(0);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownRef    = useRef<HTMLDivElement>(null);
+  const alarmDataRef   = useRef(alarmData);
+
+  // Keep ref in sync so the 1s ticker closure always reads the latest alarmData
+  useEffect(() => { alarmDataRef.current = alarmData; }, [alarmData]);
 
   type DeviceRecord = { deviceId: string; deviceName: string; registeredAt: string; dropped: boolean };
   const [devices,      setDevices]      = useState<DeviceRecord[]>([]);
@@ -116,6 +121,15 @@ export default function NavBar() {
           setAlarmRunning(!!data.running);
           setAlarmData({ running: !!data.running, started_at: data.started_at ?? null, interval_min: data.interval_min ?? 15, focus_min: data.focus_min ?? 2, challenge_status: data.challenge_status ?? null, challenge_cycle: data.challenge_cycle ?? -1 });
           setChallengeAlert(!!(data.running && data.challenge_status === "pending"));
+          // Detect focus window: same math as the service loop
+          let inFocus = false;
+          if (data.running && data.started_at && (data.interval_min ?? 0) > 0) {
+            const elapsed = Date.now() - new Date(data.started_at).getTime();
+            const intervalMs = (data.interval_min ?? 15) * 60_000;
+            const focusMs    = (data.focus_min   ??  2) * 60_000;
+            inFocus = (elapsed % intervalMs) >= (intervalMs - focusMs);
+          }
+          setFocusWindowAlert(inFocus);
           schedule(data.running ? 8_000 : 30_000);
         } else {
           schedule(30_000);
@@ -133,15 +147,31 @@ export default function NavBar() {
     };
   }, [authed]);
 
-  /* Dismiss challenge alert when user is on /session */
-  useEffect(() => { if (pathname === "/session") setChallengeAlert(false); }, [pathname]);
-
-  /* Tick every second while popup or challenge alert is visible to keep countdown live */
+  /* Dismiss alerts when user navigates to /session */
   useEffect(() => {
-    if (!alarmPopupOpen && !challengeAlert) return;
-    const id = setInterval(() => forceCountdown(n => n + 1), 1_000);
+    if (pathname === "/session") {
+      setChallengeAlert(false);
+      setFocusWindowAlert(false);
+    }
+  }, [pathname]);
+
+  /* Tick every second to keep countdown live and detect focus-window transitions in real time */
+  useEffect(() => {
+    if (!alarmPopupOpen && !challengeAlert && !alarmRunning) return;
+    const id = setInterval(() => {
+      forceCountdown(n => n + 1);
+      if (alarmRunning) {
+        const d = alarmDataRef.current;
+        if (d.started_at && d.interval_min > 0) {
+          const elapsed    = Date.now() - new Date(d.started_at).getTime();
+          const intervalMs = d.interval_min * 60_000;
+          const focusMs    = (d.focus_min ?? 2) * 60_000;
+          setFocusWindowAlert((elapsed % intervalMs) >= (intervalMs - focusMs));
+        }
+      }
+    }, 1_000);
     return () => clearInterval(id);
-  }, [alarmPopupOpen, challengeAlert]);
+  }, [alarmPopupOpen, challengeAlert, alarmRunning]);
 
   function computeAlarmTimer() {
     const { started_at, interval_min, focus_min } = alarmData;
@@ -163,8 +193,16 @@ export default function NavBar() {
     <>
       <style>{`
         @keyframes navAlarmPulse {
-          0%,100% { box-shadow: 0 0 0 0 rgba(0,204,122,0.45); opacity: 1; }
-          50%      { box-shadow: 0 0 0 5px rgba(0,204,122,0);  opacity: 0.75; }
+          0%,100% { box-shadow: 0 0 0 0 rgba(0,204,122,0.55), 0 0 0 0 rgba(0,204,122,0.2); opacity: 1; }
+          60%      { box-shadow: 0 0 0 5px rgba(0,204,122,0),  0 0 0 9px rgba(0,204,122,0); opacity: 0.75; }
+        }
+        @keyframes popupIn {
+          from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        @keyframes bannerSlideDown {
+          from { opacity: 0; transform: translateY(-100%); }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
       <nav
@@ -392,29 +430,39 @@ export default function NavBar() {
         </div>
       </nav>
 
-      {/* ── Challenge alert banner ───────────────────────── */}
-      {challengeAlert && pathname !== "/session" && (
+      {/* ── Focus window / challenge alert banner ────────── */}
+      {(focusWindowAlert || challengeAlert) && pathname !== "/session" && (
         <div style={{
           position: "fixed", top: "var(--nav-h)", left: 0, right: 0, zIndex: 150,
-          background: "rgba(4,8,15,0.92)", backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(0,204,122,0.25)",
+          background: "rgba(4,8,15,0.95)", backdropFilter: "blur(14px)",
+          borderBottom: "1px solid rgba(0,204,122,0.3)",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
           padding: "9px 16px", flexWrap: "wrap" as const,
+          animation: "bannerSlideDown 0.22s cubic-bezier(0.4,0,0.2,1) both",
         }}>
           <svg width="11" height="11" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}>
             <path d="M18 3.5V6" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
             <path d="M9.5 14.5C9.5 10.358 13.358 7 18 7C22.642 7 26.5 10.358 26.5 14.5V22.5L29 25.5H7L9.5 22.5V14.5Z" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="rgba(0,204,122,0.12)"/>
             <path d="M14.5 25.5C14.5 27.985 16.015 29.5 18 29.5C19.985 29.5 21.5 27.985 21.5 25.5" stroke="#00CC7A" strokeWidth="1.8" strokeLinecap="round"/>
           </svg>
-          <span style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>
-            Focus challenge ready
+          <span style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}>
+            {focusWindowAlert ? "Focus window active" : "Focus challenge ready"}
           </span>
-          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>— navigate to</span>
-          <Link href="/session" onClick={() => setChallengeAlert(false)} style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}>
-            Session
+          {challengeAlert && focusWindowAlert && (
+            <span style={{ fontSize: 10.5, color: "var(--ink-3)" }}>· challenge ready</span>
+          )}
+          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>—</span>
+          <Link
+            href="/session"
+            onClick={() => { setChallengeAlert(false); setFocusWindowAlert(false); }}
+            style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
+          >
+            Go to Session
           </Link>
-          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>to see the challenge number</span>
-          <button onClick={() => setChallengeAlert(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)", padding: "2px 4px", lineHeight: 1, marginLeft: 4 }}>
+          <button
+            onClick={() => { setChallengeAlert(false); setFocusWindowAlert(false); }}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)", padding: "2px 4px", lineHeight: 1, marginLeft: 4 }}
+          >
             <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
           </button>
         </div>
@@ -487,7 +535,7 @@ export default function NavBar() {
           >
             <div
               onClick={e => e.stopPropagation()}
-              style={{ background: "rgba(4,8,15,0.98)", border: "1px solid rgba(0,204,122,0.2)", borderRadius: 12, padding: "28px 28px 24px", maxWidth: 360, width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,0.7)" }}
+              style={{ background: "rgba(4,8,15,0.98)", border: "1px solid rgba(0,204,122,0.2)", borderRadius: 12, padding: "28px 28px 24px", maxWidth: 360, width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,0.7)", animation: "popupIn 0.2s cubic-bezier(0.4,0,0.2,1) both", willChange: "transform, opacity" }}
             >
               {/* Header */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>

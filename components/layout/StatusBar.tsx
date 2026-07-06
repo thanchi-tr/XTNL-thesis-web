@@ -116,6 +116,8 @@ export default function StatusBar() {
               padding: "0 32px",
               animation: "ticker 52s linear infinite",
               width: "max-content",
+              willChange: "transform",
+              backfaceVisibility: "hidden" as const,
             }}
           >
             {/* Duplicate for seamless loop */}
@@ -146,8 +148,9 @@ export default function StatusBar() {
 
       <style>{`
         @keyframes ticker {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
+          0%         { transform: translate3d(0, 0, 0); }
+          99.9999%   { transform: translate3d(-50%, 0, 0); }
+          100%       { transform: translate3d(-50%, 0, 0); }
         }
         /* Pause on hover so user can read a stat */
         .ticker-track:hover { animation-play-state: paused; }
