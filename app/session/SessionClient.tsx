@@ -386,6 +386,72 @@ const TIMEZONES = [
   { label: "Frankfurt(CET/CEST)",   value: "Europe/Berlin"       },
 ];
 
+/* Custom timezone select — matches XTNL dark theme */
+function TZSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const fn = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, [open]);
+
+  const current = TIMEZONES.find(z => z.value === value);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 5,
+          background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 4,
+          color: "var(--ink-1)", fontSize: 10.5, fontFamily: "var(--font-mono)",
+          padding: "3px 8px", cursor: "pointer", outline: "none",
+        }}
+      >
+        <span>{current?.label.trim()} {tzOffset(value)}</span>
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ opacity: 0.45, flexShrink: 0 }}>
+          <path d="M1.5 3L4 5.5 6.5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 99999,
+          background: "#070d18", border: "1px solid rgba(255,255,255,0.09)",
+          borderRadius: 6, overflow: "hidden", minWidth: 220,
+          boxShadow: "0 12px 36px rgba(0,0,0,0.75)",
+        }}>
+          {TIMEZONES.map((z, i) => (
+            <button
+              key={z.value}
+              type="button"
+              onClick={() => { onChange(z.value); setOpen(false); }}
+              style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                width: "100%", textAlign: "left", padding: "7px 12px",
+                fontSize: 10.5, fontFamily: "var(--font-mono)",
+                background: z.value === value ? "rgba(0,204,122,0.07)" : "transparent",
+                color: z.value === value ? "var(--green)" : "var(--ink-2)",
+                border: "none", cursor: "pointer",
+                borderBottom: i < TIMEZONES.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+              }}
+            >
+              <span>{z.label.trim()}</span>
+              <span style={{ opacity: 0.5, marginLeft: 10 }}>{tzOffset(z.value)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Format a UTC ISO string for display in an arbitrary timezone */
 function fmtTz(iso: string, tz: string): string {
   try {
@@ -2372,16 +2438,19 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }} onClick={() => setIsImmediate(o => !o)}>
             <div style={{
-              width: 17, height: 17, borderRadius: 4, flexShrink: 0,
-              background: isImmediate ? "rgba(0,204,122,0.2)" : "var(--sub)",
-              border: `1.5px solid ${isImmediate ? "rgba(0,204,122,0.6)" : "var(--line-hi)"}`,
+              width: 17, height: 17, borderRadius: 3, flexShrink: 0,
+              background: isImmediate ? "rgba(0,204,122,0.08)" : "var(--sub)",
+              border: `1.5px solid ${isImmediate ? "rgba(0,204,122,0.55)" : "var(--line-hi)"}`,
               display: "flex", alignItems: "center", justifyContent: "center",
               transition: "background 0.15s, border-color 0.15s",
+              boxShadow: isImmediate ? "0 0 7px rgba(0,204,122,0.18)" : "none",
             }}>
               {isImmediate && (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
-                  <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="var(--green)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                <div style={{
+                  width: 8, height: 8, borderRadius: 2,
+                  background: "var(--green)",
+                  boxShadow: "0 0 5px rgba(0,204,122,0.55), 0 0 2px rgba(0,204,122,0.3)",
+                }} />
               )}
             </div>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: isImmediate ? "var(--green)" : "var(--ink-1)", letterSpacing: "-0.01em" }}>
@@ -2669,6 +2738,18 @@ function XtnlChallengePassedAnimation({ onDone }: { onDone: () => void }) {
   return <XtnlLogoAnimation mode="success" onDone={onDone} />;
 }
 
+function isInTradingSessionMelbourne(): boolean {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Melbourne",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(new Date());
+  const hour    = parseInt(parts.find(p => p.type === "hour")?.value    ?? "0", 10);
+  const weekday = parts.find(p => p.type === "weekday")?.value ?? "Mon";
+  const satOk   = weekday === "Sat" && hour < 1;
+  if (!["Mon","Tue","Wed","Thu","Fri"].includes(weekday) && !satOk) return false;
+  return (hour >= 18 && hour < 19) || hour >= 20 || hour < 1;
+}
+
 function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange, onEntryChecklistEnabledChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void; onEntryChecklistEnabledChange?: (enabled: boolean) => void }) {
   type SrvState = {
     running:                  boolean;
@@ -2710,6 +2791,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   });
   const [scheduleTick,      setScheduleTick]      = useState(0);
+  const [tradingSessionMode, setTradingSessionMode] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("xtnl_trading_session_gate") === "1";
+  });
+  const tradingSessionModeRef = useRef<boolean>(false);
 
   const challengeStartedCycle       = useRef(-1); // which cycle we already called challenge_start for
   const challengeResultNotifiedCycle = useRef(-1); // which cycle we already fired pass/fail toast for
@@ -2724,6 +2810,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   useEffect(() => { volumeRef.current           = volume;             }, [volume]);
   useEffect(() => { lastAckRef.current          = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
   useEffect(() => { challengeSilencedRef.current = challengeSilenced;  }, [challengeSilenced]);
+  useEffect(() => {
+    tradingSessionModeRef.current = tradingSessionMode;
+    if (typeof window !== "undefined")
+      localStorage.setItem("xtnl_trading_session_gate", tradingSessionMode ? "1" : "0");
+  }, [tradingSessionMode]);
 
   /* Play a short fade-out before unmounting the overlay */
   useEffect(() => {
@@ -2848,13 +2939,14 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
       const challengeResolved  = srv.enforce_focus
         && (srv.challenge_status === "pass" || srv.challenge_status === "fail")
         && srv.challenge_cycle >= 0;
-      const shouldFlash = !challengeSilencedRef.current && !challengeResolved && (inFocusWindow || challengeKeepFlash);
+      const offHoursFrozen = tradingSessionModeRef.current && !isInTradingSessionMelbourne();
+      const shouldFlash = !challengeSilencedRef.current && !challengeResolved && !offHoursFrozen && (inFocusWindow || challengeKeepFlash);
       setFlash(shouldFlash);
 
       if (inFocusWindow && soundFiredCycle.current < cycleNum) {
         soundFiredCycle.current = cycleNum;
-        if (challengeSilencedRef.current) {
-          // Silent mode: auto-pass the focus window without any alert
+        if (challengeSilencedRef.current || offHoursFrozen) {
+          // Silent mode / off-hours freeze: auto-pass the focus window
           void callAPI({ action: "ack", cycle: cycleNum });
         } else {
           playAlarmBeeps(volumeRef.current);
@@ -3290,6 +3382,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               SCHEDULED
             </span>
           )}
+          {tradingSessionMode && !isInTradingSessionMelbourne() && (
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: "#4d9cf5", background: "rgba(77,156,245,0.1)", padding: "2px 7px", borderRadius: 3, letterSpacing: "0.06em" }}>
+              OFF-HOURS
+            </span>
+          )}
           {/* Challenge mute toggle */}
           <button
             type="button"
@@ -3430,6 +3527,48 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                   background: srv.enforce_focus ? "#04080F" : "var(--ink-3)",
                   position: "absolute", top: 2,
                   left: srv.enforce_focus ? 18 : 2,
+                  transition: "left 0.2s",
+                }} />
+              </button>
+            </div>
+
+            {/* Trading Session Gate */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 10px", borderRadius: 6,
+              background: tradingSessionMode ? "rgba(77,156,245,0.06)" : "var(--card)",
+              border: `1px solid ${tradingSessionMode ? "rgba(77,156,245,0.22)" : "var(--line)"}`,
+              transition: "background 0.2s, border-color 0.2s",
+            }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: tradingSessionMode ? "#4d9cf5" : "var(--ink-1)", letterSpacing: "0.01em" }}>
+                  Trading Session Gate
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 9.5, color: "var(--ink-4)" }}>
+                  {tradingSessionMode
+                    ? isInTradingSessionMelbourne()
+                      ? "Active · within session window"
+                      : "Frozen · outside session hours"
+                    : "S1 6–7 PM · S2 8 PM–1 AM · Mon–Fri"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTradingSessionMode(m => !m)}
+                aria-label={tradingSessionMode ? "Disable trading session gate" : "Enable trading session gate"}
+                style={{
+                  width: 38, height: 22, borderRadius: 11, flexShrink: 0, marginLeft: 10,
+                  background: tradingSessionMode ? "#4d9cf5" : "var(--raised)",
+                  border: "1px solid var(--line-hi)",
+                  cursor: "pointer", position: "relative",
+                  transition: "background 0.2s",
+                }}
+              >
+                <span style={{
+                  display: "block", width: 16, height: 16, borderRadius: "50%",
+                  background: tradingSessionMode ? "#04080F" : "var(--ink-3)",
+                  position: "absolute", top: 2,
+                  left: tradingSessionMode ? 18 : 2,
                   transition: "left 0.2s",
                 }} />
               </button>
@@ -4228,19 +4367,7 @@ export default function SessionClient({ user }: { user: User }) {
               {timeStr && <span style={{ fontSize: 11, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>Melbourne · {dayStr} · {timeStr} AEST</span>}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: "0.08em", color: "var(--ink-3)", textTransform: "uppercase" }}>TZ</span>
-                <select
-                  value={baseTZ}
-                  onChange={e => handleTZChange(e.target.value)}
-                  style={{
-                    background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 4,
-                    color: "var(--ink-2)", fontSize: 10.5, fontFamily: "var(--font-mono)",
-                    padding: "3px 6px", cursor: "pointer", outline: "none",
-                  }}
-                >
-                  {TIMEZONES.map(z => (
-                    <option key={z.value} value={z.value}>{z.label}  {tzOffset(z.value)}</option>
-                  ))}
-                </select>
+                <TZSelect value={baseTZ} onChange={handleTZChange} />
                 <span suppressHydrationWarning style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--ink-3)" }}>
                   {nowInTZ(baseTZ).replace("T", " ")}
                 </span>

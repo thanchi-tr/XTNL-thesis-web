@@ -27,6 +27,76 @@ function Card({ title, chip, children }: { title: string; chip?: React.ReactNode
   );
 }
 
+const ROLES = [
+  {
+    id: "operator",
+    label: "Operator",
+    color: "#00cc7a",
+    description: "Active trade execution and real-time session management.",
+    capabilities: ["Session Journal", "Entry Checklist", "Focus Alerts", "Trade Log", "Risk Alerts"],
+  },
+  {
+    id: "analyst",
+    label: "Analyst",
+    color: "#4d9cf5",
+    description: "Data review, performance analysis, and session audit.",
+    capabilities: ["Analytics Page", "Session Audit", "LLM Mirror", "Checklist Toggle", "Simulator"],
+  },
+  {
+    id: "moderator",
+    label: "Moderator",
+    color: "#f0a030",
+    description: "Platform oversight, compliance review, and content governance.",
+    capabilities: ["Moderator Panel", "User Review", "Compliance Flag", "Session Lock"],
+  },
+  {
+    id: "strategist",
+    label: "Strategist",
+    color: "#a78bfa",
+    description: "Algorithm governance, risk parameter design, and strategy authoring.",
+    capabilities: ["Algorithm Config", "Risk Params", "Prospectus Edit", "Full Data Access"],
+  },
+] as const;
+
+function RoleCard({ role }: { role: typeof ROLES[number] }) {
+  return (
+    <div style={{
+      background: "var(--card)", borderRadius: 8, overflow: "hidden",
+      border: `1px solid rgba(255,255,255,0.06)`,
+      borderLeft: `3px solid ${role.color}`,
+    }}>
+      <div style={{ padding: "14px 18px 10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{
+            fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 800,
+            letterSpacing: "0.10em", textTransform: "uppercase",
+            color: role.color,
+          }}>
+            {role.label}
+          </span>
+        </div>
+        <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.6 }}>
+          {role.description}
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 6px" }}>
+          {role.capabilities.map(cap => (
+            <span key={cap} style={{
+              fontSize: 9.5, fontFamily: "var(--font-mono)", fontWeight: 500,
+              padding: "2px 7px", borderRadius: 3,
+              background: `${role.color}0f`,
+              border: `1px solid ${role.color}28`,
+              color: role.color,
+              letterSpacing: "0.02em",
+            }}>
+              {cap}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProfileClient({ user }: { user: User }) {
   const ini = initials(user.name || user.email);
 
@@ -71,11 +141,10 @@ export default function ProfileClient({ user }: { user: User }) {
 
           {/* Account details */}
           <Card title="Account Details">
-            <Row label="Full Name"     value={user.name  || "—"} />
-            <Row label="Email"         value={user.email || "—"} accent="var(--blue)" />
-            <Row label="Role"          value="Operator / Analyst" />
-            <Row label="Entity"        value="XTNL Solutions" />
-            <Row label="System"        value="v5.2.5 Firmware · EUR/USD" accent="var(--ink-2)" />
+            <Row label="Full Name"  value={user.name  || "—"} />
+            <Row label="Email"      value={user.email || "—"} accent="var(--blue)" />
+            <Row label="Entity"     value="XTNL Solutions" />
+            <Row label="System"     value="v5.2.5 Firmware · EUR/USD" accent="var(--ink-2)" />
           </Card>
 
           {/* Security */}
@@ -89,13 +158,26 @@ export default function ProfileClient({ user }: { user: User }) {
             <Row label="Password"         value="Managed by Microsoft" accent="var(--ink-3)" />
           </Card>
 
+          {/* System Roles */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 14px" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)", letterSpacing: "-0.01em" }}>System Roles</span>
+              <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>4 roles · XTNL v5</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+              {ROLES.map(role => (
+                <RoleCard key={role.id} role={role} />
+              ))}
+            </div>
+          </div>
+
           {/* Access */}
           <Card title="Access & Permissions">
-            <Row label="Session Page"     value="Full Access"  accent="var(--green)" />
-            <Row label="Analytics Page"   value="Full Access"  accent="var(--green)" />
-            <Row label="Simulator"        value="Full Access"  accent="var(--green)" />
-            <Row label="Data Page"        value="Full Access"  accent="var(--green)" />
-            <Row label="Prospectus"       value="Full Access"  accent="var(--green)" />
+            <Row label="Session Page"   value="Full Access" accent="var(--green)" />
+            <Row label="Analytics Page" value="Full Access" accent="var(--green)" />
+            <Row label="Simulator"      value="Full Access" accent="var(--green)" />
+            <Row label="Data Page"      value="Full Access" accent="var(--green)" />
+            <Row label="Prospectus"     value="Full Access" accent="var(--green)" />
           </Card>
 
         </div>

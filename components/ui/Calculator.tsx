@@ -232,7 +232,15 @@ export default function Calculator() {
           onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.opacity = "0.6"}
         >
           <span style={{ fontSize: 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>Ctrl+`</span>
-          <span style={{ fontSize: 11 }}>🧮</span>
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden style={{ flexShrink: 0, color: "var(--ink-3)" }}>
+            <rect x="1.5" y="1.5" width="9" height="9" rx="1.8" stroke="currentColor" strokeWidth="1.0"/>
+            <rect x="3" y="3.5" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
+            <rect x="7.4" y="3.5" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
+            <rect x="3" y="5.4" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
+            <rect x="7.4" y="5.4" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
+            <rect x="3" y="7.3" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
+            <rect x="7.4" y="7.3" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
+          </svg>
         </div>
       )}
 

@@ -5,6 +5,7 @@ import React, {
   useEffect, useRef, useState,
 } from "react";
 import { startTransition } from "react";
+import { runSimulation } from "@/lib/simulation";
 import type { SimParams, SimSummary } from "@/lib/simulation";
 
 /* ── Default parameters (from live system data) ─────────────── */
@@ -40,46 +41,33 @@ export function SimulatorProvider({ children }: { children: React.ReactNode }) {
   const [result,  setResult]      = useState<SimSummary | null>(null);
   const [running, setRunning]     = useState(false);
 
-  // Refs: avoid stale closures without creating extra re-renders
-  const workerRef = useRef<Worker | null>(null);
   const debRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const paramsRef = useRef<SimParams>(DEFAULT_PARAMS); // always mirrors latest params
-  const reqId     = useRef(0);                         // discards stale results
+  const paramsRef = useRef<SimParams>(DEFAULT_PARAMS);
+  const reqId     = useRef(0);
 
-  /* Spawn worker once on mount, terminate on unmount */
-  useEffect(() => {
-    const worker = new Worker(
-      new URL('../lib/simulation.worker.ts', import.meta.url)
-    );
-
-    worker.onmessage = ({ data }: MessageEvent<{ result: SimSummary; id: number }>) => {
-      if (data.id !== reqId.current) return; // stale — a newer run is in flight
+  /* Run simulation on the main thread via setTimeout so the
+     "Running…" state renders before the synchronous compute starts */
+  const dispatch = useCallback((p: SimParams) => {
+    if (debRef.current) clearTimeout(debRef.current);
+    const id = ++reqId.current;
+    setRunning(true);
+    setTimeout(() => {
+      const res = runSimulation(p, 1000);
+      if (id !== reqId.current) return; // superseded
       startTransition(() => {
-        setResult(data.result);
+        setResult(res);
         setRunning(false);
       });
-    };
-
-    worker.onerror = () => setRunning(false);
-    workerRef.current = worker;
-
-    // Kick off the initial run immediately
-    const id = ++reqId.current;
-    setRunning(true);
-    worker.postMessage({ params: DEFAULT_PARAMS, paths: 1000, id });
-
-    return () => worker.terminate();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* Post a new task to the worker; tag it so stale results are dropped */
-  const dispatch = useCallback((p: SimParams) => {
-    if (!workerRef.current) return;
-    const id = ++reqId.current;
-    setRunning(true);
-    workerRef.current.postMessage({ params: p, paths: 1000, id });
+    }, 0);
   }, []);
 
-  /* Single-param change — debounced 300 ms so rapid slider drags coalesce */
+  /* Auto-run on mount */
+  useEffect(() => {
+    dispatch(DEFAULT_PARAMS);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* Single-param change — debounced 300 ms */
   const setParam = useCallback(<K extends keyof SimParams>(key: K, val: SimParams[K]) => {
     const next = { ...paramsRef.current, [key]: val };
     paramsRef.current = next;
@@ -88,17 +76,15 @@ export function SimulatorProvider({ children }: { children: React.ReactNode }) {
     debRef.current = setTimeout(() => dispatch(next), 300);
   }, [dispatch]);
 
-  /* Full preset swap — runs immediately, no debounce */
+  /* Full preset swap — immediate */
   const setParams = useCallback((p: SimParams) => {
     paramsRef.current = p;
     setParamsState(p);
-    if (debRef.current) clearTimeout(debRef.current);
     dispatch(p);
   }, [dispatch]);
 
-  /* Manual re-run button — fires instantly with current params */
+  /* Manual re-run */
   const rerun = useCallback(() => {
-    if (debRef.current) clearTimeout(debRef.current);
     dispatch(paramsRef.current);
   }, [dispatch]);
 

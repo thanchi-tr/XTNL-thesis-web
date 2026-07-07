@@ -301,7 +301,8 @@ export default function MonteCarloSimulator() {
   return (
     <div className="card" style={{ overflow: "hidden", boxShadow: "var(--shadow-lg)" }}>
 
-      {/* ── Risk formula strip ────────────────────────────── */}
+      {/* ── Risk formula strip (authed only) ─────────────── */}
+      {authed && (
       <div style={{ padding: "10px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "#060d16" }}>
         <p className="label-xs" style={{ marginBottom: 6, color: "rgba(0,204,122,0.6)" }}>
           XTNL Risk Allocation Formula (mirrors recommend_r_generator.py)
@@ -317,6 +318,7 @@ export default function MonteCarloSimulator() {
           <span style={{ color: "#00e88c", fontWeight: 800 }}> {liveApplied}%</span>
         </div>
       </div>
+      )}
 
       {/* ── Presets ──────────────────────────────────────── */}
       <div style={{ padding: "8px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -340,24 +342,18 @@ export default function MonteCarloSimulator() {
             ══════════════════════════════════════════════ */}
         <div className="sim-controls" style={{ padding: "20px 18px", display: "flex", flexDirection: "column", gap: 24 }}>
 
-          {/* Lock notice for logged-out users */}
+          {/* Simplified view for unauthenticated users */}
           {!authed && (
-            <div style={{
-              padding: "10px 12px", borderRadius: 5, marginBottom: -8,
-              background: "rgba(0,0,0,0.28)", border: "1px solid rgba(255,255,255,0.06)",
-              display: "flex", alignItems: "flex-start", gap: 8,
-            }}>
-              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, marginTop: 2, opacity: 0.45 }}>
-                <rect x="2" y="6" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-                <path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-              </svg>
-              <p style={{ fontSize: 10, color: "rgba(142,163,190,0.5)", lineHeight: 1.55 }}>
-                Parameters are view-only. Use presets above to switch scenarios.{" "}
-                <a href="/api/auth/signin" style={{ color: "rgba(0,204,122,0.7)", textDecoration: "none" }}>Sign in</a>
-                {" "}to adjust individual variables.
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <p style={{ margin: 0, fontSize: 11, color: "rgba(142,163,190,0.55)", lineHeight: 1.65 }}>
+                Select a scenario above, then run the simulation. Outcomes update immediately.
               </p>
+              <a href="/api/auth/signin" style={{ fontSize: 10.5, color: "var(--green)", textDecoration: "none" }}>
+                Sign in to adjust parameters →
+              </a>
             </div>
           )}
+          {authed && (<>
 
           {/* ── Operator ─────────────────────────────── */}
           <div>
@@ -434,6 +430,7 @@ export default function MonteCarloSimulator() {
               <SliderControl label="Horizon  (weeks)" value={p.weeks} displayValue={`${p.weeks}w · ${Math.round(p.weeks/52)}yr`} min={52} max={520} step={1} tooltip="Total simulation duration." onChange={(v) => update("weeks", v)} readOnly={!authed} />
             </div>
           </div>
+          </>)}
         </div>
 
         {/* ══════════════════════════════════════════════
@@ -594,7 +591,7 @@ export default function MonteCarloSimulator() {
             )}
           </div>
 
-          {/* ── Efficiency + Regime chart (same for both) ── */}
+          {/* ── Efficiency + Regime chart ──────────────── */}
           <div>
             <p className="panel-title" style={{ marginBottom: 3 }}>
               Operator Efficiency + Regime Penalty — Median Path
@@ -753,20 +750,22 @@ export default function MonteCarloSimulator() {
           {/* ── Result stats grid ─────────────────────── */}
           {res && (
             <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))" }}>
-              <StatCard label="Mean Terminal"    value={`${formatMultiple(res.meanTerminal)}×`}           accent="#00cc7a" />
-              <StatCard label="Median"           value={`${formatMultiple(res.medianTerminal)}×`}          accent="#00cc7a" />
-              <StatCard label="P5"               value={`${formatMultiple(res.p5Terminal)}×`}              accent="#4d9cf5" />
-              <StatCard label="P95"              value={`${formatMultiple(res.p95Terminal)}×`}             accent="#00cc7a" />
-              <StatCard label="Worst Path"       value={`${formatMultiple(res.worstTerminal)}×`}           accent="#f03a57" />
-              <StatCard label="Avg Max DD"       value={`−${(res.meanMaxDD*100).toFixed(1)}%`}             accent="#f03a57" />
-              <StatCard label="Worst DD"         value={`−${(res.worstMaxDD*100).toFixed(1)}%`}            accent="#f03a57" />
-              <StatCard label="Mean Eff"         value={`${(res.meanMeanEff*100).toFixed(1)}%`}            accent="#f0a030" sub="avg operator eff" />
-              <StatCard label="Avg Regime"       value={`${res.meanRegimePenalty.toFixed(3)}×`}            accent={res.meanRegimePenalty < 0.98 ? "#f03a57" : "#8ea3be"} sub="streak penalty" />
-              <StatCard label="Total Comm. Paid" value={res.meanTotalComm > 0 ? `${(res.meanTotalComm * 100).toFixed(2)}%` : "—"} accent="#f0a030" sub="of initial capital" />
-              <StatCard label="Avg Comm. / Week" value={res.meanAvgCommPerWeek > 0 ? `${(res.meanAvgCommPerWeek * 100).toFixed(4)}%` : "—"} accent="#f0a030" sub="fraction per week" />
-              <StatCard label="Avg Injection"    value={res.meanTotalInj > 0 ? `${(res.meanTotalInj*100).toFixed(1)}%` : "—"} accent="#00cc7a" sub="of initial (received)" />
-              <StatCard label="Inject Events"    value={res.meanInjEvents > 0 ? res.meanInjEvents.toFixed(1) : "—"} accent="#00cc7a" sub="qualifying 4-wk periods" />
-              <StatCard label="Ruin Rate"        value={`${res.pctRuined.toFixed(1)}%`} accent={res.pctRuined > 5 ? "#f03a57" : "#00cc7a"} />
+              <StatCard label="Median"    value={`${formatMultiple(res.medianTerminal)}×`} accent="#00cc7a" />
+              <StatCard label="P5"        value={`${formatMultiple(res.p5Terminal)}×`}     accent="#4d9cf5" />
+              <StatCard label="P95"       value={`${formatMultiple(res.p95Terminal)}×`}    accent="#00cc7a" />
+              <StatCard label="Ruin Rate" value={`${res.pctRuined.toFixed(1)}%`}           accent={res.pctRuined > 5 ? "#f03a57" : "#00cc7a"} />
+              {authed && <>
+                <StatCard label="Mean Terminal"    value={`${formatMultiple(res.meanTerminal)}×`}           accent="#00cc7a" />
+                <StatCard label="Worst Path"       value={`${formatMultiple(res.worstTerminal)}×`}           accent="#f03a57" />
+                <StatCard label="Avg Max DD"       value={`−${(res.meanMaxDD*100).toFixed(1)}%`}             accent="#f03a57" />
+                <StatCard label="Worst DD"         value={`−${(res.worstMaxDD*100).toFixed(1)}%`}            accent="#f03a57" />
+                <StatCard label="Mean Eff"         value={`${(res.meanMeanEff*100).toFixed(1)}%`}            accent="#f0a030" sub="avg operator eff" />
+                <StatCard label="Avg Regime"       value={`${res.meanRegimePenalty.toFixed(3)}×`}            accent={res.meanRegimePenalty < 0.98 ? "#f03a57" : "#8ea3be"} sub="streak penalty" />
+                <StatCard label="Total Comm. Paid" value={res.meanTotalComm > 0 ? `${(res.meanTotalComm * 100).toFixed(2)}%` : "—"} accent="#f0a030" sub="of initial capital" />
+                <StatCard label="Avg Comm. / Week" value={res.meanAvgCommPerWeek > 0 ? `${(res.meanAvgCommPerWeek * 100).toFixed(4)}%` : "—"} accent="#f0a030" sub="fraction per week" />
+                <StatCard label="Avg Injection"    value={res.meanTotalInj > 0 ? `${(res.meanTotalInj*100).toFixed(1)}%` : "—"} accent="#00cc7a" sub="of initial (received)" />
+                <StatCard label="Inject Events"    value={res.meanInjEvents > 0 ? res.meanInjEvents.toFixed(1) : "—"} accent="#00cc7a" sub="qualifying 4-wk periods" />
+              </>}
               {authed && analystMetrics && <>
                 <StatCard label="Calmar Ratio"    value={analystMetrics.calmar >= 99 ? "∞" : analystMetrics.calmar.toFixed(2)} accent={analystMetrics.calmar > 1.5 ? "#00cc7a" : analystMetrics.calmar > 0.8 ? "#f0a030" : "#f03a57"} sub="CAGR / mean max DD" />
                 <StatCard label="P50 CAGR"        value={`${(analystMetrics.annualCAGR * 100).toFixed(1)}%`} accent="#00cc7a" sub="annualised median" />
