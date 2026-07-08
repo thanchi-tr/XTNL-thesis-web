@@ -1,7 +1,7 @@
 "use client";
 
 type User = { email: string; name: string };
-type Props = { user: User; roles: string[] };
+type Props = { user: User; roles: string[]; memberSince?: string };
 
 function initials(name: string) {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "XT";
@@ -93,7 +93,7 @@ function RoleCard({ id }: { id: string }) {
   );
 }
 
-export default function ProfileClient({ user, roles }: Props) {
+export default function ProfileClient({ user, roles, memberSince }: Props) {
   const ini = initials(user.name || user.email);
 
   return (
@@ -137,10 +137,11 @@ export default function ProfileClient({ user, roles }: Props) {
 
           {/* Account details */}
           <Card title="Account Details">
-            <Row label="Full Name"  value={user.name  || "—"} />
-            <Row label="Email"      value={user.email || "—"} accent="var(--blue)" />
-            <Row label="Entity"     value="XTNL Solutions" />
-            <Row label="System"     value="v5.2.5 Firmware · EUR/USD" accent="var(--ink-2)" />
+            <Row label="Full Name"    value={user.name  || "—"} />
+            <Row label="Email"        value={user.email || "—"} accent="var(--blue)" />
+            <Row label="Member Since" value={memberSince || "—"} accent="var(--ink-2)" />
+            <Row label="Entity"       value="XTNL Solutions" />
+            <Row label="System"       value="v5.2.5 Firmware · EUR/USD" accent="var(--ink-2)" />
           </Card>
 
           {/* Security */}
