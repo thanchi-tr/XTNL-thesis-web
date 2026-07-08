@@ -3083,6 +3083,9 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               "radial-gradient(ellipse 44% 32% at 90% 90%, rgba(0,130,255,0.016) 0%, transparent 50%)",
             ].join(","),
             display: "flex", alignItems: "center", justifyContent: "center",
+            flexDirection: "column",
+            overflowY: "auto",
+            padding: "env(safe-area-inset-top, 16px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 16px) env(safe-area-inset-left, 0px)",
             cursor: "pointer",
           }}
         >
@@ -3119,7 +3122,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
             }} />
 
             {/* Custom bell icon with glow halo */}
-            <div style={{
+            <div className="alarm-icon-wrap" style={{
               position: "relative", marginBottom: 26,
               display: "flex", alignItems: "center", justifyContent: "center",
               width: 72, height: 72,
@@ -3281,9 +3284,9 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
             )}
           </div>
 
-          {/* Subtle screen-edge glow — zIndex 2 to sit above card (zIndex 1) within overlay stacking context */}
+          {/* Screen-edge glow — must be zIndex 0 (below card at zIndex 1), pointer-events none */}
           <div style={{
-            position: "fixed", inset: 0, pointerEvents: "none", zIndex: 2,
+            position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
             boxShadow: "inset 0 0 48px rgba(0,204,122,0.07)",
             animation: "alarmEdge 2.4s ease-in-out infinite",
           }} />
@@ -3335,10 +3338,20 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         /* Mobile: compact layout so card fits on phone screens */
         @media (max-width: 520px) {
           .alarm-card {
-            padding: 28px 20px 22px !important;
+            padding: 24px 20px 20px !important;
             max-width: calc(100vw - 24px) !important;
             width: calc(100vw - 24px) !important;
             border-radius: 10px !important;
+            margin: auto !important;
+          }
+          .alarm-icon-wrap {
+            width: 52px !important;
+            height: 52px !important;
+            margin-bottom: 16px !important;
+          }
+          .alarm-icon-wrap svg {
+            width: 26px !important;
+            height: 26px !important;
           }
           .alarm-bubble {
             width: 96px !important;
@@ -4032,8 +4045,8 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
 /* ═══════════════════════════════════════════════════════════
    MAIN EXPORT
 ═══════════════════════════════════════════════════════════ */
-export default function SessionClient({ user }: { user: User }) {
-  const [mode,         setMode]         = useState<Mode>("operator");
+export default function SessionClient({ user, viewMode }: { user: User; viewMode: "operator" | "analyst" }) {
+  const [mode,         setMode]         = useState<Mode>(viewMode);
   const [modeOverride, setModeOverride] = useState<Mode | null>(null);
   const [greeting,      setGreeting]      = useState("Welcome back");
   const [timeStr,       setTimeStr]       = useState("");
@@ -4254,7 +4267,6 @@ export default function SessionClient({ user }: { user: User }) {
   useEffect(() => {
     function tick() {
       const m = melbNow();
-      setMode(m.mode);
       setGreeting(getGreeting(user.name, m.hour));
       setTimeStr(m.timeStr);
       setDayStr(m.dayStr);

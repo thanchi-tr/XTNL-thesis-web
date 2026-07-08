@@ -152,7 +152,9 @@ function DDHistTip({ active, payload }: { active?: boolean; payload?: { payload:
 export default function MonteCarloSimulator() {
   const { params: p, result: res, running, setParam, setParams, rerun } = useSimulator();
   const { data: session } = useSession();
-  const authed = Boolean((session as any)?.twoFactorVerified);
+  const authed = Boolean(
+    (session as any)?.roles?.some((r: string) => ["strategist", "fund_manager"].includes(r))
+  );
 
   /* ── Spaghetti chart data (logged-out) — sampled for perf ── */
   // 40 paths × ~65 x-points = ~2,600 SVG segments (vs 200 × 260 = 52,000)

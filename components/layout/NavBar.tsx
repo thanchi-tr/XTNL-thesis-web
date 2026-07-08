@@ -7,13 +7,13 @@ import { useSession, signOut } from "next-auth/react";
 import LoginModal from "./LoginModal";
 import XtnlLogo from "@/components/ui/XtnlLogo";
 
-const LINKS = [
-  { href: "/",           label: "Overview",   authedOnly: false, hideWhenAuthed: false },
-  { href: "/prospectus", label: "Prospectus", authedOnly: false, hideWhenAuthed: false },
-  { href: "/model",      label: "Simulator",  authedOnly: false, hideWhenAuthed: true  },
-  { href: "/data",       label: "Data",       authedOnly: true,  hideWhenAuthed: false },
-  { href: "/session",    label: "Session",    authedOnly: true,  hideWhenAuthed: false },
-  { href: "/analytics",  label: "Analytics",  authedOnly: true,  hideWhenAuthed: false },
+const LINKS: { href: string; label: string; roles: string[] | null; hideWhenAuthed: boolean; accent: boolean }[] = [
+  { href: "/",           label: "Overview",   roles: null,                                    hideWhenAuthed: false, accent: false },
+  { href: "/prospectus", label: "Prospectus", roles: null,                                    hideWhenAuthed: false, accent: false },
+  { href: "/model",      label: "Simulator",  roles: null,                                    hideWhenAuthed: true,  accent: false },
+  { href: "/data",       label: "Data",       roles: ["analyst", "fund_manager"],             hideWhenAuthed: false, accent: true  },
+  { href: "/session",    label: "Session",    roles: ["operator", "analyst", "fund_manager"], hideWhenAuthed: false, accent: true  },
+  { href: "/analytics",  label: "Analytics",  roles: ["strategist", "fund_manager"],          hideWhenAuthed: false, accent: true  },
 ];
 
 export default function NavBar() {
@@ -82,6 +82,7 @@ export default function NavBar() {
   }, [drawerOpen, modalOpen]);
 
   const authed = session?.twoFactorVerified;
+  const roles  = (session as { roles?: string[] } | null)?.roles ?? [];
 
   /* Fetch connected devices whenever the modal opens */
   useEffect(() => {
@@ -248,10 +249,10 @@ export default function NavBar() {
 
           {/* ── Desktop nav ───────────────────────────── */}
           <div className="nav-desktop" style={{ alignItems: "center", gap: 32 }}>
-            {LINKS.filter(l => (!l.authedOnly || authed) && !(l.hideWhenAuthed && authed)).map(({ href, label, authedOnly }) => (
+            {LINKS.filter(l => !(l.hideWhenAuthed && authed) && (l.roles === null || (authed && l.roles.some(r => roles.includes(r))))).map(({ href, label, accent }) => (
               <Link
                 key={href} href={href}
-                className={`nav-link${pathname === href ? " active" : ""}${authedOnly ? " nav-link-accent" : ""}`}
+                className={`nav-link${pathname === href ? " active" : ""}${accent ? " nav-link-accent" : ""}`}
                 style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
               >
                 {label}
@@ -615,7 +616,7 @@ export default function NavBar() {
         }}
       >
         <div className="site-container" style={{ paddingTop: 20, paddingBottom: 28 }}>
-          {LINKS.filter(l => (!l.authedOnly || authed) && !(l.hideWhenAuthed && authed)).map(({ href, label }, i) => (
+          {LINKS.filter(l => !(l.hideWhenAuthed && authed) && (l.roles === null || (authed && l.roles.some(r => roles.includes(r))))).map(({ href, label }, i) => (
             <Link
               key={href} href={href} className="nav-link-mobile"
               onClick={() => setDrawerOpen(false)}

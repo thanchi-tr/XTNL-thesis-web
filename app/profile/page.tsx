@@ -8,5 +8,10 @@ export const metadata: Metadata = { title: "Profile" };
 export default async function ProfilePage() {
   const session = await auth();
   if (!session?.twoFactorVerified) redirect("/");
-  return <ProfileClient user={{ email: session.userEmail ?? "", name: session.userName ?? "" }} />;
+  return (
+    <ProfileClient
+      user={{ email: session.userEmail ?? "", name: session.userName ?? "" }}
+      roles={session.roles ?? []}
+    />
+  );
 }

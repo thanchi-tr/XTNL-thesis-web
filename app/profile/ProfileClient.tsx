@@ -1,6 +1,7 @@
 "use client";
 
 type User = { email: string; name: string };
+type Props = { user: User; roles: string[] };
 
 function initials(name: string) {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "XT";
@@ -27,38 +28,35 @@ function Card({ title, chip, children }: { title: string; chip?: React.ReactNode
   );
 }
 
-const ROLES = [
-  {
-    id: "operator",
+const ROLE_CATALOG: Record<string, { label: string; color: string; description: string; capabilities: string[] }> = {
+  operator: {
     label: "Operator",
     color: "#00cc7a",
     description: "Active trade execution and real-time session management.",
-    capabilities: ["Session Journal", "Entry Checklist", "Focus Alerts", "Trade Log", "Risk Alerts"],
+    capabilities: ["Session (Operator View)", "Entry Checklist", "Focus Alerts", "Trade Log", "Risk Alerts"],
   },
-  {
-    id: "analyst",
+  analyst: {
     label: "Analyst",
     color: "#4d9cf5",
     description: "Data review, performance analysis, and session audit.",
-    capabilities: ["Analytics Page", "Session Audit", "LLM Mirror", "Checklist Toggle", "Simulator"],
+    capabilities: ["Data Page", "Session (Analyst View)", "LLM Mirror", "Checklist Toggle"],
   },
-  {
-    id: "moderator",
-    label: "Moderator",
-    color: "#f0a030",
-    description: "Platform oversight, compliance review, and content governance.",
-    capabilities: ["Moderator Panel", "User Review", "Compliance Flag", "Session Lock"],
-  },
-  {
-    id: "strategist",
+  strategist: {
     label: "Strategist",
     color: "#a78bfa",
     description: "Algorithm governance, risk parameter design, and strategy authoring.",
-    capabilities: ["Algorithm Config", "Risk Params", "Prospectus Edit", "Full Data Access"],
+    capabilities: ["Analytics Page", "Full Simulator", "Risk Params", "Full Data Access"],
   },
-] as const;
+  fund_manager: {
+    label: "Fund Manager",
+    color: "#f0a030",
+    description: "Full platform access across all modules and roles.",
+    capabilities: ["All Pages", "All Simulator Features", "All Session Views", "Admin Override"],
+  },
+};
 
-function RoleCard({ role }: { role: typeof ROLES[number] }) {
+function RoleCard({ id }: { id: string }) {
+  const role = ROLE_CATALOG[id] ?? { label: id, color: "var(--ink-2)", description: "", capabilities: [] };
   return (
     <div style={{
       background: "var(--card)", borderRadius: 8, overflow: "hidden",
@@ -66,15 +64,13 @@ function RoleCard({ role }: { role: typeof ROLES[number] }) {
       borderLeft: `3px solid ${role.color}`,
     }}>
       <div style={{ padding: "14px 18px 10px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{
-            fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 800,
-            letterSpacing: "0.10em", textTransform: "uppercase",
-            color: role.color,
-          }}>
-            {role.label}
-          </span>
-        </div>
+        <span style={{
+          fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 800,
+          letterSpacing: "0.10em", textTransform: "uppercase" as const,
+          color: role.color, display: "block", marginBottom: 6,
+        }}>
+          {role.label}
+        </span>
         <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.6 }}>
           {role.description}
         </p>
@@ -97,7 +93,7 @@ function RoleCard({ role }: { role: typeof ROLES[number] }) {
   );
 }
 
-export default function ProfileClient({ user }: { user: User }) {
+export default function ProfileClient({ user, roles }: Props) {
   const ini = initials(user.name || user.email);
 
   return (
@@ -162,22 +158,52 @@ export default function ProfileClient({ user }: { user: User }) {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 14px" }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)", letterSpacing: "-0.01em" }}>System Roles</span>
-              <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>4 roles · XTNL v5</span>
+              <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>
+                {roles.length} role{roles.length !== 1 ? "s" : ""} assigned
+              </span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-              {ROLES.map(role => (
-                <RoleCard key={role.id} role={role} />
-              ))}
-            </div>
+            {roles.length === 0 ? (
+              <div style={{ padding: "14px 16px", borderRadius: 8, background: "var(--card)", border: "1px solid var(--line)", fontSize: 12, color: "var(--ink-3)" }}>
+                No roles assigned to this account.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+                {roles.map(id => <RoleCard key={id} id={id} />)}
+              </div>
+            )}
           </div>
 
           {/* Access */}
           <Card title="Access & Permissions">
-            <Row label="Session Page"   value="Full Access" accent="var(--green)" />
-            <Row label="Analytics Page" value="Full Access" accent="var(--green)" />
-            <Row label="Simulator"      value="Full Access" accent="var(--green)" />
-            <Row label="Data Page"      value="Full Access" accent="var(--green)" />
-            <Row label="Prospectus"     value="Full Access" accent="var(--green)" />
+            <Row
+              label="Session Page"
+              value={
+                roles.includes("fund_manager") ? "Full Access" :
+                roles.includes("analyst")      ? "Analyst View" :
+                roles.includes("operator")     ? "Operator View" :
+                "No Access"
+              }
+              accent={
+                (roles.includes("fund_manager") || roles.includes("analyst") || roles.includes("operator"))
+                  ? "var(--green)" : "var(--red)"
+              }
+            />
+            <Row
+              label="Analytics Page"
+              value={roles.some(r => ["strategist", "fund_manager"].includes(r)) ? "Access Granted" : "No Access"}
+              accent={roles.some(r => ["strategist", "fund_manager"].includes(r)) ? "var(--green)" : "var(--red)"}
+            />
+            <Row
+              label="Simulator"
+              value={roles.some(r => ["strategist", "fund_manager"].includes(r)) ? "Full (Authenticated)" : "Guest View"}
+              accent={roles.some(r => ["strategist", "fund_manager"].includes(r)) ? "var(--green)" : "var(--ink-3)"}
+            />
+            <Row
+              label="Data Page"
+              value={roles.some(r => ["analyst", "fund_manager"].includes(r)) ? "Access Granted" : "No Access"}
+              accent={roles.some(r => ["analyst", "fund_manager"].includes(r)) ? "var(--green)" : "var(--red)"}
+            />
+            <Row label="Prospectus" value="Full Access" accent="var(--green)" />
           </Card>
 
         </div>

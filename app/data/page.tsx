@@ -94,8 +94,10 @@ function LockedDataPage() {
 export default async function DataPage() {
   const session = await auth();
   const authed  = !!(session as { twoFactorVerified?: boolean } | null)?.twoFactorVerified;
+  const roles   = (session as { roles?: string[] } | null)?.roles ?? [];
+  const canView = authed && roles.some(r => ["analyst", "fund_manager"].includes(r));
 
-  if (!authed) return <LockedDataPage />;
+  if (!canView) return <LockedDataPage />;
 
   return (
     <div className="site-container" style={{ paddingTop: 48, paddingBottom: 80 }}>
