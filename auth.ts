@@ -36,8 +36,8 @@ async function fetchRoles(email: string): Promise<string[]> {
       .eq("user_id", userRow.user_id);
     if (!roleRows) return [];
 
-    return roleRows
-      .map((r: { role: { name: string } | null }) => r.role?.name)
+    return (roleRows as any[])
+      .map(r => Array.isArray(r.role) ? r.role[0]?.name : r.role?.name)
       .filter((n): n is string => typeof n === "string");
   } catch {
     return [];
