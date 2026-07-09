@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════
-   XTNL Monte Carlo Simulation Engine — v5
+   XTNL Monte Carlo Simulation Engine — v6
    ───────────────────────────────────────────────────────────────────
    COMPOUNDING MODEL
    -----------------
@@ -7,34 +7,38 @@
    applied uniformly across all trades in that week.
 
    Per-week sequence:
-     1. OU step → this week's operator efficiency
-     2. appliedRisk = base_r × perf_mult × regime_penalty × 0.95
-        (computed from week-start streak — FIXED for the whole week)
-     3. Simulate tradesPerWeek individual trades:
+     1. OU step → this week's operator efficiency (+ optional extra noise)
+     2. Draw captureRateAdj ~ N(captureRateMean, captureRateStdDev)
+     3. Evaluate scalingConditions → scalingMult
+        appliedRisk = base_r × perf_mult × regime_penalty × 0.95 × scalingMult
+     4. Draw actualTrades = round(tradesPerWeek + tradeFreqStdDev × Z)
+     5. Simulate actualTrades individual trades:
           a. Draw tradeR ~ N(μ_decay, σ)
           b. Sum into weeklyTotalR
-          c. Update losing streak per-trade  ← affects NEXT week's risk
-     4. Apply weekly slippage once on positive result
-     5. capturedWeeklyR = weeklyTotalR × eff  (efficiency scales yield)
-     6. equity_end = equity_start × (1 + appliedRisk × capturedWeeklyR)
-        ← position size was equity_start × appliedRisk, fixed all week
+          c. Update losing streak per-trade
+     6. Weekly slippage on positive weeks
+     7. capturedWeeklyR = weeklyTotalR × eff × captureRateAdj
+     8. equity_end = equity_start × (1 + appliedRisk × capturedWeeklyR)
+     9. Commission deduction (existing formula, gate: eff ≥ 88%)
+    10. Governor incentive deduction (fixedRatePct + bonusRatePct)
+    11. 4-week capital injection gate
+    12. Annual ATO tax
+    13. Drawdown tracking + halt check
 
-   Compounding is BETWEEN weeks: equity_start next week = equity_end
-   this week, so position size grows/shrinks with each completed week.
-   Within a week the position size does not change.
-
-   Risk formula (recommend_r_generator.py):
-     final_risk = base_r × perf_mult(eff) × regime_penalty(streak) × 0.95
-
-   Commission (current_commission_generator.py):
-     comm = (base_r × 0.20 + max(totalRealised, 0) × 0.05) × [1.5 if eff ≥ 0.95]
-     Gate: eff ≥ 0.88
-
-   Injection (memory_generator.py — 4-week gate):
-     Every 4 weeks: ALL 4 weeks eff > 0.85 → inject frozenPool
-     Excellence (any eff > 0.95) → pool × scalingFactor (1.20 − 0.025×streak)
-     Failure → pool resets to baseline, injStreak = 0
+   Backward compatibility:
+     All new fields default to values that reproduce v5 behaviour exactly:
+     efficiencyStdDev=0, captureRateMean=1.0, captureRateStdDev=0,
+     tradeFreqStdDev=0, scalingConditions=[], fixedRatePct=0, bonusRatePct=0.
    ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Scaling condition (Governor — Risk Management) ─────────────── */
+export interface ScalingCondition {
+  id:          string;      // unique key for React list rendering
+  metric:      "efficiency" | "captureRate";  // what to compare against
+  op:          "<" | "<=" | ">" | ">=";
+  threshold:   number;      // fraction (e.g. 0.40 = 40%)
+  rMultiplier: number;      // factor applied to appliedRisk (e.g. 0.50 halves risk)
+}
 
 export interface SimParams {
   /* ── Edge ─────────────────────────────────────────────────────── */
@@ -53,14 +57,25 @@ export interface SimParams {
 
   /* ── Capital injection (4-week gate) ─────────────────────────── */
   frozenPoolPct:       number;  // base pool per qualifying 4-wk period (fraction of initial)
-  //   Qualification: ALL 4 weeks eff > 0.85
-  //   Excellence:    any eff > 0.95 → pool × max(1.0, 1.20 − 0.025×streak)
-  //   Failure:       pool resets to frozenPoolPct, injStreak = 0
 
   /* ── Risk controls ────────────────────────────────────────────── */
   taxRatePct:          number;  // ATO annual statutory drag (max 47%)
   maxDDLimit:          number;  // halt path if peak-to-trough DD% ≥ this (0 = off)
   weeks:               number;  // simulation horizon
+
+  /* ── Governor — Incentive structure ──────────────────────────── */
+  fixedRatePct:        number;  // % of weekly recommend_r paid as fixed operator fee
+  bonusRatePct:        number;  // % of weekly captured income paid as bonus
+  bonusThreshold:      number;  // min actualCaptureRate to trigger bonus (fraction, e.g. 0.80)
+
+  /* ── Governor — Scaling conditions ──────────────────────────── */
+  scalingConditions:   ScalingCondition[];  // dynamic R multiplier rules (empty = no rules)
+
+  /* ── Operator attributed randomness ─────────────────────────── */
+  efficiencyStdDev:    number;  // extra noise added to OU step (additional σ, e.g. 0.05)
+  captureRateMean:     number;  // mean capture rate multiplier (1.0 = no change from eff)
+  captureRateStdDev:   number;  // std dev of capture rate multiplier (0 = deterministic)
+  tradeFreqStdDev:     number;  // std dev of trades per week (0 = fixed at tradesPerWeek)
 }
 
 /* ── Output types ─────────────────────────────────────────────── */
@@ -114,6 +129,8 @@ export interface SimSummary {
   meanAvgCommPerWeek: number;
   meanTotalInj:       number;
   meanInjEvents:      number;
+  meanGovernorPaid:   number;  // avg total governor incentive per path (fraction of initial)
+  meanCaptureRate:    number;  // avg actual capture rate (eff × captureAdj) per path-week
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -165,6 +182,25 @@ function regimePenalty(streakRatio: number): number {
   return 1.00;
 }
 
+/** Apply scaling conditions and return combined multiplier */
+function applyScalingConditions(
+  conditions: ScalingCondition[],
+  eff: number,
+  actualCaptureRate: number,
+): number {
+  let mult = 1.0;
+  for (let c = 0; c < conditions.length; c++) {
+    const cond = conditions[c];
+    const mv   = cond.metric === "efficiency" ? eff : actualCaptureRate;
+    const match = cond.op === "<"  ? mv <  cond.threshold
+                : cond.op === "<=" ? mv <= cond.threshold
+                : cond.op === ">"  ? mv >  cond.threshold
+                :                    mv >= cond.threshold;
+    if (match) mult *= cond.rMultiplier;
+  }
+  return mult;
+}
+
 const MC95_MAX_STREAK = 12; // trade-level threshold from SESSION_FILTERED live data
 
 /* ─────────────────────────────────────────────────────────────────
@@ -174,27 +210,23 @@ export function runPath(p: SimParams): PathResult {
   const baseRisk  = p.baseRiskPct / 100;
   const taxRate   = p.taxRatePct  / 100;
   const edgeDecay = 1 - p.edgeDecayPctPerQtr / 100;
+  const conditions = p.scalingConditions ?? [];
 
-  let equity         = 1.0;   // multiples of initial capital
+  let equity         = 1.0;
   let maxPeak        = 1.0;
   let maxDD          = 0.0;
   let capAtYearStart = 1.0;
   let halted         = false;
   let haltWeek: number | null = null;
 
-  /* Operator efficiency — start near mean with small noise */
   let eff = Math.max(0.40, Math.min(1.0, p.operatorMeanEff + 0.06 * randn()));
-
-  /* Streak: individual-trade level, persists across weeks */
   let losingStreak  = 0;
 
-  /* Injection state */
   const eff4Wk:  number[] = [];
   let frozenPool = p.frozenPoolPct;
   let injStreak  = 0;
   let totalInj   = 0;
   let injEvents  = 0;
-
   let totalComm  = 0;
 
   const equitySeries: number[] = [];
@@ -205,79 +237,78 @@ export function runPath(p: SimParams): PathResult {
 
   for (let w = 1; w <= p.weeks; w++) {
 
-    /* ── 1. Operator efficiency (OU step) ──────────────────────── */
-    eff     = ouStep(eff, p.operatorMeanEff);
+    /* 1. Operator efficiency (OU step + optional extra noise) */
+    eff = ouStep(eff, p.operatorMeanEff);
+    if (p.efficiencyStdDev > 0) {
+      eff = Math.max(0.40, Math.min(1.0, eff + p.efficiencyStdDev * randn()));
+    }
     effSum += eff;
 
-    /* ── 2. Compute weekly risk ONCE from week-start streak ─────── *
-     *   Mirrors how Recommend_R is a weekly signal in the real sys. */
+    /* 2. Capture rate adjustment */
+    const captureAdj = p.captureRateStdDev > 0
+      ? Math.max(0.10, Math.min(3.0, p.captureRateMean + p.captureRateStdDev * randn()))
+      : p.captureRateMean;
+    const actualCaptureRate = eff * captureAdj;
+
+    /* 3. Weekly risk with scaling conditions */
     const streakRatioAtWeekStart = losingStreak / MC95_MAX_STREAK;
     const weekRegPen   = regimePenalty(streakRatioAtWeekStart);
     const weekEffMult  = perfMult(eff);
-    /* final_risk = base_r × perf_mult × regime_penalty × 0.95      */
-    const appliedRisk  = baseRisk * weekEffMult * weekRegPen * 0.95;
+    const scalingMult  = conditions.length > 0
+      ? applyScalingConditions(conditions, eff, actualCaptureRate)
+      : 1.0;
+    const appliedRisk  = baseRisk * weekEffMult * weekRegPen * 0.95 * scalingMult;
 
     regSum += weekRegPen;
     regSeries.push(weekRegPen);
 
-    /* ── 3. Simulate individual trades within the week ───────────── *
-     *   Position size = equity_at_week_start × appliedRisk          *
-     *   This is FIXED for all trades this week.                      *
-     *   Equity only updates once, at the end of the week.            */
+    /* 4. Simulate individual trades (with optional frequency jitter) */
     const decayFactor = Math.pow(edgeDecay, Math.floor((w - 1) / 13));
     const muTrade     = p.expPerTrade * decayFactor;
+    const actualTrades = p.tradeFreqStdDev > 0
+      ? Math.max(1, Math.round(p.tradesPerWeek + p.tradeFreqStdDev * randn()))
+      : p.tradesPerWeek;
 
-    let weeklyTotalR  = 0;   // sum of raw R-multiples across all trades
-
-    for (let t = 0; t < p.tradesPerWeek; t++) {
+    let weeklyTotalR  = 0;
+    for (let t = 0; t < actualTrades; t++) {
       const tradeR = muTrade + p.volPerTrade * randn();
       weeklyTotalR += tradeR;
-
-      /* Streak updates per-trade, but does NOT change appliedRisk    *
-       * until the START of the next week.                             */
-      if (tradeR < 0) losingStreak++;
-      else            losingStreak = 0;
+      if (tradeR < 0) losingStreak++; else losingStreak = 0;
     }
 
-    /* ── 4. Weekly slippage (once, on positive weeks) ─────────────── */
+    /* 5. Weekly slippage */
     if (weeklyTotalR > 0) weeklyTotalR -= (0.1 + Math.random() * 0.1);
 
-    /* ── 5. Operator efficiency scales total captured R ──────────── */
-    const capturedWeeklyR = weeklyTotalR * eff;
+    /* 6. Captured R = total R × eff × captureAdj */
+    const capturedWeeklyR = weeklyTotalR * actualCaptureRate;
 
-    /* ── 6. Single weekly equity update (compounding between weeks) ─ *
-     *   P&L this week = equity_start × appliedRisk × capturedWeeklyR *
-     *   equity_end    = equity_start × (1 + appliedRisk × capturedR) *
-     *                                                                  *
-     *   Next week: appliedRisk recomputed from updated equity,        *
-     *   so the dollar position size grows/shrinks with equity — this  *
-     *   is where the weekly compounding occurs.                        */
+    /* 7. Equity update */
     if (!halted) {
       equity *= (1 + appliedRisk * capturedWeeklyR);
       if (equity < 0) equity = 0;
     }
 
-    const weeklyRealised = capturedWeeklyR;  // alias for commission calc below
-
-    /* ── 7. Commission deduction ─────────────────────────────────── *
-     *   Mirrors current_commission_generator.py:                     *
-     *     base  = recommend_r × 0.20                                 *
-     *     bonus = max(realised_r, 0) × 0.05                          *
-     *     mult  = 1.5× when eff ≥ 0.95                               *
-     *   Gate: eff ≥ 0.88                                             */
+    /* 8. Commission deduction (existing formula) */
     if (!halted && w >= p.commissionStartWeek && eff >= 0.88) {
       const commMult  = eff >= 0.95 ? 1.5 : 1.0;
       const baseComm  = appliedRisk * 0.20;
-      const bonusComm = Math.max(weeklyRealised * appliedRisk, 0) * 0.05;
+      const bonusComm = Math.max(capturedWeeklyR * appliedRisk, 0) * 0.05;
       const commFrac  = (baseComm + bonusComm) * commMult;
-      equity         *= (1 - commFrac);   // paid out — reduces compounding base
+      equity         *= (1 - commFrac);
       totalComm      += commFrac;
     }
 
-    /* ── 8. 4-week capital injection gate ───────────────────────── *
-     *   Every 4 weeks: ALL 4 weeks must have eff > 0.85             *
-     *   Excellence (any eff > 0.95): pool × scalingFactor           *
-     *   Failure: pool resets, injStreak = 0                         */
+    /* 9. Governor incentive deduction */
+    if (!halted && (p.fixedRatePct > 0 || p.bonusRatePct > 0)) {
+      const fixedFee = (p.fixedRatePct / 100) * appliedRisk;
+      const bonusFee = actualCaptureRate >= p.bonusThreshold
+        ? (p.bonusRatePct / 100) * Math.max(capturedWeeklyR * appliedRisk, 0)
+        : 0;
+      const govFrac = fixedFee + bonusFee;
+      if (govFrac > 0) equity *= (1 - govFrac);
+    }
+
+    /* 10. 4-week capital injection gate */
     eff4Wk.push(eff);
     if (eff4Wk.length > 4) eff4Wk.shift();
 
@@ -288,14 +319,13 @@ export function runPath(p: SimParams): PathResult {
       if (allQualify) {
         if (anyExcellent) {
           injStreak++;
-          /* Volatility shield: scaling decays as consecutive streak grows */
           const sf = Math.max(1.0, 1.20 - 0.025 * injStreak);
           frozenPool = Math.max(p.frozenPoolPct, frozenPool * sf);
         } else {
           injStreak++;
         }
         if (!halted) {
-          equity   += frozenPool;   // inject into compounding base
+          equity   += frozenPool;
           maxPeak   = Math.max(maxPeak, equity);
           totalInj += frozenPool;
           injEvents++;
@@ -306,7 +336,7 @@ export function runPath(p: SimParams): PathResult {
       }
     }
 
-    /* ── 6. Annual ATO tax (year-end) ────────────────────────────── */
+    /* 11. Annual ATO tax */
     if (w % 52 === 0 && !halted && equity > capAtYearStart) {
       const taxable = equity - capAtYearStart;
       equity       -= taxable * taxRate;
@@ -314,7 +344,7 @@ export function runPath(p: SimParams): PathResult {
       capAtYearStart = equity;
     }
 
-    /* ── 7. Drawdown tracking ─────────────────────────────────────── */
+    /* 12. Drawdown tracking */
     if (equity > maxPeak) maxPeak = equity;
     const dd = maxPeak > 0 ? (maxPeak - equity) / maxPeak : 0;
     if (dd > maxDD) maxDD = dd;
@@ -345,26 +375,34 @@ export function runPath(p: SimParams): PathResult {
 
 /* ─────────────────────────────────────────────────────────────────
    Full simulation — optimised for speed
-   Key changes over the naïve version:
-   • Decay factors pre-computed once (not per-week-per-path)
-   • Only 200 sampled paths write equity/eff/reg arrays; the other
-     800 paths update scalar accumulators only — zero GC pressure
-   • Eff / regime tier counts accumulated inline — no post passes
-   • Float64Array used throughout for cache-friendly numeric storage
+   Key changes over v5:
+   • captureRateAdj drawn per-week (N(mean, std)) — eff × captureAdj = actual capture
+   • scalingConditions evaluated once per week → scalingMult on appliedRisk
+   • efficiencyStdDev adds extra OU noise
+   • tradeFreqStdDev jitters actualTrades per week
+   • Governor incentive deducted after commission
+   • govSums[] tracks total governor cost per path; globalCaptureSum for mean rate
    ───────────────────────────────────────────────────────────────── */
 export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
-  const baseRisk  = p.baseRiskPct / 100;
-  const taxRate   = p.taxRatePct  / 100;
-  const edgeDecay = 1 - p.edgeDecayPctPerQtr / 100;
+  const baseRisk   = p.baseRiskPct / 100;
+  const taxRate    = p.taxRatePct  / 100;
+  const edgeDecay  = 1 - p.edgeDecayPctPerQtr / 100;
+  const conditions = p.scalingConditions ?? [];
+
   const { weeks, tradesPerWeek, expPerTrade, volPerTrade,
           operatorMeanEff, frozenPoolPct,
-          commissionStartWeek, maxDDLimit } = p;
+          commissionStartWeek, maxDDLimit,
+          efficiencyStdDev    = 0,
+          captureRateMean     = 1.0,
+          captureRateStdDev   = 0,
+          tradeFreqStdDev     = 0,
+          fixedRatePct        = 0,
+          bonusRatePct        = 0,
+          bonusThreshold      = 0.80 } = p;
 
-  /* Pre-compute quarterly decay factor per week — eliminates Math.pow from hot loop */
   const decayFactors = new Float64Array(weeks);
   for (let w = 0; w < weeks; w++) decayFactors[w] = Math.pow(edgeDecay, Math.floor(w / 13));
 
-  /* Chart storage: every STEP-th path, up to 200 */
   const STEP   = Math.max(1, Math.floor(iterations / 200));
   const NCHART = Math.min(200, Math.ceil(iterations / STEP));
   const chartEq  = Array.from({ length: NCHART }, () => new Float64Array(weeks));
@@ -372,32 +410,29 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
   const chartReg = Array.from({ length: NCHART }, () => new Float64Array(weeks));
   const chartMeanEff = new Float64Array(NCHART);
 
-  /* Per-path scalars (no per-path series arrays) */
   const terminals = new Float64Array(iterations);
   const maxDDs    = new Float64Array(iterations);
   const meanEffs  = new Float64Array(iterations);
   const commSums  = new Float64Array(iterations);
+  const govSums   = new Float64Array(iterations);
   const injSums   = new Float64Array(iterations);
   const injEvts   = new Uint16Array(iterations);
 
-  /* Inline stat counters — no post-processing passes needed */
   let excCt = 0, norCt = 0, redCt = 0, critCt = 0, hltCt = 0;
   let rHealthy = 0, rHair = 0, rTox = 0, globalRegSum = 0;
+  let globalCaptureSum = 0;
   let ruined = 0;
 
-  /* Reusable buffers for sampled-path recording */
   const tmpEq  = new Float64Array(weeks);
   const tmpEff = new Float64Array(weeks);
   const tmpReg = new Float64Array(weeks);
 
-  /* 4-slot circular buffer for the injection gate */
   const eff4 = new Float64Array(4);
 
   for (let i = 0; i < iterations; i++) {
     const isSampled = i % STEP === 0;
     const chartIdx  = isSampled ? Math.floor(i / STEP) : -1;
 
-    /* ── Path init ─────────────────────────────────────────────── */
     let equity      = 1.0;
     let maxPeak     = 1.0;
     let maxDD_p     = 0.0;
@@ -413,19 +448,27 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
     let totalInj_p  = 0;
     let injEvts_p   = 0;
     let totalComm_p = 0;
+    let totalGov_p  = 0;
     let effSum_p    = 0;
 
-    /* ── Weekly loop ───────────────────────────────────────────── */
     for (let w = 0; w < weeks; w++) {
 
-      /* 1. OU step (inlined for speed) */
+      /* 1. OU step + optional extra noise */
       {
-        const nx = eff + 0.35 * (operatorMeanEff - eff) + 0.075 * randn();
+        const nx = eff + 0.35 * (operatorMeanEff - eff) + 0.075 * randn()
+          + (efficiencyStdDev > 0 ? efficiencyStdDev * randn() : 0);
         eff = nx < 0.40 ? 0.40 : nx > 1.0 ? 1.0 : nx;
       }
       effSum_p += eff;
 
-      /* 2. Weekly risk (perfMult + regimePenalty inlined) */
+      /* 2. Capture rate adjustment */
+      const captureAdj = captureRateStdDev > 0
+        ? (Math.max(0.10, Math.min(3.0, captureRateMean + captureRateStdDev * randn())))
+        : captureRateMean;
+      const actualCaptureRate = eff * captureAdj;
+      globalCaptureSum += actualCaptureRate;
+
+      /* 3. Weekly risk + scaling conditions */
       const streakRatio = losingStreak / MC95_MAX_STREAK;
       const weekRegPen  = streakRatio >= 1.0 ? 0.5
                         : streakRatio >= 0.8  ? Math.max(0.6, 1.0 - (streakRatio - 0.8) * 3.5)
@@ -434,30 +477,45 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
                         : eff >= 0.80 ? 1.00
                         : eff >= 0.50 ? 0.60
                         : eff >= 0.40 ? 0.30 : 0.00;
-      const appliedRisk = baseRisk * weekEffMult * weekRegPen * 0.95;
 
-      /* 3. Simulate trades */
+      let scalingMult = 1.0;
+      for (let c = 0; c < conditions.length; c++) {
+        const cond = conditions[c];
+        const mv   = cond.metric === "efficiency" ? eff : actualCaptureRate;
+        const match = cond.op === "<"  ? mv <  cond.threshold
+                    : cond.op === "<=" ? mv <= cond.threshold
+                    : cond.op === ">"  ? mv >  cond.threshold
+                    :                    mv >= cond.threshold;
+        if (match) scalingMult *= cond.rMultiplier;
+      }
+
+      const appliedRisk = baseRisk * weekEffMult * weekRegPen * 0.95 * scalingMult;
+
+      /* 4. Simulate trades with optional frequency jitter */
       const muTrade = expPerTrade * decayFactors[w];
+      const actualTrades = tradeFreqStdDev > 0
+        ? Math.max(1, Math.round(tradesPerWeek + tradeFreqStdDev * randn()))
+        : tradesPerWeek;
       let weeklyTotalR = 0;
-      for (let t = 0; t < tradesPerWeek; t++) {
+      for (let t = 0; t < actualTrades; t++) {
         const tradeR = muTrade + volPerTrade * randn();
         weeklyTotalR += tradeR;
         if (tradeR < 0) losingStreak++; else losingStreak = 0;
       }
 
-      /* 4. Slippage */
+      /* 5. Slippage */
       if (weeklyTotalR > 0) weeklyTotalR -= (0.1 + Math.random() * 0.1);
 
-      /* 5. Captured R */
-      const capturedR = weeklyTotalR * eff;
+      /* 6. Captured R = weeklyTotalR × eff × captureAdj */
+      const capturedR = weeklyTotalR * actualCaptureRate;
 
-      /* 6. Equity update */
+      /* 7. Equity update */
       if (!halted) {
         equity *= (1 + appliedRisk * capturedR);
         if (equity < 0) equity = 0;
       }
 
-      /* 7. Commission */
+      /* 8. Commission */
       if (!halted && w + 1 >= commissionStartWeek && eff >= 0.88) {
         const commMult  = eff >= 0.95 ? 1.5 : 1.0;
         const commFrac  = (appliedRisk * 0.20 + Math.max(capturedR * appliedRisk, 0) * 0.05) * commMult;
@@ -465,7 +523,20 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
         totalComm_p    += commFrac;
       }
 
-      /* 8. 4-week injection gate (circular buffer, no push/shift) */
+      /* 9. Governor incentive */
+      if (!halted && (fixedRatePct > 0 || bonusRatePct > 0)) {
+        const fixedFee = (fixedRatePct / 100) * appliedRisk;
+        const bonusFee = actualCaptureRate >= bonusThreshold
+          ? (bonusRatePct / 100) * Math.max(capturedR * appliedRisk, 0)
+          : 0;
+        const govFrac = fixedFee + bonusFee;
+        if (govFrac > 0) {
+          equity      *= (1 - govFrac);
+          totalGov_p  += govFrac;
+        }
+      }
+
+      /* 10. 4-week injection gate */
       eff4[w & 3] = eff;
       if (inj4Count < 4) inj4Count++;
 
@@ -495,7 +566,7 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
         }
       }
 
-      /* 9. Annual tax */
+      /* 11. Annual tax */
       if ((w + 1) % 52 === 0 && !halted && equity > capAtYear) {
         const taxable = equity - capAtYear;
         equity       -= taxable * taxRate;
@@ -503,13 +574,13 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
         capAtYear     = equity;
       }
 
-      /* 10. Drawdown + halt */
+      /* 12. Drawdown + halt */
       if (equity > maxPeak) maxPeak = equity;
       const dd = maxPeak > 0 ? (maxPeak - equity) / maxPeak : 0;
       if (dd > maxDD_p) maxDD_p = dd;
       if (!halted && maxDDLimit > 0 && dd * 100 >= maxDDLimit) halted = true;
 
-      /* 11. Tier counters accumulated inline — replaces two O(n×w) post passes */
+      /* Tier counters */
       if      (eff >= 0.95) excCt++;
       else if (eff >= 0.80) norCt++;
       else if (eff >= 0.50) redCt++;
@@ -521,7 +592,6 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
       else                        rTox++;
       globalRegSum += weekRegPen;
 
-      /* 12. Only write series for sampled paths (saves 80 % of array writes) */
       if (isSampled) {
         tmpEq[w]  = equity;
         tmpEff[w] = eff;
@@ -529,11 +599,11 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
       }
     }
 
-    /* ── Store path scalars ─────────────────────────────────── */
     terminals[i] = equity;
     maxDDs[i]    = maxDD_p;
     meanEffs[i]  = effSum_p / weeks;
     commSums[i]  = totalComm_p;
+    govSums[i]   = totalGov_p;
     injSums[i]   = totalInj_p;
     injEvts[i]   = injEvts_p;
     if (equity < 0.10) ruined++;
@@ -550,11 +620,12 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
   const n = iterations;
   const sortedTerminals = Float64Array.from(terminals).sort();
 
-  let meanTerminal = 0, commTotal = 0, injTotal = 0, injEvtTotal = 0,
-      ddTotal = 0, worstDD = 0, effMeanTotal = 0;
+  let meanTerminal = 0, commTotal = 0, govTotal = 0, injTotal = 0,
+      injEvtTotal = 0, ddTotal = 0, worstDD = 0, effMeanTotal = 0;
   for (let i = 0; i < n; i++) {
     meanTerminal  += terminals[i];
     commTotal     += commSums[i];
+    govTotal      += govSums[i];
     injTotal      += injSums[i];
     injEvtTotal   += injEvts[i];
     ddTotal       += maxDDs[i];
@@ -578,7 +649,6 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
     pctToxic:    rTox     / nw * 100,
   };
 
-  /* eff/reg path samples: sort the 200 chart paths by meanEff, pick 6 percentiles */
   const sortedChartIdx = Array.from({ length: NCHART }, (_, i) => i)
     .sort((a, b) => chartMeanEff[a] - chartMeanEff[b]);
   const EFF_PCTS = [0, 0.1, 0.25, 0.5, 0.75, 0.9];
@@ -612,6 +682,8 @@ export function runSimulation(p: SimParams, iterations = 1000): SimSummary {
     meanAvgCommPerWeek:    meanTotalComm / weeks,
     meanTotalInj:          injTotal / n,
     meanInjEvents:         injEvtTotal / n,
+    meanGovernorPaid:      govTotal / n,
+    meanCaptureRate:       globalCaptureSum / nw,
   };
 }
 

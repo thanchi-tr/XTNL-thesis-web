@@ -21,6 +21,17 @@ export const DEFAULT_PARAMS: SimParams = {
   taxRatePct:          47,     // ATO max marginal + 2% Medicare
   maxDDLimit:          0,      // off
   weeks:               260,    // 5 years
+  /* Governor — Incentive structure */
+  fixedRatePct:        0,      // off by default
+  bonusRatePct:        0,      // off by default
+  bonusThreshold:      0.80,   // 80% actual capture rate triggers bonus
+  /* Governor — Scaling conditions */
+  scalingConditions:   [],     // no rules — engine behaves identically to v5
+  /* Operator attributed randomness */
+  efficiencyStdDev:    0,      // no extra noise beyond OU
+  captureRateMean:     1.0,    // 100% capture — identical to v5 behaviour
+  captureRateStdDev:   0,      // deterministic capture rate
+  tradeFreqStdDev:     0,      // fixed trade count
 };
 
 /* ── Context shape ───────────────────────────────────────────── */

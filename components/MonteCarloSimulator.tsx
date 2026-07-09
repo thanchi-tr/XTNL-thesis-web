@@ -7,8 +7,9 @@ import {
   ResponsiveContainer, ReferenceLine, AreaChart, Area,
   BarChart, Bar, Cell,
 } from "recharts";
-import { formatMultiple, type SimParams } from "@/lib/simulation";
+import { formatMultiple, type SimParams, type ScalingCondition } from "@/lib/simulation";
 import SliderControl from "@/components/ui/SliderControl";
+import ScalingRulesEditor from "@/components/simulator/ScalingRulesEditor";
 import { useSimulator } from "@/context/SimulatorContext";
 
 /* ─── Presets ──────────────────────────────────────────────── */
@@ -318,6 +319,22 @@ export default function MonteCarloSimulator() {
           <span style={{ color: liveReg < 1 ? "#f03a57" : "rgba(142,163,190,0.7)" }}> {liveReg.toFixed(3)}</span>
           <span style={{ color: "rgba(142,163,190,0.5)" }}> × 0.95 =</span>
           <span style={{ color: "#00e88c", fontWeight: 800 }}> {liveApplied}%</span>
+          {p.scalingConditions.length > 0 && (
+            <>
+              <span style={{ color: "rgba(142,163,190,0.5)" }}> · scaling rules</span>
+              <span style={{ padding: "1px 6px", background: "rgba(192,132,252,0.12)", border: "1px solid rgba(192,132,252,0.25)", borderRadius: 3, fontSize: 9, color: "#c084fc", fontWeight: 700 }}>
+                {p.scalingConditions.length} active
+              </span>
+            </>
+          )}
+          {(p.fixedRatePct > 0 || p.bonusRatePct > 0) && (
+            <>
+              <span style={{ color: "rgba(142,163,190,0.5)" }}> · gov</span>
+              <span style={{ padding: "1px 6px", background: "rgba(192,132,252,0.12)", border: "1px solid rgba(192,132,252,0.25)", borderRadius: 3, fontSize: 9, color: "#c084fc", fontWeight: 700 }}>
+                {[p.fixedRatePct > 0 && `fixed ${p.fixedRatePct}%`, p.bonusRatePct > 0 && `bonus ${p.bonusRatePct}%`].filter(Boolean).join(" + ")}
+              </span>
+            </>
+          )}
         </div>
       </div>
       )}
@@ -430,6 +447,122 @@ export default function MonteCarloSimulator() {
               <SliderControl label="Tax Rate  (ATO annual)" value={p.taxRatePct} displayValue={`${p.taxRatePct.toFixed(0)}%`} min={0} max={47} step={1} tooltip="Applied to realised gains each year-end. 47% = ATO top marginal + 2% Medicare." onChange={(v) => update("taxRatePct", v)} readOnly={!authed} />
               <SliderControl label="DD Halt  (% threshold)" value={p.maxDDLimit} displayValue={p.maxDDLimit === 0 ? "Off" : `-${p.maxDDLimit}%`} min={0} max={60} step={5} tooltip="Halt a simulation path if drawdown exceeds this percentage from peak." onChange={(v) => update("maxDDLimit", v)} readOnly={!authed} />
               <SliderControl label="Horizon  (weeks)" value={p.weeks} displayValue={`${p.weeks}w · ${Math.round(p.weeks/52)}yr`} min={52} max={520} step={1} tooltip="Total simulation duration." onChange={(v) => update("weeks", v)} readOnly={!authed} />
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: "rgba(255,255,255,0.05)" }} />
+
+          {/* ── Governor — Incentive Structure ────────── */}
+          <div>
+            <SectionHead
+              title="Governor — Incentive Structure"
+              sub="Weekly fees deducted from equity after commission · defaults off"
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <SliderControl
+                label="Fixed Rate  (% of weekly R)"
+                value={p.fixedRatePct}
+                displayValue={p.fixedRatePct === 0 ? "Off" : `${p.fixedRatePct.toFixed(1)}%`}
+                min={0} max={50} step={0.5}
+                tooltip="Operator receives this % of weekly recommend_r (applied risk fraction) as a fixed fee, regardless of performance."
+                onChange={(v) => update("fixedRatePct", v)}
+                readOnly={!authed}
+              />
+              <SliderControl
+                label="Bonus Rate  (% of weekly income)"
+                value={p.bonusRatePct}
+                displayValue={p.bonusRatePct === 0 ? "Off" : `${p.bonusRatePct.toFixed(1)}%`}
+                min={0} max={30} step={0.5}
+                tooltip="Bonus paid when capture rate meets threshold. Expressed as % of gross captured income that week."
+                onChange={(v) => update("bonusRatePct", v)}
+                readOnly={!authed}
+              />
+              {p.bonusRatePct > 0 && (
+                <SliderControl
+                  label="Bonus Threshold  (capture rate ≥)"
+                  value={p.bonusThreshold}
+                  displayValue={`${(p.bonusThreshold * 100).toFixed(0)}%`}
+                  min={0.50} max={1.00} step={0.01}
+                  tooltip="Minimum actual capture rate (eff × captureAdj) required to trigger the bonus payment."
+                  onChange={(v) => update("bonusThreshold", v)}
+                  readOnly={!authed}
+                />
+              )}
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: "rgba(255,255,255,0.05)" }} />
+
+          {/* ── Governor — Scaling Conditions ─────────── */}
+          <div>
+            <SectionHead
+              title="Governor — Scaling Conditions"
+              sub="Each matching rule multiplies applied risk · rules stack multiplicatively"
+            />
+            <div style={{ marginTop: 2, padding: "6px 8px", background: "rgba(0,0,0,0.15)", borderRadius: 5, marginBottom: 6 }}>
+              {[
+                ["metric", "efficiency | captureRate"],
+                ["op",     "< ≤ > ≥"],
+                ["mult",   "R × factor  (e.g. 0.50 = half risk, 1.30 = +30%)"],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: "flex", gap: 6, padding: "2px 0" }}>
+                  <span style={{ fontSize: 9, color: "rgba(142,163,190,0.45)", width: 38, flexShrink: 0 }}>{k}</span>
+                  <span style={{ fontSize: 9, color: "rgba(142,163,190,0.65)", fontFamily: "var(--font-mono)" }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            <ScalingRulesEditor
+              conditions={p.scalingConditions}
+              onChange={(conds: ScalingCondition[]) => setParam("scalingConditions", conds)}
+              readOnly={!authed}
+            />
+          </div>
+
+          <div style={{ height: 1, background: "rgba(255,255,255,0.05)" }} />
+
+          {/* ── Operator Randomness ───────────────────── */}
+          <div>
+            <SectionHead
+              title="Operator Attributed Randomness"
+              sub="Model real-world variability beyond the OU process · all off by default"
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <SliderControl
+                label="Efficiency Extra Noise  (σ)"
+                value={p.efficiencyStdDev}
+                displayValue={p.efficiencyStdDev === 0 ? "Off" : `±${(p.efficiencyStdDev * 100).toFixed(1)}%`}
+                min={0} max={0.12} step={0.005}
+                tooltip="Additional weekly noise added to the OU step. OU base σ=7.5%. Increases total efficiency volatility beyond mean-reversion."
+                onChange={(v) => update("efficiencyStdDev", v)}
+                readOnly={!authed}
+              />
+              <SliderControl
+                label="Capture Rate Mean  (× eff)"
+                value={p.captureRateMean}
+                displayValue={`${(p.captureRateMean * 100).toFixed(0)}%`}
+                min={0.50} max={1.50} step={0.01}
+                tooltip="Mean multiplier on captured R above the OU efficiency. 100% = same as current model. 90% = operator captures 10% less than efficiency predicts."
+                onChange={(v) => update("captureRateMean", v)}
+                readOnly={!authed}
+              />
+              <SliderControl
+                label="Capture Rate Noise  (σ)"
+                value={p.captureRateStdDev}
+                displayValue={p.captureRateStdDev === 0 ? "Off" : `±${(p.captureRateStdDev * 100).toFixed(1)}%`}
+                min={0} max={0.30} step={0.01}
+                tooltip="Week-to-week randomness in the capture rate multiplier. Models slippage variability, partial fill outcomes, and execution uncertainty."
+                onChange={(v) => update("captureRateStdDev", v)}
+                readOnly={!authed}
+              />
+              <SliderControl
+                label="Trade Frequency Noise  (σ)"
+                value={p.tradeFreqStdDev}
+                displayValue={p.tradeFreqStdDev === 0 ? "Off" : `±${p.tradeFreqStdDev.toFixed(1)} trades`}
+                min={0} max={5} step={0.5}
+                tooltip="Standard deviation of weekly trade count around tradesPerWeek. Models variability in validated entry opportunities."
+                onChange={(v) => update("tradeFreqStdDev", v)}
+                readOnly={!authed}
+              />
             </div>
           </div>
           </>)}
@@ -767,6 +900,12 @@ export default function MonteCarloSimulator() {
                 <StatCard label="Avg Comm. / Week" value={res.meanAvgCommPerWeek > 0 ? `${(res.meanAvgCommPerWeek * 100).toFixed(4)}%` : "—"} accent="#f0a030" sub="fraction per week" />
                 <StatCard label="Avg Injection"    value={res.meanTotalInj > 0 ? `${(res.meanTotalInj*100).toFixed(1)}%` : "—"} accent="#00cc7a" sub="of initial (received)" />
                 <StatCard label="Inject Events"    value={res.meanInjEvents > 0 ? res.meanInjEvents.toFixed(1) : "—"} accent="#00cc7a" sub="qualifying 4-wk periods" />
+                {res.meanGovernorPaid > 0 && (
+                  <StatCard label="Gov. Incentive" value={`${(res.meanGovernorPaid * 100).toFixed(2)}%`} accent="#c084fc" sub="total governor fees paid" />
+                )}
+                {(p.captureRateStdDev > 0 || p.captureRateMean !== 1.0) && (
+                  <StatCard label="Avg Capture Rate" value={`${(res.meanCaptureRate * 100).toFixed(1)}%`} accent="#f0a030" sub="eff × captureAdj avg" />
+                )}
               </>}
               {authed && analystMetrics && <>
                 <StatCard label="Calmar Ratio"    value={analystMetrics.calmar >= 99 ? "∞" : analystMetrics.calmar.toFixed(2)} accent={analystMetrics.calmar > 1.5 ? "#00cc7a" : analystMetrics.calmar > 0.8 ? "#f0a030" : "#f03a57"} sub="CAGR / mean max DD" />
