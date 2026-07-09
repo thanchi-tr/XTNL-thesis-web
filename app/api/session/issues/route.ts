@@ -7,12 +7,47 @@ export async function GET() {
   if (!session?.twoFactorVerified)
     return NextResponse.json({ error: "Auth required" }, { status: 401 });
 
-  const { data, error } = await supabase
-    .from("issues_view")
-    .select("*");
+  /* Query base tables directly — avoids the SECURITY DEFINER view and its
+     Supabase "UNRESTRICTED" warning. We compute effective_status and
+     staging_days_remaining here in JS instead of in the view. */
+  const [{ data: issues, error: issErr }, { data: solutions, error: solErr }] = await Promise.all([
+    supabase.from("issues").select("*").order("priority", { ascending: true }).order("raise_count", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("issue_solutions").select("*"),
+  ]);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
+  if (issErr) return NextResponse.json({ error: issErr.message }, { status: 500 });
+  if (solErr) return NextResponse.json({ error: solErr.message }, { status: 500 });
+
+  const solMap = new Map((solutions ?? []).map((s: any) => [s.issue_id, s]));
+  const now = Date.now();
+
+  const merged = (issues ?? []).map((i: any) => {
+    const sol = solMap.get(i.issue_id) ?? null;
+    const stagingMs = i.staging_at ? new Date(i.staging_at).getTime() : null;
+    const effectiveStatus =
+      i.status === "staging" && stagingMs && stagingMs + 21 * 86_400_000 <= now
+        ? "archived"
+        : i.status;
+    const stagingDaysRemaining =
+      i.status === "staging" && stagingMs
+        ? Math.max(0, Math.ceil((stagingMs + 21 * 86_400_000 - now) / 86_400_000))
+        : null;
+    return {
+      ...i,
+      status: effectiveStatus,
+      staging_days_remaining: stagingDaysRemaining,
+      solution_id:           sol?.solution_id           ?? null,
+      solution_description:  sol?.description           ?? null,
+      solution_proposed_by:  sol?.proposed_by           ?? null,
+      solution_created_at:   sol?.created_at            ?? null,
+      observed_week_1:       sol?.observed_week_1       ?? null,
+      observed_week_2:       sol?.observed_week_2       ?? null,
+      observed_week_3:       sol?.observed_week_3       ?? null,
+      all_observed_at:       sol?.all_observed_at       ?? null,
+    };
+  });
+
+  return NextResponse.json(merged);
 }
 
 export async function POST(req: NextRequest) {

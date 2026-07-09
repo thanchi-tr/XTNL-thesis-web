@@ -332,11 +332,42 @@ export default function IssuePanel() {
   const [reopenId,     setReopenId]     = useState<string | null>(null);
   const [reopenReason, setReopenReason] = useState("");
 
+  /* Error banner */
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  /* ── API helper — returns error string or null on success ─── */
+  async function callApi(url: string, opts: RequestInit): Promise<string | null> {
+    try {
+      const r = await fetch(url, opts);
+      if (r.ok) return null;
+      let msg = `HTTP ${r.status}`;
+      try {
+        const body = await r.json();
+        if (body?.error) msg = `${r.status}: ${body.error}`;
+      } catch { /* non-JSON body */ }
+      console.error("[IssuePanel]", url, msg);
+      return msg;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Network error";
+      console.error("[IssuePanel] fetch failed:", msg);
+      return msg;
+    }
+  }
+
   const fetchIssues = useCallback(async () => {
     setLoading(true);
+    setApiError(null);
     try {
       const r = await fetch("/api/session/issues");
-      if (r.ok) setIssues(await r.json());
+      if (r.ok) {
+        setIssues(await r.json());
+      } else {
+        let msg = `Could not load issues (HTTP ${r.status})`;
+        try { const b = await r.json(); if (b?.error) msg = b.error; } catch { /* ignore */ }
+        setApiError(msg);
+      }
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : "Network error loading issues");
     } finally {
       setLoading(false);
     }
@@ -345,10 +376,10 @@ export default function IssuePanel() {
   useEffect(() => { if (open) fetchIssues(); }, [open, fetchIssues]);
 
   /* Derived counts */
-  const activeCount  = issues.filter(i => i.status === "open" || i.status === "in_progress").length;
-  const stagingCount = issues.filter(i => i.status === "staging").length;
+  const activeCount   = issues.filter(i => i.status === "open" || i.status === "in_progress").length;
+  const stagingCount  = issues.filter(i => i.status === "staging").length;
   const archivedCount = issues.filter(i => i.status === "archived").length;
-  const badgeCount   = activeCount + stagingCount;
+  const badgeCount    = activeCount + stagingCount;
 
   const filtered = issues.filter(i => {
     if (tab === "active")   return i.status === "open" || i.status === "in_progress";
@@ -361,49 +392,56 @@ export default function IssuePanel() {
   async function createIssue() {
     if (!newTitle.trim() || submitting) return;
     setSubmitting(true);
-    await fetch("/api/session/issues", {
+    setApiError(null);
+    const err = await callApi("/api/session/issues", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: newTitle.trim(), description: newDesc.trim() || null, priority: newPriority }),
     });
-    setCreating(false); setNewTitle(""); setNewDesc(""); setNewPriority(3);
     setSubmitting(false);
+    if (err) { setApiError(`Failed to report issue: ${err}`); return; }
+    setCreating(false); setNewTitle(""); setNewDesc(""); setNewPriority(3);
     fetchIssues();
   }
 
   async function raiseIssue(id: string) {
-    await fetch(`/api/session/issues/${id}/raise`, { method: "POST" });
-    fetchIssues();
+    const err = await callApi(`/api/session/issues/${id}/raise`, { method: "POST" });
+    if (err) setApiError(`Failed to raise: ${err}`);
+    else fetchIssues();
   }
 
   async function addSolution(id: string) {
     if (!solutionText.trim() || submitting) return;
     setSubmitting(true);
-    await fetch(`/api/session/issues/${id}/solution`, {
+    setApiError(null);
+    const err = await callApi(`/api/session/issues/${id}/solution`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ description: solutionText.trim() }),
     });
-    setSolvingId(null); setSolutionText("");
     setSubmitting(false);
+    if (err) { setApiError(`Failed to submit solution: ${err}`); return; }
+    setSolvingId(null); setSolutionText("");
     fetchIssues();
   }
 
   async function markObserved(id: string, week: 1 | 2 | 3) {
-    await fetch(`/api/session/issues/${id}/observe`, {
+    const err = await callApi(`/api/session/issues/${id}/observe`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ week }),
     });
-    fetchIssues();
+    if (err) setApiError(`Failed to mark week ${week}: ${err}`);
+    else fetchIssues();
   }
 
   async function reopenIssue(id: string) {
-    await fetch(`/api/session/issues/${id}/reopen`, {
+    const err = await callApi(`/api/session/issues/${id}/reopen`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason: reopenReason.trim() || null }),
     });
+    if (err) { setApiError(`Failed to reopen: ${err}`); return; }
     setReopenId(null); setReopenReason("");
     fetchIssues();
   }
@@ -493,6 +531,23 @@ export default function IssuePanel() {
               animation: "issue-slide-in 0.22s ease-out",
             }}
           >
+            {/* ── Error banner ──────────────────────────────── */}
+            {apiError && (
+              <div style={{
+                background: "rgba(240,58,87,0.12)", borderBottom: "1px solid rgba(240,58,87,0.35)",
+                padding: "9px 16px", display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span style={{ fontSize: 13, color: "#f03a57" }}>⚠</span>
+                <span style={{ flex: 1, fontSize: 11.5, color: "#f03a57", lineHeight: 1.4 }}>
+                  {apiError}
+                </span>
+                <button type="button" onClick={() => setApiError(null)}
+                  style={{ background: "none", border: "none", color: "#f03a57", cursor: "pointer", fontSize: 14, padding: 2 }}>
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* ── Panel header ──────────────────────────────── */}
             <div style={{
               padding: "16px 20px 0",
