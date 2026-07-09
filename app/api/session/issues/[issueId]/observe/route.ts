@@ -24,11 +24,12 @@ export async function PATCH(
   if (week !== 1 && week !== 2 && week !== 3)
     return NextResponse.json({ error: "week must be 1, 2, or 3" }, { status: 400 });
 
-  /* Fetch current solution */
+  /* Fetch the active solution only — scratched ones must not be modified */
   const { data: sol, error: fetchErr } = await supabase
     .from("issue_solutions")
     .select("solution_id, observed_week_1, observed_week_2, observed_week_3")
     .eq("issue_id", issueId)
+    .eq("solution_status", "active")
     .single();
 
   if (fetchErr || !sol)

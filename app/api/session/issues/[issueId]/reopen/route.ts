@@ -59,11 +59,12 @@ export async function POST(
 
   if (issueErr) return NextResponse.json({ error: issueErr.message }, { status: 500 });
 
-  /* Clear the solution's observed-resolve checkboxes so the cycle restarts */
+  /* Clear only the active solution's observed-resolve checkboxes — scratched ones are immutable */
   await supabase
     .from("issue_solutions")
     .update({ observed_week_1: null, observed_week_2: null, observed_week_3: null, all_observed_at: null })
-    .eq("issue_id", issueId);
+    .eq("issue_id", issueId)
+    .eq("solution_status", "active");
 
   return NextResponse.json({ ok: true, priority_after });
 }

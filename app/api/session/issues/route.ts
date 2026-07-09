@@ -18,11 +18,25 @@ export async function GET() {
   if (issErr) return NextResponse.json({ error: issErr.message }, { status: 500 });
   if (solErr) return NextResponse.json({ error: solErr.message }, { status: 500 });
 
-  const solMap = new Map((solutions ?? []).map((s: any) => [s.issue_id, s]));
-  const now = Date.now();
+  /* Partition solutions into active (one per issue) and scratched (many) */
+  const activeMap    = new Map<string, any>();
+  const scratchedMap = new Map<string, any[]>();
+  for (const s of solutions ?? []) {
+    const status = s.solution_status ?? "active";
+    if (status === "active") {
+      activeMap.set(s.issue_id, s);
+    } else {
+      const arr = scratchedMap.get(s.issue_id) ?? [];
+      arr.push(s);
+      scratchedMap.set(s.issue_id, arr);
+    }
+  }
 
+  const now = Date.now();
   const merged = (issues ?? []).map((i: any) => {
-    const sol = solMap.get(i.issue_id) ?? null;
+    const sol      = activeMap.get(i.issue_id) ?? null;
+    const scratched = (scratchedMap.get(i.issue_id) ?? [])
+      .sort((a: any, b: any) => new Date(b.scratched_at ?? b.created_at).getTime() - new Date(a.scratched_at ?? a.created_at).getTime());
     const stagingMs = i.staging_at ? new Date(i.staging_at).getTime() : null;
     const effectiveStatus =
       i.status === "staging" && stagingMs && stagingMs + 21 * 86_400_000 <= now
@@ -34,16 +48,17 @@ export async function GET() {
         : null;
     return {
       ...i,
-      status: effectiveStatus,
+      status:                 effectiveStatus,
       staging_days_remaining: stagingDaysRemaining,
-      solution_id:           sol?.solution_id           ?? null,
-      solution_description:  sol?.description           ?? null,
-      solution_proposed_by:  sol?.proposed_by           ?? null,
-      solution_created_at:   sol?.created_at            ?? null,
-      observed_week_1:       sol?.observed_week_1       ?? null,
-      observed_week_2:       sol?.observed_week_2       ?? null,
-      observed_week_3:       sol?.observed_week_3       ?? null,
-      all_observed_at:       sol?.all_observed_at       ?? null,
+      solution_id:            sol?.solution_id     ?? null,
+      solution_description:   sol?.description     ?? null,
+      solution_proposed_by:   sol?.proposed_by     ?? null,
+      solution_created_at:    sol?.created_at      ?? null,
+      observed_week_1:        sol?.observed_week_1 ?? null,
+      observed_week_2:        sol?.observed_week_2 ?? null,
+      observed_week_3:        sol?.observed_week_3 ?? null,
+      all_observed_at:        sol?.all_observed_at ?? null,
+      scratched_solutions:    scratched,
     };
   });
 
