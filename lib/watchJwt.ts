@@ -1,9 +1,14 @@
 import { SignJWT, jwtVerify } from "jose";
 
-const secret = () =>
-  new TextEncoder().encode(
-    process.env.WATCH_JWT_SECRET ?? "xtnl-watch-fallback-secret-change-me-32"
-  );
+const secret = () => {
+  const s = process.env.WATCH_JWT_SECRET;
+  /* Fail fast in production so a missing env var is caught at startup,
+     not discovered after a watch token is silently signed with a known key. */
+  if (!s && process.env.NODE_ENV === "production") {
+    throw new Error("WATCH_JWT_SECRET environment variable is not set");
+  }
+  return new TextEncoder().encode(s ?? "xtnl-watch-fallback-secret-change-me-32");
+};
 
 export interface WatchClaims { userId: string }
 

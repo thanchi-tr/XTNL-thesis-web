@@ -3,10 +3,19 @@ import { supabase }                       from "@/lib/supabase";
 
 const PREFIX = "watch_device:";
 
+/* Device codes are generated as "XTNL-" + 6 chars from CODE_CHARS
+   (A-Z minus I/O + 2-9). Reject anything that doesn't match before
+   touching the database — prevents injection probing via the code param. */
+const CODE_RE = /^XTNL-[A-HJ-NP-Z2-9]{6}$/;
+
 /** GET ?code=XTNL-XXXXXX — watch polls until authorized or expired */
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
-  if (!code) return NextResponse.json({ status: "expired" });
+
+  /* Validate format before any DB access */
+  if (!code || !CODE_RE.test(code)) {
+    return NextResponse.json({ status: "expired" });
+  }
 
   const { data } = await supabase
     .from("comments")

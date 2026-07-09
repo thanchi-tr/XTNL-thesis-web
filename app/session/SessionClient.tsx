@@ -6,6 +6,7 @@ import { XtnlLogoAnimation } from "@/components/ui/XtnlLogoAnimation";
 import { DatetimePicker } from "@/components/ui/DatetimePicker";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import { getSessionStatus } from "@/lib/sessionStatus";
+import IssuePanel from "@/components/issues/IssuePanel";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -4489,6 +4490,9 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
         )}
 
       </div>
+
+      {/* Issue tracker — fixed FAB, visible to operator and analyst in session */}
+      <IssuePanel />
     </div>
   );
 }

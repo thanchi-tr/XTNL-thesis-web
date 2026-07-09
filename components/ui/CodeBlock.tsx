@@ -3,6 +3,29 @@ interface CodeBlockProps {
   children: string;
 }
 
+/* ── XSS mitigation ─────────────────────────────────────────────
+   CodeBlock renders pre-formatted syntax-highlighted HTML (span
+   tags from the prospectus constants). dangerouslySetInnerHTML is
+   required to preserve that colouring; this sanitizer ensures only
+   <span> elements with a class attribute pass through — every other
+   tag, attribute, or JavaScript URI is stripped before render.     */
+function sanitize(html: string): string {
+  return (
+    html
+      /* Remove script, style, iframe, object and any other non-span tag */
+      .replace(/<(?!\/?span[\s>\/])/gi, "&lt;")
+      /* For every <span ...> that survived, strip all attrs except class */
+      .replace(/<span([^>]*)>/gi, (_m, attrs: string) => {
+        const cls = attrs.match(/\bclass="([^"<>&]*)"/i);
+        /* Further sanitize class values: only a-z, 0-9, hyphens, spaces */
+        const safe = cls ? cls[1].replace(/[^a-zA-Z0-9 \-_]/g, "") : "";
+        return safe ? `<span class="${safe}">` : "<span>";
+      })
+      /* Strip any javascript: / data: URIs that snuck through */
+      .replace(/\b(?:javascript|vbscript|data):/gi, "blocked:")
+  );
+}
+
 export default function CodeBlock({ filename, children }: CodeBlockProps) {
   return (
     <div
@@ -31,7 +54,7 @@ export default function CodeBlock({ filename, children }: CodeBlockProps) {
         </span>
       </div>
 
-      {/* Code */}
+      {/* Code — sanitized before render */}
       <pre
         className="overflow-x-auto p-5 mono"
         style={{
@@ -39,7 +62,7 @@ export default function CodeBlock({ filename, children }: CodeBlockProps) {
           lineHeight: 1.7,
           color: "#c9d1d9",
         }}
-        dangerouslySetInnerHTML={{ __html: children }}
+        dangerouslySetInnerHTML={{ __html: sanitize(children) }}
       />
     </div>
   );

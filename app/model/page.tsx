@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import SimulatorWrapper from "@/components/SimulatorWrapper";
+import IssuePanel from "@/components/issues/IssuePanel";
 import Link from "next/link";
 
 export const metadata: Metadata = { title: "Interactive Simulator" };
@@ -98,6 +99,8 @@ export default function ModelPage() {
         <Link href="/data"       className="btn btn-secondary" style={{ fontSize: 12 }}>View the Data →</Link>
         <Link href="/prospectus" className="btn btn-secondary" style={{ fontSize: 12 }}>Read the Prospectus →</Link>
       </div>
+      {/* Issue tracker — fixed FAB, available in the simulator view */}
+      <IssuePanel />
     </div>
   );
 }

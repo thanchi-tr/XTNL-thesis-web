@@ -1,9 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabase, OPERATOR_USER_ID }     from "@/lib/supabase";
 
-const PREFIX     = "watch_device:";
-const TTL_MS     = 10 * 60 * 1000;
+const PREFIX  = "watch_device:";
+const TTL_MS  = 10 * 60 * 1000;
+
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/* ── Input constraints ───────────────────────────────────────── */
+const MAX_DEVICE_ID_LEN   = 128;
+const MAX_DEVICE_NAME_LEN = 64;
+/* Device IDs from Android are UUIDs or package-name strings:
+   alphanumeric, hyphens, colons, underscores, dots only.         */
+const DEVICE_ID_RE   = /^[a-zA-Z0-9\-_:.]+$/;
+/* Human-readable names: letters, digits, spaces, and a safe set of
+   punctuation. Blocks HTML tags, script characters, control chars. */
+const DEVICE_NAME_RE = /^[\w\s\-.'()À-ɏ]+$/u;
 
 function genCode(len = 6) {
   return Array.from({ length: len }, () =>
@@ -22,9 +33,16 @@ function resolveBaseUrl(req: NextRequest): string {
 
 /** POST — watch requests a device code and gets back a QR URL.
  *  Body: { deviceId?: string, deviceName?: string }
- *  deviceId and deviceName are stored so the authorize step can register the device server-side. */
+ *  Both fields are validated and stored for the authorize step.  */
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({})) as { deviceId?: string; deviceName?: string };
+  const body = await req.json().catch(() => ({})) as { deviceId?: unknown; deviceName?: unknown };
+
+  /* ── Validate and sanitize device fields ──────────────────── */
+  const rawId   = typeof body.deviceId   === "string" ? body.deviceId.slice(0, MAX_DEVICE_ID_LEN)   : "";
+  const rawName = typeof body.deviceName === "string" ? body.deviceName.slice(0, MAX_DEVICE_NAME_LEN) : "";
+
+  const deviceId   = rawId   && DEVICE_ID_RE.test(rawId)     ? rawId   : null;
+  const deviceName = rawName && DEVICE_NAME_RE.test(rawName)  ? rawName : null;
 
   const userCode   = genCode();
   const deviceCode = `XTNL-${userCode}`;
@@ -36,12 +54,11 @@ export async function POST(req: NextRequest) {
     userCode,
     verifyUrl,
     expiresMs,
-    status:       "pending",
-    token:        null,
+    status:         "pending",
+    token:          null,
     tokenExpiresAt: null,
-    // Device info stored so authorize can create the watch_devices: record immediately
-    deviceId:     body.deviceId   ?? null,
-    deviceName:   body.deviceName ?? null,
+    deviceId,
+    deviceName,
   };
   const now = new Date().toISOString();
 

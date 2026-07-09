@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { getMondayAESTKey } from "@/lib/weekKey";
+import IssuePanel from "@/components/issues/IssuePanel";
 
 /* ─── Types ─────────────────────────────────────────────── */
 
@@ -2669,6 +2670,9 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
           </div>
         </div>
       )}
+
+      {/* Issue tracker — fixed FAB, visible in analytics view */}
+      <IssuePanel />
     </div>
   );
 }
