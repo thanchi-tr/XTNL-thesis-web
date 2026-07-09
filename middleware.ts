@@ -108,7 +108,9 @@ export default auth((req) => {
      Browser-initiated cross-origin requests include an Origin header.
      Same-origin requests (safe) and native-app requests (no Origin)
      are allowed through; only a mismatched Origin is rejected.
-     Watch routes are exempt because the Android watch app has no Origin. */
+     Watch routes are exempt because the Android watch app has no Origin.
+     We compare against both NEXTAUTH_URL (env) and the request's own
+     host so the check works even if NEXTAUTH_URL is misconfigured.    */
   const method = req.method ?? "GET";
   if (
     pathname.startsWith("/api/") &&
@@ -116,11 +118,15 @@ export default auth((req) => {
     !CSRF_SAFE.has(method)
   ) {
     const origin = req.headers.get("origin");
-    if (origin !== null && !ALLOWED_ORIGINS.has(origin)) {
-      return NextResponse.json(
-        { error: "Forbidden: cross-origin request rejected" },
-        { status: 403, headers: { "X-Rejected-Origin": "1" } }
-      );
+    if (origin !== null) {
+      /* Build the canonical origin from the request itself as a fallback */
+      const requestOrigin = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+      if (!ALLOWED_ORIGINS.has(origin) && origin !== requestOrigin) {
+        return NextResponse.json(
+          { error: "Forbidden: cross-origin request rejected" },
+          { status: 403, headers: { "X-Rejected-Origin": "1" } }
+        );
+      }
     }
   }
 
