@@ -119,8 +119,12 @@ export default auth((req) => {
   ) {
     const origin = req.headers.get("origin");
     if (origin !== null) {
-      /* Build the canonical origin from the request itself as a fallback */
-      const requestOrigin = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+      /* Build the canonical origin from forwarded headers (Vercel sets
+         x-forwarded-proto=https even though the internal protocol is http,
+         so req.nextUrl.protocol is unreliable for the HTTPS origin check). */
+      const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(/:$/, "");
+      const host  = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+      const requestOrigin = `${proto}://${host}`;
       if (!ALLOWED_ORIGINS.has(origin) && origin !== requestOrigin) {
         return NextResponse.json(
           { error: "Forbidden: cross-origin request rejected" },
