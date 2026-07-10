@@ -20,9 +20,10 @@ const SYSTEM_LIMIT = 5_000;
 /* ── CSRF: allowed browser origins for state-mutating requests ──
    Origin header is present in all browser-initiated cross-origin
    requests; absent on same-origin requests (safe) and native apps. */
+/* Next Auth v5 uses AUTH_URL; fall back to legacy NEXTAUTH_URL */
 const ALLOWED_ORIGINS: ReadonlySet<string> = new Set(
   [
-    process.env.NEXTAUTH_URL?.replace(/\/$/, ""),
+    (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL)?.replace(/\/$/, ""),
     process.env.NODE_ENV === "development" ? "http://localhost:3000" : "",
     process.env.NODE_ENV === "development" ? "http://localhost:3001" : "",
   ].filter(Boolean) as string[]
@@ -75,6 +76,24 @@ function isWatchRoute(pathname: string): boolean {
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   if (isExempt(pathname)) return NextResponse.next();
+
+  /* ── CORS preflight for watch routes ──────────────────────────
+     Native Android OkHttpClient does not send OPTIONS, but a browser-
+     based companion (or curl/Postman) will. Respond immediately with
+     204 so the preflight never hits rate-limiting or CSRF checks.
+     next.config.ts already appends Access-Control-* headers to all
+     /api/* responses, so we only need the status here.              */
+  if (isWatchRoute(pathname) && req.method === "OPTIONS") {
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin":  "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Device-Id",
+        "Access-Control-Max-Age":       "86400",
+      },
+    });
+  }
 
   evictStale();
   const now = Date.now();

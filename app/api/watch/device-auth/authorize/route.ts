@@ -43,7 +43,20 @@ export async function POST(req: Request) {
   if (row.parsed.status === "authorized") return NextResponse.json({ ok: true }); // idempotent
 
   const userId = (session.user as { id?: string } | undefined)?.id ?? "operator";
-  const { token, expiresAt: tokenExpiresAt } = await signWatchToken(userId);
+  let token: string;
+  let tokenExpiresAt: string;
+  try {
+    const signed = await signWatchToken(userId);
+    token        = signed.token;
+    tokenExpiresAt = signed.expiresAt;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[watch authorize] signWatchToken failed:", msg);
+    return NextResponse.json(
+      { error: "Token generation failed", detail: msg },
+      { status: 500 }
+    );
+  }
 
   // ── Update the watch_device: record with the signed token ─────────────
   const updated = { ...row.parsed, status: "authorized", token, tokenExpiresAt };

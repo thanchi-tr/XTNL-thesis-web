@@ -44,17 +44,19 @@ const SECURITY_HEADERS = [
    requests (e.g. from another domain) are explicitly rejected.
    Native clients (Apple Watch app) use Authorization: Bearer and
    are unaffected — CORS restrictions only apply to browsers.      */
+/* Next Auth v5 uses AUTH_URL; fall back to legacy NEXTAUTH_URL if present */
 const appOrigin =
-  process.env.NEXTAUTH_URL?.replace(/\/$/, "") ??
+  (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL)?.replace(/\/$/, "") ??
   (isDev ? "http://localhost:3000" : "https://xtnl-solutions.com");
 
 const API_CORS_HEADERS = [
   { key: "Access-Control-Allow-Origin",      value: appOrigin },
   { key: "Access-Control-Allow-Methods",     value: "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
-  { key: "Access-Control-Allow-Headers",     value: "Content-Type, Authorization, X-Requested-With" },
+  /* X-Device-Id is sent by the watch app on alarm/register calls */
+  { key: "Access-Control-Allow-Headers",     value: "Content-Type, Authorization, X-Requested-With, X-Device-Id" },
   { key: "Access-Control-Allow-Credentials", value: "true" },
-  { key: "Access-Control-Max-Age",           value: "86400" },   // 24-hour preflight cache
-  { key: "Vary",                             value: "Origin" },   // correct caching when origin varies
+  { key: "Access-Control-Max-Age",           value: "86400" },
+  { key: "Vary",                             value: "Origin" },
 ];
 
 const nextConfig: NextConfig = {
