@@ -2,16 +2,22 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth }      from "@/auth";
 import { supabase }  from "@/lib/supabase";
 
+const VALID_CATEGORIES = [
+  "execution", "risk", "technical", "compliance", "process", "market", "other",
+] as const;
+
 export async function GET() {
   const session = await auth();
   if (!session?.twoFactorVerified)
     return NextResponse.json({ error: "Auth required" }, { status: 401 });
 
-  /* Query base tables directly — avoids the SECURITY DEFINER view and its
-     Supabase "UNRESTRICTED" warning. We compute effective_status and
-     staging_days_remaining here in JS instead of in the view. */
   const [{ data: issues, error: issErr }, { data: solutions, error: solErr }] = await Promise.all([
-    supabase.from("issues").select("*").order("priority", { ascending: true }).order("raise_count", { ascending: false }).order("created_at", { ascending: false }),
+    supabase
+      .from("issues")
+      .select("*")
+      .order("priority",    { ascending: true  })
+      .order("raise_count", { ascending: false })
+      .order("created_at",  { ascending: false }),
     supabase.from("issue_solutions").select("*"),
   ]);
 
@@ -32,11 +38,35 @@ export async function GET() {
     }
   }
 
+  /* Separate sub-issues from top-level issues */
+  const subMap    = new Map<string, any[]>();
+  const topLevel: any[] = [];
+  for (const i of issues ?? []) {
+    if (i.parent_issue_id) {
+      const arr = subMap.get(i.parent_issue_id) ?? [];
+      arr.push({
+        issue_id:    i.issue_id,
+        title:       i.title,
+        priority:    i.priority,
+        category:    i.category ?? "other",
+        status:      i.status,
+        raise_count: i.raise_count,
+        created_at:  i.created_at,
+      });
+      subMap.set(i.parent_issue_id, arr);
+    } else {
+      topLevel.push(i);
+    }
+  }
+
   const now = Date.now();
-  const merged = (issues ?? []).map((i: any) => {
+  const merged = topLevel.map((i: any) => {
     const sol      = activeMap.get(i.issue_id) ?? null;
     const scratched = (scratchedMap.get(i.issue_id) ?? [])
-      .sort((a: any, b: any) => new Date(b.scratched_at ?? b.created_at).getTime() - new Date(a.scratched_at ?? a.created_at).getTime());
+      .sort((a: any, b: any) =>
+        new Date(b.scratched_at ?? b.created_at).getTime() -
+        new Date(a.scratched_at ?? a.created_at).getTime()
+      );
     const stagingMs = i.staging_at ? new Date(i.staging_at).getTime() : null;
     const effectiveStatus =
       i.status === "staging" && stagingMs && stagingMs + 21 * 86_400_000 <= now
@@ -48,6 +78,12 @@ export async function GET() {
         : null;
     return {
       ...i,
+      category:               i.category       ?? "other",
+      impact_score:           i.impact_score   ?? 5,
+      tags:                   i.tags           ?? [],
+      parent_issue_id:        i.parent_issue_id ?? null,
+      closed_at:              i.closed_at       ?? null,
+      resolution_note:        i.resolution_note ?? null,
       status:                 effectiveStatus,
       staging_days_remaining: stagingDaysRemaining,
       solution_id:            sol?.solution_id     ?? null,
@@ -59,6 +95,7 @@ export async function GET() {
       observed_week_3:        sol?.observed_week_3 ?? null,
       all_observed_at:        sol?.all_observed_at ?? null,
       scratched_solutions:    scratched,
+      sub_issues:             subMap.get(i.issue_id) ?? [],
     };
   });
 
@@ -78,8 +115,19 @@ export async function POST(req: NextRequest) {
   const title       = typeof body.title       === "string" ? body.title.trim().slice(0, 200)       : "";
   const description = typeof body.description === "string" ? body.description.trim().slice(0, 2000) : null;
   const priority    = typeof body.priority    === "number"
-    ? Math.max(0, Math.min(5, Math.round(body.priority)))
-    : 3;
+    ? Math.max(0, Math.min(5, Math.round(body.priority))) : 3;
+  const category    = VALID_CATEGORIES.includes(body.category) ? body.category : "other";
+  const impact_score = typeof body.impact_score === "number"
+    ? Math.max(1, Math.min(10, Math.round(body.impact_score))) : 5;
+  const tags = Array.isArray(body.tags)
+    ? (body.tags as unknown[])
+        .filter((t): t is string => typeof t === "string")
+        .map(t => t.trim().slice(0, 50))
+        .filter(Boolean)
+        .slice(0, 10)
+    : [];
+  const parent_issue_id =
+    typeof body.parent_issue_id === "string" && body.parent_issue_id ? body.parent_issue_id : null;
 
   if (!title) return NextResponse.json({ error: "Title required" }, { status: 400 });
 
@@ -88,7 +136,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("issues")
-    .insert({ title, description, reported_by, reporter_role, priority })
+    .insert({ title, description, reported_by, reporter_role, priority, category, impact_score, tags, parent_issue_id })
     .select("issue_id")
     .single();
 

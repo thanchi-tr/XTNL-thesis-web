@@ -99,8 +99,8 @@ export default function ModelPage() {
         <Link href="/data"       className="btn btn-secondary" style={{ fontSize: 12 }}>View the Data →</Link>
         <Link href="/prospectus" className="btn btn-secondary" style={{ fontSize: 12 }}>Read the Prospectus →</Link>
       </div>
-      {/* Issue tracker — fixed FAB, available in the simulator view */}
-      <IssuePanel />
+      {/* Issue tracker — fixed FAB, available in the simulator view; Insight tab for strategist */}
+      <IssuePanel showInsight />
     </div>
   );
 }

@@ -2671,8 +2671,8 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
         </div>
       )}
 
-      {/* Issue tracker — fixed FAB, visible in analytics view */}
-      <IssuePanel />
+      {/* Issue tracker — fixed FAB, visible in analytics view; Insight tab for strategist */}
+      <IssuePanel showInsight />
     </div>
   );
 }
