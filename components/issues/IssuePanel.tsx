@@ -1029,70 +1029,71 @@ function InsightTab({ issues }: { issues: Issue[] }) {
     return <div style={{ textAlign: "center", color: "#6b7280", fontSize: "13px", padding: "60px 0" }}>No issue data yet</div>;
   }
 
-  /* Two-column grid style for chart pairs */
-  const TWO_COL: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" };
+  const G2: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" };
+  const G3: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "18px" };
 
   return (
-    <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: "20px" }}>
+    <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: "22px" }}>
 
-      {/* ── Status overview tiles ───────────────────────────────── */}
-      <div>
-        <SLabel t="STATUS OVERVIEW" />
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          {[
-            { label: "Total",       value: total,       color: "#8ea3be" },
-            { label: "Open",        value: pureOpenCnt, color: "#4d9cf5" },
-            { label: "In Progress", value: inProgCnt,   color: "#7c6aff" },
-            { label: "Staging",     value: stagCnt,     color: "#f0a030" },
-            { label: "Archived",    value: archCnt,     color: "#34d399" },
-            { label: "Reopened",    value: velocity.reopenedCount, color: "#f03a57" },
-          ].map(s => (
-            <div key={s.label} style={{ flex: "1 1 72px", minWidth: "68px", padding: "10px 8px", borderRadius: "8px", background: `${s.color}0f`, border: `1px solid ${s.color}25`, textAlign: "center" }}>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</div>
-              <div style={{ fontSize: "9px", color: "#6b7280", marginTop: "4px", lineHeight: 1 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
+      {/* ── Status tiles ────────────────────────────────────────── */}
+      <div style={G3}>
+        {[
+          { label: "Total Issues",  value: total,                  color: "#8ea3be" },
+          { label: "Open",          value: pureOpenCnt,            color: "#4d9cf5" },
+          { label: "In Progress",   value: inProgCnt,              color: "#7c6aff" },
+          { label: "Staging",       value: stagCnt,                color: "#f0a030" },
+          { label: "Archived",      value: archCnt,                color: "#34d399" },
+          { label: "Ever Reopened", value: velocity.reopenedCount, color: "#f03a57" },
+        ].map(s => (
+          <div key={s.label} style={{ padding: "12px 14px", borderRadius: "10px", background: `${s.color}0d`, border: `1px solid ${s.color}28` }}>
+            <div style={{ fontSize: "26px", fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: "10px", color: "#6b7280", marginTop: "5px" }}>{s.label}</div>
+          </div>
+        ))}
       </div>
 
       <Divider />
 
-      {/* ── Velocity KPIs + Status donut ───────────────────────── */}
-      <div style={TWO_COL}>
+      {/* ── KPI row (4 cards) + donut ───────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: "18px", alignItems: "start" }}>
         <div>
           <SLabel t="VELOCITY · HEALTH" />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+          <div style={G2}>
             {[
               { label: "AVG RESOLUTION", value: velocity.avgResolutionDays != null ? `${velocity.avgResolutionDays}d` : "—", sub: "created → staged", color: resColor },
               { label: "AVG OPEN AGE",   value: velocity.avgAgeDays != null ? `${velocity.avgAgeDays}d` : "—",              sub: "active issues",    color: ageColor },
-              { label: "NET BACKLOG 4W", value: `${backlogPrefix}${velocity.netBacklog}`,                                    sub: velocity.netBacklog < 0 ? "shrinking ↓" : velocity.netBacklog === 0 ? "balanced" : "growing ↑", color: backlogColor },
-              { label: "SOLUTION RATE",  value: `${velocity.solutionRate}%`,                                                 sub: "issues resolved",  color: "#7c6aff" },
+              { label: "NET BACKLOG 4W", value: `${backlogPrefix}${velocity.netBacklog}`, sub: velocity.netBacklog < 0 ? "shrinking ↓" : velocity.netBacklog === 0 ? "balanced" : "growing ↑", color: backlogColor },
+              { label: "SOLUTION RATE",  value: `${velocity.solutionRate}%`,              sub: "issues with solutions", color: "#7c6aff" },
             ].map(k => (
-              <div key={k.label} style={{ padding: "10px 12px", borderRadius: "8px", background: `${k.color}0c`, border: `1px solid ${k.color}22` }}>
-                <div style={{ fontSize: "9px", color: "#6b7280", marginBottom: "4px" }}>{k.label}</div>
-                <div style={{ fontSize: "18px", fontWeight: 700, color: k.color, lineHeight: 1 }}>{k.value}</div>
-                <div style={{ fontSize: "9px", color: "#6b7280", marginTop: "3px" }}>{k.sub}</div>
+              <div key={k.label} style={{ padding: "11px 13px", borderRadius: "8px", background: `${k.color}0c`, border: `1px solid ${k.color}22` }}>
+                <div style={{ fontSize: "9px", color: "#6b7280", marginBottom: "4px", letterSpacing: "0.4px" }}>{k.label}</div>
+                <div style={{ fontSize: "22px", fontWeight: 700, color: k.color, lineHeight: 1 }}>{k.value}</div>
+                <div style={{ fontSize: "9px", color: "#6b7280", marginTop: "4px" }}>{k.sub}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Status distribution donut */}
         <div>
-          <SLabel t="STATUS DISTRIBUTION" />
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <PieChart width={130} height={130}>
-              <Pie data={donutData} cx={60} cy={60} innerRadius={36} outerRadius={58} paddingAngle={2} dataKey="value" strokeWidth={0}>
+          <SLabel t="STATUS SPLIT" />
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+            <PieChart width={120} height={120}>
+              <Pie
+                data={donutData} cx={56} cy={56}
+                innerRadius={32} outerRadius={52}
+                paddingAngle={3} dataKey="value"
+                strokeWidth={0} label={false}
+              >
                 {donutData.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Pie>
               <Tooltip {...TT} />
             </PieChart>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "5px", width: "100%" }}>
               {donutData.map(d => (
                 <div key={d.name} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: d.color, flexShrink: 0, display: "inline-block" }} />
-                  <span style={{ fontSize: "11px", color: "#8ea3be" }}>{d.name}</span>
-                  <span style={{ fontSize: "11px", fontWeight: 700, color: d.color, marginLeft: "auto" }}>{d.value}</span>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.color, flexShrink: 0, display: "inline-block" }} />
+                  <span style={{ fontSize: "10px", color: "#8ea3be", flex: 1 }}>{d.name}</span>
+                  <span style={{ fontSize: "10px", fontWeight: 700, color: d.color }}>{d.value}</span>
                 </div>
               ))}
             </div>
@@ -1102,83 +1103,78 @@ function InsightTab({ issues }: { issues: Issue[] }) {
 
       <Divider />
 
-      {/* ── Weekly activity + Open age buckets ──────────────────── */}
-      <div style={TWO_COL}>
-        <div>
-          <SLabel t="ISSUE ACTIVITY · LAST 8 WEEKS" />
-          <ResponsiveContainer width="100%" height={160}>
-            <AreaChart data={weeklyData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gradCreated"  x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#f03a57" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#f03a57" stopOpacity={0.02} />
-                </linearGradient>
-                <linearGradient id="gradResolved" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#00cc7a" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#00cc7a" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-              <XAxis dataKey="label" tick={{ fontSize: 8, fill: "#6b7280" }} />
-              <YAxis tick={{ fontSize: 8, fill: "#6b7280" }} allowDecimals={false} />
-              <Tooltip {...TT} />
-              <Area type="monotone" dataKey="Created"  stroke="#f03a57" fill="url(#gradCreated)"  strokeWidth={2} dot={false} />
-              <Area type="monotone" dataKey="Resolved" stroke="#00cc7a" fill="url(#gradResolved)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-          <div style={{ display: "flex", gap: "14px", justifyContent: "center", marginTop: "6px" }}>
-            {[{ c: "#f03a57", l: "Created" }, { c: "#00cc7a", l: "Resolved" }].map(({ c, l }) => (
-              <span key={l} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "#6b7280" }}>
-                <span style={{ width: 10, height: 2, background: c, display: "inline-block", borderRadius: 1 }} />{l}
-              </span>
-            ))}
-          </div>
+      {/* ── Weekly activity (full width) ─────────────────────────── */}
+      <div>
+        <SLabel t="ISSUE ACTIVITY · LAST 8 WEEKS" />
+        <ResponsiveContainer width="100%" height={148}>
+          <AreaChart data={weeklyData} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
+            <defs>
+              <linearGradient id="gradCreated"  x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#f03a57" stopOpacity={0.28} />
+                <stop offset="95%" stopColor="#f03a57" stopOpacity={0.02} />
+              </linearGradient>
+              <linearGradient id="gradResolved" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#00cc7a" stopOpacity={0.22} />
+                <stop offset="95%" stopColor="#00cc7a" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#6b7280" }} />
+            <YAxis tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
+            <Tooltip {...TT} />
+            <Area type="monotone" dataKey="Created"  stroke="#f03a57" fill="url(#gradCreated)"  strokeWidth={2} dot={false} />
+            <Area type="monotone" dataKey="Resolved" stroke="#00cc7a" fill="url(#gradResolved)" strokeWidth={2} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+        <div style={{ display: "flex", gap: "16px", justifyContent: "center", marginTop: "6px" }}>
+          {[{ c: "#f03a57", l: "Created" }, { c: "#00cc7a", l: "Resolved" }].map(({ c, l }) => (
+            <span key={l} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "9px", color: "#6b7280" }}>
+              <span style={{ width: 12, height: 2, background: c, display: "inline-block", borderRadius: 1 }} />{l}
+            </span>
+          ))}
         </div>
-
-        {/* Open issue age buckets */}
-        {ageBucketData.length > 0 ? (
-          <div>
-            <SLabel t="OPEN ISSUE AGE BUCKETS" />
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={ageBucketData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#6b7280" }} />
-                <YAxis tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
-                <Tooltip {...TT} />
-                <Bar dataKey="Count" radius={[4, 4, 0, 0]}>
-                  {ageBucketData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>
-              staleness of currently open issues
-            </div>
-          </div>
-        ) : (
-          <div>
-            <SLabel t="OPEN ISSUE AGE BUCKETS" />
-            <div style={{ fontSize: "12px", color: "#6b7280", fontStyle: "italic", paddingTop: "40px", textAlign: "center" }}>
-              No open issues
-            </div>
-          </div>
-        )}
       </div>
 
       <Divider />
 
-      {/* ── Category breakdown + Priority distribution ───────────── */}
-      <div style={TWO_COL}>
-        {catData.length > 0 && (
+      {/* ── Age buckets + Category ───────────────────────────────── */}
+      <div style={G2}>
+        {ageBucketData.length > 0 ? (
+          <div>
+            <SLabel t="OPEN ISSUE AGE BUCKETS" />
+            <ResponsiveContainer width="100%" height={140}>
+              <BarChart data={ageBucketData} margin={{ top: 4, right: 12, left: -18, bottom: 0 }} barCategoryGap="30%">
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#6b7280" }} />
+                <YAxis tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
+                <Tooltip {...TT} />
+                <Bar dataKey="Count" maxBarSize={52} radius={[5, 5, 0, 0]}>
+                  {ageBucketData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>staleness of open issues</div>
+          </div>
+        ) : (
+          <div>
+            <SLabel t="OPEN ISSUE AGE BUCKETS" />
+            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: "12px", fontStyle: "italic" }}>
+              No open issues
+            </div>
+          </div>
+        )}
+
+        {catData.length > 0 ? (
           <div>
             <SLabel t="ISSUE NATURE · BY CATEGORY" />
-            <ResponsiveContainer width="100%" height={Math.max(120, catData.length * 28)}>
-              <BarChart data={catData} layout="vertical" margin={{ top: 0, right: 8, left: 62, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height={Math.max(140, catData.length * 26)}>
+              <BarChart data={catData} layout="vertical" margin={{ top: 0, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={58} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={70} />
                 <Tooltip {...TT} />
-                <Bar dataKey="Open"     stackId="a" fill="#4d9cf5" />
-                <Bar dataKey="Resolved" stackId="a" fill="#34d399" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="Open"     stackId="a" fill="#4d9cf5" maxBarSize={16} />
+                <Bar dataKey="Resolved" stackId="a" fill="#34d399" maxBarSize={16} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "6px" }}>
@@ -1189,70 +1185,69 @@ function InsightTab({ issues }: { issues: Issue[] }) {
               ))}
             </div>
           </div>
-        )}
-
-        {prioData.length > 0 && (
-          <div>
-            <SLabel t="PRIORITY DISTRIBUTION" />
-            <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
-              {prioData.map(d => {
-                const pct = Math.round((d.count / Math.max(total, 1)) * 100);
-                return (
-                  <div key={d.label} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "10px", fontWeight: 700, color: d.color, width: "56px", flexShrink: 0 }}>{d.label}</span>
-                    <div style={{ flex: 1, height: "8px", borderRadius: "4px", background: "rgba(255,255,255,0.05)", overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: d.color, borderRadius: "4px", transition: "width 0.6s ease" }} />
-                    </div>
-                    <span style={{ fontSize: "10px", color: d.color, fontWeight: 700, minWidth: "34px", textAlign: "right" }}>
-                      {d.count} <span style={{ fontWeight: 400, color: "#6b7280" }}>({pct}%)</span>
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
+
+      {prioData.length > 0 && <Divider />}
+
+      {/* ── Priority distribution (full width) ──────────────────── */}
+      {prioData.length > 0 && (
+        <div>
+          <SLabel t="PRIORITY DISTRIBUTION" />
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {prioData.map(d => {
+              const pct = Math.round((d.count / Math.max(total, 1)) * 100);
+              return (
+                <div key={d.label} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "10px", fontWeight: 700, color: d.color, width: "60px", flexShrink: 0 }}>{d.label}</span>
+                  <div style={{ flex: 1, height: "9px", borderRadius: "5px", background: "rgba(255,255,255,0.05)", overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, height: "100%", background: d.color, borderRadius: "5px", transition: "width 0.6s ease" }} />
+                  </div>
+                  <span style={{ fontSize: "10px", color: d.color, fontWeight: 700, minWidth: "48px", textAlign: "right" }}>
+                    {d.count} <span style={{ fontWeight: 400, color: "#6b7280" }}>({pct}%)</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {(topRaisedData.length > 0 || reporterData.length > 0) && <Divider />}
 
       {/* ── Most raised + Reporter activity ─────────────────────── */}
-      <div style={TWO_COL}>
+      <div style={G2}>
         {topRaisedData.length > 0 && (
           <div>
             <SLabel t="MOST RAISED ISSUES" />
-            <ResponsiveContainer width="100%" height={Math.max(100, topRaisedData.length * 28)}>
-              <BarChart data={topRaisedData} layout="vertical" margin={{ top: 0, right: 28, left: 8, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height={Math.max(120, topRaisedData.length * 26)}>
+              <BarChart data={topRaisedData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={110} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={120} />
                 <Tooltip {...TT} />
-                <Bar dataKey="Raises" radius={[0, 4, 4, 0]}>
+                <Bar dataKey="Raises" maxBarSize={16} radius={[0, 4, 4, 0]}>
                   {topRaisedData.map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>
-              recurring pain points ranked by raise count
-            </div>
+            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>recurring pain points by raise count</div>
           </div>
         )}
 
         {reporterData.length > 0 && (
           <div>
             <SLabel t="ACTIVITY BY REPORTER" />
-            <ResponsiveContainer width="100%" height={Math.max(100, reporterData.length * 28)}>
-              <BarChart data={reporterData} layout="vertical" margin={{ top: 0, right: 28, left: 8, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height={Math.max(120, reporterData.length * 26)}>
+              <BarChart data={reporterData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={80} />
                 <Tooltip {...TT} />
-                <Bar dataKey="Issues" fill="#7c6aff" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="Issues" fill="#7c6aff" maxBarSize={16} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
-            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>
-              issues reported per team member
-            </div>
+            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>issues reported per team member</div>
           </div>
         )}
       </div>
