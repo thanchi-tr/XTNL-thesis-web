@@ -90,6 +90,7 @@ export async function GET() {
       solution_description:   sol?.description     ?? null,
       solution_proposed_by:   sol?.proposed_by     ?? null,
       solution_created_at:    sol?.created_at      ?? null,
+      solution_votes:         sol?.votes           ?? 0,
       observed_week_1:        sol?.observed_week_1 ?? null,
       observed_week_2:        sol?.observed_week_2 ?? null,
       observed_week_3:        sol?.observed_week_3 ?? null,

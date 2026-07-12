@@ -54,6 +54,7 @@ interface Issue {
   solution_description:   string | null;
   solution_proposed_by:   string | null;
   solution_created_at:    string | null;
+  solution_votes:         number;
   observed_week_1:        string | null;
   observed_week_2:        string | null;
   observed_week_3:        string | null;
@@ -483,14 +484,17 @@ function RecordSection({
 
 /* ── RESOLVE section ─────────────────────────────────────────── */
 function ResolveSection({
-  issue, canResolve, solvingId, setSolvingId, onRefresh, onSetError,
+  issue, canResolve, canRecord, solvingId, setSolvingId, onRefresh, onSetError, votedSolutions, onVote,
 }: {
   issue: Issue;
   canResolve: boolean;
+  canRecord: boolean;
   solvingId: string | null;
   setSolvingId: (id: string | null) => void;
   onRefresh: () => void;
   onSetError: (err: string | null) => void;
+  votedSolutions: Set<string>;
+  onVote: (issueId: string, solutionId: string) => void;
 }) {
   const [scratchedOpen, setScratchedOpen] = useState(false);
   const [solText,       setSolText]       = useState("");
@@ -619,19 +623,42 @@ function ResolveSection({
             <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.6, color: "var(--fg)", opacity: 0.85, flex: 1 }}>
               {issue.solution_description}
             </p>
-            {canResolve && !isStaging && (
-              <button
-                onClick={() => run(() => callApi(`/api/session/issues/${issue.issue_id}/solution`, { method: "DELETE" }))}
-                disabled={busy}
-                style={{
-                  padding: "2px 8px", borderRadius: "4px",
-                  border: "1px solid rgba(240,58,87,0.3)", background: "rgba(240,58,87,0.08)",
-                  color: "#f03a57", fontSize: "10px", cursor: "pointer", flexShrink: 0, fontWeight: 600,
-                }}
-              >
-                ✗ Scratch
-              </button>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexShrink: 0, alignItems: "flex-end" }}>
+              {(canRecord || canResolve) && issue.solution_id && (() => {
+                const voted = votedSolutions.has(issue.solution_id!);
+                return (
+                  <button
+                    onClick={() => { if (!voted && issue.solution_id) onVote(issue.issue_id, issue.solution_id); }}
+                    disabled={busy || voted}
+                    title={voted ? "You've already upvoted this solution" : "Upvote this solution"}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: "4px",
+                      padding: "2px 8px", borderRadius: "4px",
+                      border: `1px solid ${voted ? "rgba(0,204,122,0.5)" : "rgba(0,204,122,0.25)"}`,
+                      background: voted ? "rgba(0,204,122,0.18)" : "rgba(0,204,122,0.06)",
+                      color: "#00cc7a", fontSize: "10px",
+                      cursor: voted ? "default" : "pointer", fontWeight: 700,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    ▲ {issue.solution_votes}
+                  </button>
+                );
+              })()}
+              {canResolve && !isStaging && (
+                <button
+                  onClick={() => run(() => callApi(`/api/session/issues/${issue.issue_id}/solution`, { method: "DELETE" }))}
+                  disabled={busy}
+                  style={{
+                    padding: "2px 8px", borderRadius: "4px",
+                    border: "1px solid rgba(240,58,87,0.3)", background: "rgba(240,58,87,0.08)",
+                    color: "#f03a57", fontSize: "10px", cursor: "pointer", flexShrink: 0, fontWeight: 600,
+                  }}
+                >
+                  ✗ Scratch
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Observed weeks */}
@@ -1189,11 +1216,13 @@ function InsightTab({ issues }: { issues: Issue[] }) {
 /* ── Issue card ──────────────────────────────────────────────── */
 function IssueCard({
   issue, expanded, onToggle, canRecord, canResolve, solvingId, setSolvingId, onRefresh, onSetError,
+  votedSolutions, onVote,
 }: {
   issue: Issue; expanded: boolean; onToggle: () => void;
   canRecord: boolean; canResolve: boolean;
   solvingId: string | null; setSolvingId: (id: string | null) => void;
   onRefresh: () => void; onSetError: (err: string | null) => void;
+  votedSolutions: Set<string>; onVote: (issueId: string, solutionId: string) => void;
 }) {
   const p = issue.priority;
   const c = CAT[issue.category] ?? CAT.other;
@@ -1271,10 +1300,13 @@ function IssueCard({
           <ResolveSection
             issue={issue}
             canResolve={canResolve}
+            canRecord={canRecord}
             solvingId={solvingId}
             setSolvingId={setSolvingId}
             onRefresh={onRefresh}
             onSetError={onSetError}
+            votedSolutions={votedSolutions}
+            onVote={onVote}
           />
         </div>
       )}
@@ -1322,7 +1354,7 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
         flexDirection: "column",
         gap:           "12px",
         borderBottom:  "1px solid rgba(255,255,255,0.07)",
-        background:    "rgba(240,58,87,0.03)",
+        background:    "rgba(0,204,122,0.03)",
       }}
     >
       <div style={{ fontSize: "13px", fontWeight: 700 }}>Report Issue</div>
@@ -1418,9 +1450,10 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
           onClick={submit}
           disabled={busy}
           style={{
-            flex: 1, padding: "9px", borderRadius: "6px", border: "none",
-            background: "linear-gradient(135deg,#f03a57,#f0a030)",
-            color: "#fff", fontWeight: 700, fontSize: "13px", cursor: "pointer",
+            flex: 1, padding: "9px", borderRadius: "6px",
+            border: "1px solid rgba(0,204,122,0.4)",
+            background: "rgba(0,204,122,0.14)",
+            color: "#00cc7a", fontWeight: 700, fontSize: "13px", cursor: "pointer",
           }}
         >
           {busy ? "Reporting…" : "Report Issue"}
@@ -1442,14 +1475,15 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
 /* ── Main IssuePanel ─────────────────────────────────────────── */
 export default function IssuePanel({ showInsight = false }: { showInsight?: boolean }) {
   const { data: session }               = useSession();
-  const [open,       setOpen]           = useState(false);
-  const [tab,        setTab]            = useState<TabFilter>("open");
-  const [issues,     setIssues]         = useState<Issue[]>([]);
-  const [loading,    setLoading]        = useState(false);
-  const [apiError,   setApiError]       = useState<string | null>(null);
-  const [expandedId, setExpandedId]     = useState<string | null>(null);
-  const [creating,   setCreating]       = useState(false);
-  const [solvingId,  setSolvingId]      = useState<string | null>(null);
+  const [open,           setOpen]           = useState(false);
+  const [tab,            setTab]            = useState<TabFilter>("open");
+  const [issues,         setIssues]         = useState<Issue[]>([]);
+  const [loading,        setLoading]        = useState(false);
+  const [apiError,       setApiError]       = useState<string | null>(null);
+  const [expandedId,     setExpandedId]     = useState<string | null>(null);
+  const [creating,       setCreating]       = useState(false);
+  const [solvingId,      setSolvingId]      = useState<string | null>(null);
+  const [votedSolutions, setVotedSolutions] = useState<Set<string>>(new Set());
 
   const roles: string[] = (session as any)?.roles ?? [];
   const canRecord  = roles.some(r => ["operator", "analyst", "strategist", "fund_manager"].includes(r));
@@ -1473,6 +1507,17 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
       setLoading(false);
     }
   }, []);
+
+  async function handleVote(issueId: string, solutionId: string) {
+    setVotedSolutions(prev => new Set([...prev, solutionId]));
+    const err = await callApi(`/api/session/issues/${issueId}/solution/vote`, { method: "POST" });
+    if (err) {
+      setApiError(err);
+      setVotedSolutions(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
+    } else {
+      loadIssues();
+    }
+  }
 
   useEffect(() => {
     if (open) loadIssues();
@@ -1586,6 +1631,55 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
         )}
       </button>
 
+      {/* Insight overlay panel — wide panel to the left of the issues panel */}
+      {open && tab === "insight" && showInsight && canResolve && (
+        <div
+          style={{
+            position:      "fixed",
+            top:           0,
+            right:         "min(480px,100vw)",
+            bottom:        0,
+            left:          0,
+            zIndex:        898,
+            background:    "var(--surface,#1a1a2e)",
+            borderRight:   "1px solid rgba(255,255,255,0.06)",
+            boxShadow:     "-4px 0 40px rgba(0,0,0,0.5)",
+            display:       "flex",
+            flexDirection: "column",
+          }}
+        >
+          {/* Insight header */}
+          <div
+            style={{
+              padding:      "14px 18px",
+              borderBottom: "1px solid rgba(255,255,255,0.07)",
+              flexShrink:   0,
+              display:      "flex",
+              alignItems:   "center",
+              gap:          "10px",
+            }}
+          >
+            <span style={{ fontSize: "14px", fontWeight: 700, color: "#8ea3be" }}>Issue Analytics</span>
+            <span
+              style={{
+                padding:      "2px 8px",
+                borderRadius: "4px",
+                fontSize:     "9px",
+                fontWeight:   700,
+                background:   "rgba(124,106,255,0.12)",
+                color:        "#7c6aff",
+                letterSpacing: "0.4px",
+              }}
+            >
+              {issues.length} ISSUES
+            </span>
+          </div>
+          <div className="iss-scroll" style={{ flex: 1, overflowY: "auto" }}>
+            <InsightTab issues={issues} />
+          </div>
+        </div>
+      )}
+
       {/* Side panel */}
       {open && (
         <div
@@ -1635,9 +1729,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                     style={{
                       padding:      "4px 10px",
                       borderRadius: "5px",
-                      border:       "1px solid rgba(240,58,87,0.3)",
-                      background:   "rgba(240,58,87,0.1)",
-                      color:        "#f03a57",
+                      border:       "1px solid rgba(0,204,122,0.3)",
+                      background:   "rgba(0,204,122,0.09)",
+                      color:        "#00cc7a",
                       fontSize:     "11px",
                       cursor:       "pointer",
                       fontWeight:   600,
@@ -1710,7 +1804,10 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             )}
 
             {tab === "insight" && showInsight && canResolve ? (
-              <InsightTab issues={issues} />
+              <div style={{ textAlign: "center", padding: "52px 20px", color: "#6b7280", fontSize: "12px", lineHeight: 1.7 }}>
+                <div style={{ fontSize: "22px", marginBottom: "8px" }}>↔</div>
+                Analytics panel open to the left
+              </div>
             ) : loading ? (
               <div style={{ textAlign: "center", padding: "48px 0", color: "#6b7280", fontSize: "13px" }}>
                 Loading…
@@ -1735,6 +1832,8 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                     setSolvingId={setSolvingId}
                     onRefresh={loadIssues}
                     onSetError={setApiError}
+                    votedSolutions={votedSolutions}
+                    onVote={handleVote}
                   />
                 ))}
               </div>
