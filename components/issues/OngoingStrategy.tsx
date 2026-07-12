@@ -15,11 +15,11 @@ interface Strategy {
 }
 
 const P_LABEL = ["DIRE", "CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
-const P_COLOR = ["#f03a57", "#f03a57", "#f0a030", "#eab308", "#4d9cf5", "#8ea3be"] as const;
+const P_COLOR = ["#f03a57", "#f03a57", "#f0a030", "#eab308", "#4d9cf5", "var(--ink-2,#5a7490)"] as const;
 const P_BG    = [
-  "rgba(240,58,87,0.16)",  "rgba(240,58,87,0.10)",
-  "rgba(240,160,48,0.13)", "rgba(234,179,8,0.11)",
-  "rgba(77,156,245,0.11)", "rgba(142,163,190,0.10)",
+  "rgba(240,58,87,0.15)",  "rgba(240,58,87,0.10)",
+  "rgba(240,160,48,0.12)", "rgba(234,179,8,0.10)",
+  "rgba(77,156,245,0.10)", "rgba(90,116,144,0.10)",
 ] as const;
 
 export default function OngoingStrategy() {
@@ -71,7 +71,7 @@ export default function OngoingStrategy() {
 
     const r = await fetch(`/api/session/issues/${issueId}/solution/${action}`, { method: "POST" });
     if (!r.ok) {
-      if (action === "endorse")    setEndorsed(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
+      if (action === "endorse") setEndorsed(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
       else setDisregarded(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
     } else {
       load();
@@ -81,45 +81,37 @@ export default function OngoingStrategy() {
   if (strategies.length === 0 && !loading && !error) return null;
 
   return (
-    <div
-      style={{
-        border:       "1px solid var(--line,rgba(255,255,255,0.06))",
-        borderRadius: "8px",
-        overflow:     "hidden",
-        background:   "var(--sub,#07101c)",
-      }}
-    >
+    <div style={{ border: "1px solid var(--line,rgba(255,255,255,0.06))", borderRadius: 8, overflow: "hidden", background: "var(--sub,#07101c)" }}>
+
       {/* Header */}
       <button
         onClick={() => setCollapsed(v => !v)}
         style={{
-          width:        "100%",
-          background:   "none",
-          border:       "none",
-          cursor:       "pointer",
-          display:      "flex",
-          alignItems:   "center",
-          gap:          "8px",
-          padding:      "10px 13px",
-          textAlign:    "left",
+          width: "100%", background: "none", border: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 13px", textAlign: "left",
         }}
       >
-        <span style={{ fontSize: "10px", fontWeight: 800, color: "#00cc7a", letterSpacing: "0.6px" }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: "#00cc7a", letterSpacing: "0.6px" }}>
           ON-GOING STRATEGY
         </span>
-        <span
-          style={{
-            padding:      "1px 6px",
-            borderRadius: "8px",
-            fontSize:     "9px",
-            fontWeight:   700,
-            background:   "rgba(0,204,122,0.12)",
-            color:        "#00cc7a",
-          }}
-        >
+        <span style={{ padding: "1px 6px", borderRadius: 8, fontSize: 9, fontWeight: 700, background: "rgba(0,204,122,0.12)", color: "#00cc7a" }}>
           {loading ? "…" : strategies.length}
         </span>
-        <span style={{ marginLeft: "auto", color: "var(--ink-2,#5a7490)", fontSize: "11px" }}>
+        <button
+          onClick={e => { e.stopPropagation(); load(); }}
+          disabled={loading}
+          title="Refresh"
+          style={{
+            marginLeft: "auto", marginRight: 4,
+            background: "none", border: "none",
+            color: "var(--ink-2,#5a7490)", fontSize: 13,
+            cursor: loading ? "default" : "pointer", lineHeight: 1, padding: 0,
+          }}
+        >
+          ↻
+        </button>
+        <span style={{ color: "var(--ink-2,#5a7490)", fontSize: 11 }}>
           {collapsed ? "▸" : "▾"}
         </span>
       </button>
@@ -127,127 +119,83 @@ export default function OngoingStrategy() {
       {!collapsed && (
         <div style={{ borderTop: "1px solid var(--line,rgba(255,255,255,0.06))" }}>
           {error && (
-            <div style={{ padding: "6px 13px", fontSize: "11px", color: "#f03a57" }}>{error}</div>
+            <div style={{ padding: "6px 13px", fontSize: 11, color: "#f03a57" }}>{error}</div>
           )}
 
           {strategies.map((s, idx) => {
-            const e       = endorsed.has(s.solution_id);
-            const d       = disregarded.has(s.solution_id);
+            const e        = endorsed.has(s.solution_id);
+            const d        = disregarded.has(s.solution_id);
             const actioned = e || d;
+            const dateStr  = s.solution_created_at
+              ? new Date(s.solution_created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+              : "";
+
             return (
               <div
                 key={s.solution_id}
                 style={{
-                  padding:      "9px 13px",
-                  borderTop:    idx === 0 ? "none" : "1px solid var(--line,rgba(255,255,255,0.06))",
-                  display:      "flex",
-                  flexDirection: "column",
-                  gap:          "5px",
+                  padding: "11px 13px",
+                  borderTop: idx === 0 ? "none" : "1px solid var(--line,rgba(255,255,255,0.06))",
+                  display: "flex", flexDirection: "column", gap: 8,
                 }}
               >
-                {/* Priority badge + issue title */}
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span
-                    style={{
-                      padding:      "1px 5px",
-                      borderRadius: "3px",
-                      fontSize:     "9px",
-                      fontWeight:   700,
-                      background:   P_BG[s.priority],
-                      color:        P_COLOR[s.priority],
-                      flexShrink:   0,
-                    }}
-                  >
-                    {P_LABEL[s.priority]}
-                  </span>
-                  <span
-                    style={{
-                      fontSize:     "11px",
-                      fontWeight:   600,
-                      color:        "var(--fg)",
-                      overflow:     "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace:   "nowrap",
-                      flex:         1,
-                    }}
-                  >
-                    {s.title}
-                  </span>
-                </div>
-
-                {/* Strategy description */}
-                <p
-                  style={{
-                    margin:     0,
-                    fontSize:   "11px",
-                    color:      "var(--ink-1,#9ab0c8)",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {s.solution_description.length > 140
-                    ? s.solution_description.slice(0, 140) + "…"
-                    : s.solution_description}
+                {/* Solution description — primary focus */}
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: "var(--ink-0,#eef2f8)", lineHeight: 1.55 }}>
+                  {s.solution_description}
                 </p>
 
-                {/* Endorse / Disregard row */}
-                <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                {/* Context row: issue tag + proposer + date */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{
+                    padding: "1px 5px", borderRadius: 3,
+                    fontSize: 9, fontWeight: 700,
+                    background: P_BG[s.priority], color: P_COLOR[s.priority],
+                    flexShrink: 0,
+                  }}>
+                    {P_LABEL[s.priority]}
+                  </span>
+                  <span style={{
+                    fontSize: 10, color: "var(--ink-2,#5a7490)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0,
+                  }}>
+                    {s.title}
+                  </span>
+                  {dateStr && (
+                    <span style={{ fontSize: 9, color: "var(--ink-3,#2a3d52)", flexShrink: 0 }}>{dateStr}</span>
+                  )}
+                </div>
+
+                {/* Endorse / Disregard */}
+                <div style={{ display: "flex", gap: 5 }}>
                   <button
                     onClick={() => !actioned && act(s.issue_id, s.solution_id, "endorse")}
                     disabled={actioned}
-                    title={e ? "You've endorsed this strategy" : "Endorse this strategy"}
+                    title={e ? "Endorsed" : "Endorse this strategy"}
                     style={{
-                      display:    "inline-flex",
-                      alignItems: "center",
-                      gap:        "3px",
-                      padding:    "2px 8px",
-                      borderRadius: "4px",
-                      border:     `1px solid ${e ? "rgba(0,204,122,0.5)" : "rgba(0,204,122,0.2)"}`,
-                      background: e ? "rgba(0,204,122,0.15)" : "rgba(0,204,122,0.05)",
-                      color:      "#00cc7a",
-                      fontSize:   "10px",
-                      fontWeight: 700,
-                      cursor:     actioned ? "default" : "pointer",
-                      opacity:    d ? 0.4 : 1,
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "3px 10px", borderRadius: 4,
+                      border: `1px solid ${e ? "rgba(0,204,122,0.45)" : "rgba(0,204,122,0.2)"}`,
+                      background: e ? "rgba(0,204,122,0.14)" : "rgba(0,204,122,0.05)",
+                      color: "#00cc7a", fontSize: 10, fontWeight: 700,
+                      cursor: actioned ? "default" : "pointer", opacity: d ? 0.38 : 1,
                     }}
                   >
-                    ✓ Endorse {s.solution_endorsements > 0 ? s.solution_endorsements : ""}
+                    ✓ Endorse{s.solution_endorsements > 0 ? ` · ${s.solution_endorsements}` : ""}
                   </button>
                   <button
                     onClick={() => !actioned && act(s.issue_id, s.solution_id, "disregard")}
                     disabled={actioned}
-                    title={d ? "You've disregarded this strategy" : "Disregard this strategy"}
+                    title={d ? "Disregarded" : "Disregard this strategy"}
                     style={{
-                      display:    "inline-flex",
-                      alignItems: "center",
-                      gap:        "3px",
-                      padding:    "2px 8px",
-                      borderRadius: "4px",
-                      border:     `1px solid ${d ? "rgba(240,58,87,0.5)" : "rgba(240,58,87,0.2)"}`,
-                      background: d ? "rgba(240,58,87,0.15)" : "rgba(240,58,87,0.05)",
-                      color:      "#f03a57",
-                      fontSize:   "10px",
-                      fontWeight: 700,
-                      cursor:     actioned ? "default" : "pointer",
-                      opacity:    e ? 0.4 : 1,
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "3px 10px", borderRadius: 4,
+                      border: `1px solid ${d ? "rgba(240,58,87,0.45)" : "rgba(240,58,87,0.2)"}`,
+                      background: d ? "rgba(240,58,87,0.14)" : "rgba(240,58,87,0.05)",
+                      color: "#f03a57", fontSize: 10, fontWeight: 700,
+                      cursor: actioned ? "default" : "pointer", opacity: e ? 0.38 : 1,
                     }}
                   >
-                    ✗ Disregard {s.solution_disregards > 0 ? s.solution_disregards : ""}
-                  </button>
-                  <button
-                    onClick={load}
-                    style={{
-                      marginLeft:   "auto",
-                      padding:      "2px 5px",
-                      borderRadius: "4px",
-                      border:       "none",
-                      background:   "none",
-                      color:        "var(--ink-2,#5a7490)",
-                      fontSize:     "11px",
-                      cursor:       "pointer",
-                    }}
-                    title="Refresh"
-                  >
-                    ↻
+                    ✗ Disregard{s.solution_disregards > 0 ? ` · ${s.solution_disregards}` : ""}
                   </button>
                 </div>
               </div>

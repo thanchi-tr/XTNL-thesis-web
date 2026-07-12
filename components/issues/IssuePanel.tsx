@@ -1606,6 +1606,25 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
     if (open) loadIssues();
   }, [open, loadIssues]);
 
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (tab === "insight") setTab("open");
+      else setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, tab]);
+
   const filtered = useMemo(() => {
     if (tab === "open")     return issues.filter(i => i.status === "open" || i.status === "in_progress");
     if (tab === "staging")  return issues.filter(i => i.status === "staging");
@@ -1670,8 +1689,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
         aria-label="Toggle issue panel"
         style={{
           position:       "fixed",
-          bottom:         28,
-          right:          28,
+          bottom:         isMobile ? 20 : 28,
+          right:          isMobile ? "50%" : 28,
+          transform:      isMobile ? "translateX(50%)" : "none",
           zIndex:         900,
           width:          50,
           height:         50,
@@ -1716,8 +1736,8 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
         )}
       </button>
 
-      {/* Insight overlay panel — wide panel to the left of the issues panel */}
-      {open && tab === "insight" && showInsight && canResolve && (
+      {/* Insight overlay panel — wide panel to the left of the issues panel (desktop only) */}
+      {open && tab === "insight" && showInsight && canResolve && !isMobile && (
         <>
           {/* Backdrop — blurred, click outside to close */}
           <div
@@ -1801,8 +1821,35 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
 
       {/* Side panel */}
       {open && (
+        <>
+          {/* Mobile backdrop */}
+          {isMobile && (
+            <div
+              onClick={() => setOpen(false)}
+              style={{
+                position: "fixed", inset: 0,
+                zIndex: 898,
+                background: "rgba(0,0,0,0.55)",
+                backdropFilter: "blur(4px)",
+                WebkitBackdropFilter: "blur(4px)",
+              }}
+            />
+          )}
         <div
-          style={{
+          style={isMobile ? {
+            position:      "fixed",
+            left:          0,
+            right:         0,
+            bottom:        0,
+            height:        "88vh",
+            zIndex:        899,
+            background:    "var(--card,#0b1622)",
+            borderTop:     "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+            borderRadius:  "16px 16px 0 0",
+            boxShadow:     "0 -8px 48px rgba(0,0,0,0.72)",
+            display:       "flex",
+            flexDirection: "column",
+          } : {
             position:      "fixed",
             top:           0,
             right:         0,
@@ -1816,10 +1863,17 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             flexDirection: "column",
           }}
         >
+          {/* Mobile drag handle */}
+          {isMobile && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--line-hi,rgba(255,255,255,0.11))" }} />
+            </div>
+          )}
+
           {/* Panel header */}
           <div
             style={{
-              padding:      "15px 15px 0",
+              padding:      isMobile ? "8px 15px 0" : "15px 15px 0",
               borderBottom: "1px solid var(--line,rgba(255,255,255,0.06))",
               flexShrink:   0,
             }}
@@ -1927,10 +1981,12 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             )}
 
             {tab === "insight" && showInsight && canResolve ? (
-              <div style={{ textAlign: "center", padding: "52px 20px", color: "var(--ink-2,#5a7490)", fontSize: "12px", lineHeight: 1.7 }}>
-                <div style={{ fontSize: "22px", marginBottom: "8px" }}>↔</div>
-                Analytics panel open to the left
-              </div>
+              isMobile
+                ? <InsightTab issues={issues} />
+                : <div style={{ textAlign: "center", padding: "52px 20px", color: "var(--ink-2,#5a7490)", fontSize: "12px", lineHeight: 1.7 }}>
+                    <div style={{ fontSize: "22px", marginBottom: "8px" }}>↔</div>
+                    Analytics panel open to the left
+                  </div>
             ) : loading ? (
               <div style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-2,#5a7490)", fontSize: "13px" }}>
                 Loading…
@@ -1966,6 +2022,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             )}
           </div>
         </div>
+        </>
       )}
     </>
   );
