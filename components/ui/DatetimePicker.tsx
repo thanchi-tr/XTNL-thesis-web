@@ -9,7 +9,7 @@ interface Props {
   required?: boolean;
 }
 
-const DAYS  = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const DAYS   = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
@@ -28,11 +28,100 @@ function fmtDisplay(v: string) {
   const p = parseVal(v);
   if (!p) return "Select date & time";
   const date = new Date(p.year, p.month, p.day);
-  const ds = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  const h12 = p.hour % 12 || 12;
+  const ds   = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const h12  = p.hour % 12 || 12;
   const ampm = p.hour < 12 ? "AM" : "PM";
   return `${ds} · ${pad(h12)}:${pad(p.minute)} ${ampm}`;
 }
+
+// ── Vertical spinner field ────────────────────────────────────────────────────
+
+interface SpinnerProps {
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+  onComplete?: () => void;  // called after 2 valid digits → auto-advance
+  inputRef?: React.RefObject<HTMLInputElement | null>;
+}
+
+function TimeSpinner({ value, min, max, onChange, onComplete, inputRef }: SpinnerProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const clamp = (n: number) => {
+    if (n > max) return min;
+    if (n < min) return max;
+    return n;
+  };
+
+  const commit = (raw: string) => {
+    const n = parseInt(raw, 10);
+    if (!isNaN(n)) onChange(clamp(n));
+    setDraft(null);
+  };
+
+  const display = draft !== null ? draft : pad(value);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+      {/* ▲ */}
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => onChange(clamp(value + 1))}
+        style={S.spinBtn}
+        aria-label="Increment"
+      >
+        <svg width="9" height="6" viewBox="0 0 9 6" fill="none">
+          <path d="M1 5l3.5-4L8 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
+      {/* Input */}
+      <input
+        ref={inputRef as React.RefObject<HTMLInputElement>}
+        type="text"
+        inputMode="numeric"
+        value={display}
+        onFocus={e => e.currentTarget.select()}
+        onChange={e => {
+          const raw = e.target.value.replace(/\D/g, "").slice(0, 2);
+          setDraft(raw);
+          if (raw.length === 2) {
+            const n = parseInt(raw, 10);
+            if (!isNaN(n) && n >= min && n <= max) {
+              onChange(n);
+              setDraft(null);
+              onComplete?.();
+            }
+          }
+        }}
+        onBlur={e => commit(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "ArrowUp")   { e.preventDefault(); setDraft(null); onChange(clamp(value + 1)); }
+          if (e.key === "ArrowDown") { e.preventDefault(); setDraft(null); onChange(clamp(value - 1)); }
+          if (e.key === "Enter")     { commit(display); }
+        }}
+        style={S.timeInp}
+      />
+
+      {/* ▼ */}
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => onChange(clamp(value - 1))}
+        style={S.spinBtn}
+        aria-label="Decrement"
+      >
+        <svg width="9" height="6" viewBox="0 0 9 6" fill="none">
+          <path d="M1 1l3.5 4L8 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// ── Main picker ───────────────────────────────────────────────────────────────
 
 export function DatetimePicker({ value, onChange, style, required }: Props) {
   const [open,     setOpen]     = useState(false);
@@ -42,6 +131,7 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
 
   const trigRef = useRef<HTMLButtonElement>(null);
   const panRef  = useRef<HTMLDivElement>(null);
+  const minRef  = useRef<HTMLInputElement>(null);
 
   const parsed = parseVal(value);
   const h12    = parsed ? (parsed.hour % 12 || 12) : 12;
@@ -49,8 +139,8 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
 
   const openPicker = useCallback(() => {
     if (!trigRef.current) return;
-    const r = trigRef.current.getBoundingClientRect();
-    const panelH = 340;
+    const r      = trigRef.current.getBoundingClientRect();
+    const panelH = 360;
     const below  = r.bottom + 8;
     const above  = r.top - 8 - panelH;
     setPos({ top: below + panelH > window.innerHeight && above > 0 ? above : below, left: r.left });
@@ -85,11 +175,24 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
     return out;
   };
 
-  const pickDay = (y: number, mo: number, d: number) =>
+  const pickDay  = (y: number, mo: number, d: number) =>
     onChange(toVal(y, mo, d, parsed?.hour ?? 0, parsed?.minute ?? 0));
 
-  const setHour = (h: number) => parsed && onChange(toVal(parsed.year, parsed.month, parsed.day, h, parsed.minute));
-  const setMin  = (mi: number) => parsed && onChange(toVal(parsed.year, parsed.month, parsed.day, parsed.hour, mi));
+  const setHour  = (h: number) =>
+    parsed && onChange(toVal(parsed.year, parsed.month, parsed.day, h, parsed.minute));
+  const setMin   = (mi: number) =>
+    parsed && onChange(toVal(parsed.year, parsed.month, parsed.day, parsed.hour, mi));
+
+  const setH12   = (h: number) => {
+    if (!parsed) return;
+    const h24 = ampm === "AM" ? (h === 12 ? 0 : h) : (h === 12 ? 12 : h + 12);
+    setHour(h24);
+  };
+
+  const toggleAmpm = () => {
+    if (!parsed) return;
+    setHour(parsed.hour < 12 ? parsed.hour + 12 : parsed.hour - 12);
+  };
 
   const isSel = (y: number, mo: number, d: number) =>
     parsed?.year === y && parsed?.month === mo && parsed?.day === d;
@@ -100,8 +203,6 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
 
   const prevMon = () => viewMon === 0  ? (setViewMon(11), setViewYear(y => y - 1)) : setViewMon(m => m - 1);
   const nextMon = () => viewMon === 11 ? (setViewMon(0),  setViewYear(y => y + 1)) : setViewMon(m => m + 1);
-
-  const hasValue = !!parsed;
 
   return (
     <>
@@ -121,13 +222,12 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
       >
         <span style={{
           fontSize: 12.5,
-          color: hasValue ? "var(--ink-0)" : "var(--ink-3)",
+          color: !!parsed ? "var(--ink-0)" : "var(--ink-3)",
           fontFamily: "var(--font-mono, monospace)",
           letterSpacing: "0.01em",
         }}>
           {fmtDisplay(value)}
         </span>
-        {/* Calendar icon */}
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--ink-2)", opacity: 0.7 }}>
           <rect x="2" y="4" width="12" height="10" rx="1.8" stroke="currentColor" strokeWidth="1.3"/>
           <path d="M5 2v3M11 2v3M2 7.5h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
@@ -193,7 +293,7 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
                     color: sel
                       ? "#020508"
                       : !c.cur ? "rgba(90,116,144,0.4)"
-                      : tod  ? "var(--green)" : "var(--ink-1)",
+                      : tod    ? "var(--green)" : "var(--ink-1)",
                     outline: tod && !sel ? "1px solid rgba(0,204,122,0.28)" : "none",
                     outlineOffset: -1,
                     transition: "background 120ms, color 120ms",
@@ -208,41 +308,65 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
           {/* ── Divider ─────────────────────────────────────── */}
           <div style={{ height: 1, background: "rgba(255,255,255,0.05)", margin: "0 10px" }} />
 
-          {/* ── Time row ────────────────────────────────────── */}
-          <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", gap: 8 }}>
-            <span style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(90,116,144,0.8)", letterSpacing: "0.06em", textTransform: "uppercase" as const, flex: 1 }}>
+          {/* ── Time section ────────────────────────────────── */}
+          <div style={{ padding: "10px 14px 10px" }}>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(90,116,144,0.7)", letterSpacing: "0.06em", textTransform: "uppercase" as const, marginBottom: 8 }}>
               Time
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <input
-                type="number" min={1} max={12} value={h12}
-                onChange={e => {
-                  const v = Math.max(1, Math.min(12, parseInt(e.target.value) || 1));
-                  setHour(ampm === "AM" ? (v === 12 ? 0 : v) : (v === 12 ? 12 : v + 12));
-                }}
-                style={S.timeInp}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* Hour spinner */}
+              <TimeSpinner
+                value={h12}
+                min={1}
+                max={12}
+                onChange={setH12}
+                onComplete={() => minRef.current?.focus()}
               />
-              <span style={{ color: "rgba(90,116,144,0.6)", fontWeight: 700, fontSize: 13 }}>:</span>
-              <input
-                type="number" min={0} max={59} value={pad(parsed?.minute ?? 0)}
-                onChange={e => {
-                  const v = Math.max(0, Math.min(59, parseInt(e.target.value) || 0));
-                  setMin(v);
-                }}
-                style={S.timeInp}
+
+              {/* Colon separator */}
+              <span style={{ color: "rgba(90,116,144,0.5)", fontWeight: 700, fontSize: 18, lineHeight: 1, marginBottom: 2, userSelect: "none" }}>:</span>
+
+              {/* Minute spinner */}
+              <TimeSpinner
+                value={parsed?.minute ?? 0}
+                min={0}
+                max={59}
+                onChange={setMin}
+                inputRef={minRef}
               />
-              <button
-                type="button"
-                onClick={() => parsed && setHour(parsed.hour < 12 ? parsed.hour + 12 : parsed.hour - 12)}
-                style={{
-                  padding: "4px 9px", borderRadius: 5, fontSize: 10.5, fontWeight: 700,
-                  background: "rgba(0,204,122,0.10)", border: "1px solid rgba(0,204,122,0.22)",
-                  color: "var(--green)", cursor: "pointer", letterSpacing: "0.04em",
-                  transition: "background 120ms",
-                }}
-              >
-                {ampm}
-              </button>
+
+              {/* AM / PM segment */}
+              <div style={{ marginLeft: "auto", display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
+                {(["AM", "PM"] as const).map(label => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => label !== ampm && toggleAmpm()}
+                    onKeyDown={e => {
+                      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                        e.preventDefault();
+                        toggleAmpm();
+                      }
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: 11, fontWeight: 700,
+                      letterSpacing: "0.04em",
+                      cursor: label === ampm ? "default" : "pointer",
+                      border: "none",
+                      background: label === ampm
+                        ? "rgba(0,204,122,0.15)"
+                        : "transparent",
+                      color: label === ampm
+                        ? "var(--green)"
+                        : "rgba(90,116,144,0.6)",
+                      transition: "background 120ms, color 120ms",
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -271,12 +395,32 @@ const S = {
     transition: "background 120ms",
   } as React.CSSProperties,
 
+  spinBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "4px 8px",
+    borderRadius: 4,
+    color: "rgba(90,116,144,0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "color 120ms, background 120ms",
+  } as React.CSSProperties,
+
   timeInp: {
-    width: 38, textAlign: "center" as const,
-    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 5, padding: "4px 4px", fontSize: 13,
-    color: "var(--ink-0)", outline: "none",
+    width: 40,
+    textAlign: "center" as const,
+    background: "rgba(255,255,255,0.05)",
+    border: "1px solid rgba(255,255,255,0.09)",
+    borderRadius: 6,
+    padding: "6px 4px",
+    fontSize: 15,
+    fontWeight: 600,
+    color: "var(--ink-0)",
+    outline: "none",
     fontFamily: "var(--font-mono, monospace)",
+    appearance: "textfield" as unknown as undefined,
   } as React.CSSProperties,
 
   ghostBtn: {

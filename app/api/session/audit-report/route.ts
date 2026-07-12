@@ -33,7 +33,8 @@ async function getGraphToken(): Promise<string> {
 
 interface AuditReport { content: string; fetchedAt: string; weekKey: string }
 
-/* Cached — re-fetches only when Monday AEST date changes (same strategy as /api/data/report) */
+/* Cached for 2 minutes — short enough that a freshly-generated OneDrive
+   report is visible within one click, but avoids hammering the Graph API. */
 const getCachedAuditReport = unstable_cache(
   async (weekKey: string): Promise<AuditReport> => {
     const token = await getGraphToken();
@@ -55,7 +56,7 @@ const getCachedAuditReport = unstable_cache(
     return { content: await dlRes.text(), fetchedAt: new Date().toISOString(), weekKey };
   },
   ["xtnl-audit-report"],
-  { revalidate: 86400 }
+  { revalidate: 120 }
 );
 
 export async function GET() {

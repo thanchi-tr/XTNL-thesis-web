@@ -137,6 +137,22 @@ const INPUT: React.CSSProperties = {
   boxSizing:    "border-box",
 };
 
+/* Shared style for <select> elements — overrides browser default dropdown chrome */
+const SELECT: React.CSSProperties = {
+  ...INPUT,
+  appearance:          "none",
+  WebkitAppearance:    "none",
+  backgroundImage:     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235a7490' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E\")",
+  backgroundRepeat:    "no-repeat",
+  backgroundPosition:  "right 9px center",
+  paddingRight:        "26px",
+  colorScheme:         "dark",
+  cursor:              "pointer",
+};
+
+/* Background/color applied to every <option> so the native popup stays dark */
+const OPT: React.CSSProperties = { background: "#0c1828", color: "#c4d4e4" };
+
 /* ── Atom badges ─────────────────────────────────────────────── */
 function PriorityBadge({ p }: { p: number }) {
   return (
@@ -381,20 +397,20 @@ function RecordSection({
           />
           <div style={{ display: "flex", gap: "6px" }}>
             <select
-              style={{ ...INPUT, flex: 1 }}
+              style={{ ...SELECT, flex: 1 }}
               value={subForm.category}
               onChange={e => setSubForm(f => ({ ...f, category: e.target.value as Category }))}
             >
               {(Object.entries(CAT) as [Category, (typeof CAT)[Category]][]).map(([k, v]) => (
-                <option key={k} value={k}>{v.icon} {v.label}</option>
+                <option key={k} value={k} style={OPT}>{v.icon} {v.label}</option>
               ))}
             </select>
             <select
-              style={{ ...INPUT, flex: 1 }}
+              style={{ ...SELECT, flex: 1 }}
               value={subForm.priority}
               onChange={e => setSubForm(f => ({ ...f, priority: Number(e.target.value) }))}
             >
-              {P_LABEL.map((l, i) => <option key={i} value={i}>{l}</option>)}
+              {P_LABEL.map((l, i) => <option key={i} value={i} style={OPT}>{l}</option>)}
             </select>
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
@@ -1339,23 +1355,23 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
         <div style={{ flex: 1 }}>
           <label style={LBL}>CATEGORY</label>
           <select
-            style={FIELD}
+            style={{ ...SELECT, fontSize: "13px", padding: "8px 26px 8px 10px" }}
             value={form.category}
             onChange={e => setForm(f => ({ ...f, category: e.target.value as Category }))}
           >
             {(Object.entries(CAT) as [Category, (typeof CAT)[Category]][]).map(([k, v]) => (
-              <option key={k} value={k}>{v.icon} {v.label}</option>
+              <option key={k} value={k} style={OPT}>{v.icon} {v.label}</option>
             ))}
           </select>
         </div>
         <div style={{ flex: 1 }}>
           <label style={LBL}>PRIORITY</label>
           <select
-            style={FIELD}
+            style={{ ...SELECT, fontSize: "13px", padding: "8px 26px 8px 10px" }}
             value={form.priority}
             onChange={e => setForm(f => ({ ...f, priority: Number(e.target.value) }))}
           >
-            {P_LABEL.map((l, i) => <option key={i} value={i}>{l}</option>)}
+            {P_LABEL.map((l, i) => <option key={i} value={i} style={OPT}>{l}</option>)}
           </select>
         </div>
       </div>
