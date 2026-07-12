@@ -1633,51 +1633,83 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
 
       {/* Insight overlay panel — wide panel to the left of the issues panel */}
       {open && tab === "insight" && showInsight && canResolve && (
-        <div
-          style={{
-            position:      "fixed",
-            top:           0,
-            right:         "min(480px,100vw)",
-            bottom:        0,
-            left:          0,
-            zIndex:        898,
-            background:    "var(--surface,#1a1a2e)",
-            borderRight:   "1px solid rgba(255,255,255,0.06)",
-            boxShadow:     "-4px 0 40px rgba(0,0,0,0.5)",
-            display:       "flex",
-            flexDirection: "column",
-          }}
-        >
-          {/* Insight header */}
+        <>
+          {/* Backdrop — click outside panel to close insight */}
+          <div
+            onClick={() => setTab("open")}
+            style={{
+              position:   "fixed",
+              inset:      0,
+              zIndex:     897,
+              background: "rgba(0,0,0,0.35)",
+            }}
+          />
+
+          {/* Insight panel — floating with 6% margin */}
           <div
             style={{
-              padding:      "14px 18px",
-              borderBottom: "1px solid rgba(255,255,255,0.07)",
-              flexShrink:   0,
-              display:      "flex",
-              alignItems:   "center",
-              gap:          "10px",
+              position:      "fixed",
+              top:           "6vh",
+              bottom:        "6vh",
+              left:          "calc((100vw - min(480px,100vw)) * 0.06)",
+              right:         "calc(min(480px,100vw) + (100vw - min(480px,100vw)) * 0.06)",
+              zIndex:        898,
+              background:    "var(--surface,#1a1a2e)",
+              border:        "1px solid rgba(255,255,255,0.09)",
+              borderRadius:  "12px",
+              boxShadow:     "0 8px 48px rgba(0,0,0,0.6)",
+              display:       "flex",
+              flexDirection: "column",
+              overflow:      "hidden",
             }}
           >
-            <span style={{ fontSize: "14px", fontWeight: 700, color: "#8ea3be" }}>Issue Analytics</span>
-            <span
+            {/* Insight header */}
+            <div
               style={{
-                padding:      "2px 8px",
-                borderRadius: "4px",
-                fontSize:     "9px",
-                fontWeight:   700,
-                background:   "rgba(124,106,255,0.12)",
-                color:        "#7c6aff",
-                letterSpacing: "0.4px",
+                padding:      "14px 18px",
+                borderBottom: "1px solid rgba(255,255,255,0.07)",
+                flexShrink:   0,
+                display:      "flex",
+                alignItems:   "center",
+                gap:          "10px",
               }}
             >
-              {issues.length} ISSUES
-            </span>
+              <span style={{ fontSize: "14px", fontWeight: 700, color: "#8ea3be" }}>Issue Analytics</span>
+              <span
+                style={{
+                  padding:       "2px 8px",
+                  borderRadius:  "4px",
+                  fontSize:      "9px",
+                  fontWeight:    700,
+                  background:    "rgba(124,106,255,0.12)",
+                  color:         "#7c6aff",
+                  letterSpacing: "0.4px",
+                }}
+              >
+                {issues.length} ISSUES
+              </span>
+              <button
+                onClick={() => setTab("open")}
+                style={{
+                  marginLeft:   "auto",
+                  background:   "none",
+                  border:       "none",
+                  color:        "#6b7280",
+                  fontSize:     "18px",
+                  lineHeight:   1,
+                  cursor:       "pointer",
+                  padding:      "0 2px",
+                }}
+                aria-label="Close analytics"
+              >
+                ×
+              </button>
+            </div>
+            <div className="iss-scroll" style={{ flex: 1, overflowY: "auto" }}>
+              <InsightTab issues={issues} />
+            </div>
           </div>
-          <div className="iss-scroll" style={{ flex: 1, overflowY: "auto" }}>
-            <InsightTab issues={issues} />
-          </div>
-        </div>
+        </>
       )}
 
       {/* Side panel */}
