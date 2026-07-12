@@ -56,6 +56,8 @@ interface Issue {
   solution_proposed_by:   string | null;
   solution_created_at:    string | null;
   solution_votes:         number;
+  solution_endorsements:  number;
+  solution_disregards:    number;
   observed_week_1:        string | null;
   observed_week_2:        string | null;
   observed_week_3:        string | null;
@@ -485,7 +487,8 @@ function RecordSection({
 
 /* ── RESOLVE section ─────────────────────────────────────────── */
 function ResolveSection({
-  issue, canResolve, canRecord, solvingId, setSolvingId, onRefresh, onSetError, votedSolutions, onVote,
+  issue, canResolve, canRecord, solvingId, setSolvingId, onRefresh, onSetError,
+  endorsedSolutions, disregardedSolutions, onEndorse, onDisregard,
 }: {
   issue: Issue;
   canResolve: boolean;
@@ -494,8 +497,10 @@ function ResolveSection({
   setSolvingId: (id: string | null) => void;
   onRefresh: () => void;
   onSetError: (err: string | null) => void;
-  votedSolutions: Set<string>;
-  onVote: (issueId: string, solutionId: string) => void;
+  endorsedSolutions: Set<string>;
+  disregardedSolutions: Set<string>;
+  onEndorse: (issueId: string, solutionId: string) => void;
+  onDisregard: (issueId: string, solutionId: string) => void;
 }) {
   const [scratchedOpen, setScratchedOpen] = useState(false);
   const [solText,       setSolText]       = useState("");
@@ -607,8 +612,8 @@ function ResolveSection({
         </div>
       )}
 
-      {/* Active solution card */}
-      {!isArchived && issue.solution_description && !isSolving && (
+      {/* Active solution card — shown even when issue is archived (solution can remain on-going) */}
+      {issue.solution_description && !isSolving && (
         <div
           style={{
             padding:       "8px 10px",
@@ -625,25 +630,45 @@ function ResolveSection({
               {issue.solution_description}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexShrink: 0, alignItems: "flex-end" }}>
-              {(canRecord || canResolve) && issue.solution_id && (() => {
-                const voted = votedSolutions.has(issue.solution_id!);
+              {!canResolve && canRecord && issue.solution_id && (() => {
+                const endorsed    = endorsedSolutions.has(issue.solution_id!);
+                const disregarded = disregardedSolutions.has(issue.solution_id!);
+                const actioned    = endorsed || disregarded;
                 return (
-                  <button
-                    onClick={() => { if (!voted && issue.solution_id) onVote(issue.issue_id, issue.solution_id); }}
-                    disabled={busy || voted}
-                    title={voted ? "You've already upvoted this solution" : "Upvote this solution"}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: "4px",
-                      padding: "2px 8px", borderRadius: "4px",
-                      border: `1px solid ${voted ? "rgba(0,204,122,0.5)" : "rgba(0,204,122,0.25)"}`,
-                      background: voted ? "rgba(0,204,122,0.18)" : "rgba(0,204,122,0.06)",
-                      color: "#00cc7a", fontSize: "10px",
-                      cursor: voted ? "default" : "pointer", fontWeight: 700,
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    ▲ {issue.solution_votes}
-                  </button>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button
+                      onClick={() => { if (!actioned && issue.solution_id) onEndorse(issue.issue_id, issue.solution_id); }}
+                      disabled={busy || actioned}
+                      title={endorsed ? "You've endorsed this solution" : "Endorse this solution"}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: "4px",
+                        padding: "2px 8px", borderRadius: "4px",
+                        border: `1px solid ${endorsed ? "rgba(0,204,122,0.5)" : "rgba(0,204,122,0.25)"}`,
+                        background: endorsed ? "rgba(0,204,122,0.18)" : "rgba(0,204,122,0.06)",
+                        color: "#00cc7a", fontSize: "10px",
+                        cursor: actioned ? "default" : "pointer", fontWeight: 700,
+                        opacity: disregarded ? 0.4 : 1,
+                      }}
+                    >
+                      ✓ {issue.solution_endorsements}
+                    </button>
+                    <button
+                      onClick={() => { if (!actioned && issue.solution_id) onDisregard(issue.issue_id, issue.solution_id); }}
+                      disabled={busy || actioned}
+                      title={disregarded ? "You've disregarded this solution" : "Disregard this solution"}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: "4px",
+                        padding: "2px 8px", borderRadius: "4px",
+                        border: `1px solid ${disregarded ? "rgba(240,58,87,0.5)" : "rgba(240,58,87,0.25)"}`,
+                        background: disregarded ? "rgba(240,58,87,0.18)" : "rgba(240,58,87,0.06)",
+                        color: "#f03a57", fontSize: "10px",
+                        cursor: actioned ? "default" : "pointer", fontWeight: 700,
+                        opacity: endorsed ? 0.4 : 1,
+                      }}
+                    >
+                      ✗ {issue.solution_disregards}
+                    </button>
+                  </div>
                 );
               })()}
               {canResolve && !isStaging && (
@@ -769,7 +794,7 @@ function ResolveSection({
           </button>
         )}
 
-        {(isStaging || isArchived) && !reopenForm && (
+        {canResolve && (isStaging || isArchived) && !reopenForm && (
           <button
             onClick={() => setReopenForm(true)}
             style={{
@@ -1259,13 +1284,15 @@ function InsightTab({ issues }: { issues: Issue[] }) {
 /* ── Issue card ──────────────────────────────────────────────── */
 function IssueCard({
   issue, expanded, onToggle, canRecord, canResolve, solvingId, setSolvingId, onRefresh, onSetError,
-  votedSolutions, onVote,
+  endorsedSolutions, disregardedSolutions, onEndorse, onDisregard,
 }: {
   issue: Issue; expanded: boolean; onToggle: () => void;
   canRecord: boolean; canResolve: boolean;
   solvingId: string | null; setSolvingId: (id: string | null) => void;
   onRefresh: () => void; onSetError: (err: string | null) => void;
-  votedSolutions: Set<string>; onVote: (issueId: string, solutionId: string) => void;
+  endorsedSolutions: Set<string>; disregardedSolutions: Set<string>;
+  onEndorse: (issueId: string, solutionId: string) => void;
+  onDisregard: (issueId: string, solutionId: string) => void;
 }) {
   const p = issue.priority;
   const c = CAT[issue.category] ?? CAT.other;
@@ -1348,8 +1375,10 @@ function IssueCard({
             setSolvingId={setSolvingId}
             onRefresh={onRefresh}
             onSetError={onSetError}
-            votedSolutions={votedSolutions}
-            onVote={onVote}
+            endorsedSolutions={endorsedSolutions}
+            disregardedSolutions={disregardedSolutions}
+            onEndorse={onEndorse}
+            onDisregard={onDisregard}
           />
         </div>
       )}
@@ -1526,7 +1555,8 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
   const [expandedId,     setExpandedId]     = useState<string | null>(null);
   const [creating,       setCreating]       = useState(false);
   const [solvingId,      setSolvingId]      = useState<string | null>(null);
-  const [votedSolutions, setVotedSolutions] = useState<Set<string>>(new Set());
+  const [endorsedSolutions,    setEndorsedSolutions]    = useState<Set<string>>(new Set());
+  const [disregardedSolutions, setDisregardedSolutions] = useState<Set<string>>(new Set());
 
   const roles: string[] = (session as any)?.roles ?? [];
   const canRecord  = roles.some(r => ["operator", "analyst", "strategist", "fund_manager"].includes(r));
@@ -1551,15 +1581,22 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
     }
   }, []);
 
-  async function handleVote(issueId: string, solutionId: string) {
-    setVotedSolutions(prev => new Set([...prev, solutionId]));
-    const err = await callApi(`/api/session/issues/${issueId}/solution/vote`, { method: "POST" });
+  async function handleEndorse(issueId: string, solutionId: string) {
+    setEndorsedSolutions(prev => new Set([...prev, solutionId]));
+    const err = await callApi(`/api/session/issues/${issueId}/solution/endorse`, { method: "POST" });
     if (err) {
       setApiError(err);
-      setVotedSolutions(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
-    } else {
-      loadIssues();
-    }
+      setEndorsedSolutions(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
+    } else { loadIssues(); }
+  }
+
+  async function handleDisregard(issueId: string, solutionId: string) {
+    setDisregardedSolutions(prev => new Set([...prev, solutionId]));
+    const err = await callApi(`/api/session/issues/${issueId}/solution/disregard`, { method: "POST" });
+    if (err) {
+      setApiError(err);
+      setDisregardedSolutions(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
+    } else { loadIssues(); }
   }
 
   useEffect(() => {
@@ -1837,9 +1874,13 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
 
             {/* Tabs */}
             <div style={{ display: "flex", gap: "2px", paddingBottom: "8px", overflowX: "auto" }}>
-              <TabBtn k="open"     label="Active"   badge={openCnt} />
-              <TabBtn k="staging"  label="Staging"  badge={stagingCnt} />
-              <TabBtn k="archived" label="Archived" />
+              <TabBtn k="open" label="Active" badge={openCnt} />
+              {(showInsight || canResolve) && (
+                <TabBtn k="staging" label="Staging" badge={stagingCnt} />
+              )}
+              {(showInsight || canResolve) && (
+                <TabBtn k="archived" label="Archived" />
+              )}
               {showInsight && canResolve && (
                 <TabBtn k="insight" label="Insight ↗" />
               )}
@@ -1909,8 +1950,10 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                     setSolvingId={setSolvingId}
                     onRefresh={loadIssues}
                     onSetError={setApiError}
-                    votedSolutions={votedSolutions}
-                    onVote={handleVote}
+                    endorsedSolutions={endorsedSolutions}
+                    disregardedSolutions={disregardedSolutions}
+                    onEndorse={handleEndorse}
+                    onDisregard={handleDisregard}
                   />
                 ))}
               </div>

@@ -7,6 +7,7 @@ import { DatetimePicker } from "@/components/ui/DatetimePicker";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import { getSessionStatus } from "@/lib/sessionStatus";
 import IssuePanel from "@/components/issues/IssuePanel";
+import OngoingStrategy from "@/components/issues/OngoingStrategy";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -4481,6 +4482,8 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
               {showChecklist && (
                 <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchComments} showToast={showToast} sessionContract={sessionContract} />
               )}
+
+              <OngoingStrategy />
 
               <AddCommentForm fullWidth failCompliance={challengeStatus === "fail"} onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
 
