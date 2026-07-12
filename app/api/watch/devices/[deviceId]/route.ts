@@ -5,34 +5,14 @@
  * Marks the device as dropped=true. The watch detects this on its next
  * status poll and returns to the authentication screen.
  */
-import { NextResponse }           from "next/server";
-import { auth }                   from "@/auth";
-import { supabase, OPERATOR_USER_ID } from "@/lib/supabase";
-import type { Session }           from "next-auth";
+import { NextResponse } from "next/server";
+import { auth }         from "@/auth";
+import { supabase }     from "@/lib/supabase";
+import type { Session } from "next-auth";
 
 type AuthedSession = Session & { twoFactorVerified?: boolean };
 function authed(session: Session | null): boolean {
   return !!(session as AuthedSession | null)?.twoFactorVerified;
-}
-
-type DeviceRecord = {
-  deviceId:     string;
-  deviceName:   string;
-  registeredAt: string;
-  dropped:      boolean;
-};
-
-const PREFIX = "watch_devices:";
-
-async function readDevices(): Promise<{ Entry: string | null; devices: DeviceRecord[] }> {
-  const { data } = await supabase
-    .from("comments").select("content, Entry")
-    .like("content", `${PREFIX}%`)
-    .order("Entry", { ascending: false }).limit(1).single();
-  if (!data) return { Entry: null, devices: [] };
-  try {
-    return { Entry: data.Entry as string, devices: JSON.parse(data.content.slice(PREFIX.length)) as DeviceRecord[] };
-  } catch { return { Entry: data.Entry as string, devices: [] }; }
 }
 
 export async function DELETE(
@@ -43,15 +23,12 @@ export async function DELETE(
   if (!authed(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { deviceId } = await params;
-  const { Entry, devices } = await readDevices();
-  if (!Entry) return NextResponse.json({ error: "No devices registered" }, { status: 404 });
 
-  const idx = devices.findIndex(d => d.deviceId === deviceId);
-  if (idx < 0) return NextResponse.json({ error: "Device not found" }, { status: 404 });
+  const { error } = await supabase
+    .from("watch_devices")
+    .update({ dropped: true })
+    .eq("device_id", deviceId);
 
-  devices[idx] = { ...devices[idx], dropped: true };
-  const content = PREFIX + JSON.stringify(devices);
-  await supabase.from("comments").update({ content }).eq("Entry", Entry);
-
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

@@ -8,33 +8,55 @@ import { supabase, OPERATOR_USER_ID } from "@/lib/supabase";
 import { verifyWatchTokenReason } from "@/lib/watchJwt";
 
 export type AlarmState = {
-  running:               boolean;
-  started_at:            string | null;
-  interval_min:          number;
-  focus_min:             number;
-  last_ack_cycle:        number;
-  enforce_focus:         boolean;
-  challenge_number:      number | null;
-  challenge_cycle:       number;
-  challenge_status:      "pending" | "pass" | "fail" | null;
-  challenge_expires_at:  string | null;
+  running:                  boolean;
+  started_at:               string | null;
+  interval_min:             number;
+  focus_min:                number;
+  last_ack_cycle:           number;
+  enforce_focus:            boolean;
+  challenge_number:         number | null;
+  challenge_cycle:          number;
+  challenge_status:         "pending" | "pass" | "fail" | null;
+  challenge_expires_at:     string | null;
+  fail_streak:              number;   // consecutive fails in this session
+  completions_toward_reset: number;   // passes accumulated toward clearing streak
 };
 
 const DEFAULT: AlarmState = {
-  running:              false,
-  started_at:           null,
-  interval_min:         15,
-  focus_min:            2,
-  last_ack_cycle:       -1,
-  enforce_focus:        false,
-  challenge_number:     null,
-  challenge_cycle:      -1,
-  challenge_status:     null,
-  challenge_expires_at: null,
+  running:                  false,
+  started_at:               null,
+  interval_min:             15,
+  focus_min:                2,
+  last_ack_cycle:           -1,
+  enforce_focus:            false,
+  challenge_number:         null,
+  challenge_cycle:          -1,
+  challenge_status:         null,
+  challenge_expires_at:     null,
+  fail_streak:              0,
+  completions_toward_reset: 0,
 };
 
-const PREFIX         = "alarm_state:";
-const DEVICES_PREFIX = "watch_devices:";
+const PREFIX = "alarm_state:";
+
+// ── Streak helpers ────────────────────────────────────────────────────────────
+
+function resetThreshold(streak: number): number {
+  if (streak >= 8) return 3;
+  if (streak >= 4) return 2;
+  return 1;
+}
+
+function melbourneTime(): string {
+  return new Intl.DateTimeFormat("en-AU", {
+    timeZone:  "Australia/Melbourne",
+    dateStyle: "short",
+    timeStyle: "medium",
+    hour12:    false,
+  }).format(new Date());
+}
+
+// ── DB helpers ────────────────────────────────────────────────────────────────
 
 function strip(state: AlarmState): Omit<AlarmState, "challenge_number"> & { challenge_number: null } {
   return { ...state, challenge_number: null };
@@ -56,18 +78,40 @@ async function writeState(state: AlarmState): Promise<void> {
     await supabase.from("comments").update({ content }).eq("Entry", existing.Entry);
   } else {
     const now = new Date().toISOString();
-    await supabase.from("comments").insert({ content, created_at: now, Entry: now, user_id: OPERATOR_USER_ID });
+    await supabase.from("comments").insert({ content, created_at: now, Entry: now, ...(OPERATOR_USER_ID ? { user_id: OPERATOR_USER_ID } : {}) });
   }
 }
 
-async function submitFailComment(): Promise<void> {
-  const now = new Date().toISOString();
+async function submitFailComment(streak: number): Promise<void> {
+  const threshold = resetThreshold(streak);
+  const content   = `[Focus Alert] fail challenge — ${melbourneTime()} AEST | fail streak = ${streak} | needs ${threshold} pass(es) to reset`;
+  const now       = new Date().toISOString();
   await supabase.from("comments").insert({
-    content:    "[Focus Alert] fail challenge, user is not focus",
+    content,
     created_at: now,
     Entry:      now,
-    user_id:    OPERATOR_USER_ID,
+    ...(OPERATOR_USER_ID ? { user_id: OPERATOR_USER_ID } : {}),
   });
+}
+
+async function submitResetComment(prevStreak: number): Promise<void> {
+  const content = `[Focus Alert] fail streak cleared — ${melbourneTime()} AEST | operator successfully completed required challenge(s) — fail streak of ${prevStreak} resolved`;
+  const now     = new Date().toISOString();
+  await supabase.from("comments").insert({
+    content,
+    created_at: now,
+    Entry:      now,
+    ...(OPERATOR_USER_ID ? { user_id: OPERATOR_USER_ID } : {}),
+  });
+}
+
+async function isDeviceDropped(deviceId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("watch_devices")
+    .select("dropped")
+    .eq("device_id", deviceId)
+    .single();
+  return data?.dropped === true;
 }
 
 function currentCycleInfo(state: AlarmState): { cycle: number; inFocus: boolean } | null {
@@ -82,23 +126,14 @@ function currentCycleInfo(state: AlarmState): { cycle: number; inFocus: boolean 
   return { cycle, inFocus };
 }
 
-async function isDeviceDropped(deviceId: string): Promise<boolean> {
-  const { data } = await supabase.from("comments").select("content")
-    .like("content", `${DEVICES_PREFIX}%`)
-    .order("Entry", { ascending: false }).limit(1).single();
-  if (!data) return false;
-  try {
-    const devices = JSON.parse(data.content.slice(DEVICES_PREFIX.length)) as { deviceId: string; dropped: boolean }[];
-    return devices.find(d => d.deviceId === deviceId)?.dropped === true;
-  } catch { return false; }
-}
-
 async function auth(req: Request): Promise<{ claims: { userId: string }; reason: null } | { claims: null; reason: string }> {
   const header = req.headers.get("Authorization") ?? "";
   const token  = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return { claims: null, reason: "No Bearer token in Authorization header" };
   return verifyWatchTokenReason(token);
 }
+
+// ── GET ───────────────────────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
   const { claims, reason } = await auth(req);
@@ -136,9 +171,16 @@ export async function GET(req: Request) {
         state.challenge_expires_at &&
         Date.now() > new Date(state.challenge_expires_at).getTime()
       ) {
-        state = { ...state, challenge_status: "fail", last_ack_cycle: state.challenge_cycle };
+        const newStreak = state.fail_streak + 1;
+        state = {
+          ...state,
+          challenge_status:         "fail",
+          last_ack_cycle:           state.challenge_cycle,
+          fail_streak:              newStreak,
+          completions_toward_reset: 0,
+        };
         await writeState(state);
-        await submitFailComment();
+        await submitFailComment(newStreak);
       }
     }
 
@@ -148,12 +190,14 @@ export async function GET(req: Request) {
   }
 }
 
+// ── PUT ───────────────────────────────────────────────────────────────────────
+
 export async function PUT(req: Request) {
   const { claims: putClaims, reason: putReason } = await auth(req);
   if (!putClaims) return NextResponse.json({ error: "Unauthorized", reason: putReason }, { status: 401 });
   try {
     const body = await req.json() as {
-      action:     string;
+      action:       string;
       intervalMin?: number;
       focusMin?:    number;
       cycle?:       number;
@@ -169,15 +213,17 @@ export async function PUT(req: Request) {
         ? Math.min(Math.floor(body.focusMin), iMin - 1) : Math.min(cur.focus_min, iMin - 1);
       const next: AlarmState = {
         ...cur,
-        running:              true,
-        started_at:           new Date().toISOString(),
-        interval_min:         iMin,
-        focus_min:            Math.max(1, fMin),
-        last_ack_cycle:       -1,
-        challenge_number:     null,
-        challenge_cycle:      -1,
-        challenge_status:     null,
-        challenge_expires_at: null,
+        running:                  true,
+        started_at:               new Date().toISOString(),
+        interval_min:             iMin,
+        focus_min:                Math.max(1, fMin),
+        last_ack_cycle:           -1,
+        challenge_number:         null,
+        challenge_cycle:          -1,
+        challenge_status:         null,
+        challenge_expires_at:     null,
+        fail_streak:              0,
+        completions_toward_reset: 0,
       };
       await writeState(next);
       return NextResponse.json(strip(next));
@@ -185,7 +231,13 @@ export async function PUT(req: Request) {
 
     if (body.action === "stop") {
       if (!cur.running) return NextResponse.json(strip(cur));
-      const next = { ...cur, running: false, started_at: null };
+      const next: AlarmState = {
+        ...cur,
+        running:                  false,
+        started_at:               null,
+        fail_streak:              0,
+        completions_toward_reset: 0,
+      };
       await writeState(next);
       return NextResponse.json(strip(next));
     }
@@ -210,13 +262,33 @@ export async function PUT(req: Request) {
         && Date.now() > new Date(cur.challenge_expires_at).getTime();
       const pass = !expired && taps === cur.challenge_number;
 
+      let fail_streak              = cur.fail_streak;
+      let completions_toward_reset = cur.completions_toward_reset;
+      const prevStreak             = fail_streak;
+      let streakCleared            = false;
+
+      if (pass) {
+        completions_toward_reset++;
+        if (completions_toward_reset >= resetThreshold(fail_streak)) {
+          fail_streak              = 0;
+          completions_toward_reset = 0;
+          streakCleared            = true;
+        }
+      } else {
+        fail_streak++;
+        completions_toward_reset = 0;
+      }
+
       const next: AlarmState = {
         ...cur,
-        challenge_status: pass ? "pass" : "fail",
-        last_ack_cycle:   cycle, // always ack the cycle so alarm doesn't repeat
+        challenge_status:         pass ? "pass" : "fail",
+        last_ack_cycle:           cycle,
+        fail_streak,
+        completions_toward_reset,
       };
       await writeState(next);
-      if (!pass) await submitFailComment();
+      if (!pass)       await submitFailComment(fail_streak);
+      if (streakCleared) await submitResetComment(prevStreak);
       return NextResponse.json(strip(next));
     }
 

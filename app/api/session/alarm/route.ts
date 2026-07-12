@@ -22,21 +22,25 @@ export type AlarmState = {
   challenge_cycle:          number;
   challenge_status:         "pending" | "pass" | "fail" | null;
   challenge_expires_at:     string | null;
+  fail_streak:              number;   // consecutive fails in this session
+  completions_toward_reset: number;   // passes accumulated toward clearing streak
 };
 
 const DEFAULT: AlarmState = {
-  running:                 false,
-  started_at:              null,
-  scheduled_start:         null,
-  interval_min:            15,
-  focus_min:               2,
-  last_ack_cycle:          -1,
-  enforce_focus:           false,
-  entry_checklist_enabled: false,
-  challenge_number:        null,
-  challenge_cycle:         -1,
-  challenge_status:        null,
-  challenge_expires_at:    null,
+  running:                  false,
+  started_at:               null,
+  scheduled_start:          null,
+  interval_min:             15,
+  focus_min:                2,
+  last_ack_cycle:           -1,
+  enforce_focus:            false,
+  entry_checklist_enabled:  false,
+  challenge_number:         null,
+  challenge_cycle:          -1,
+  challenge_status:         null,
+  challenge_expires_at:     null,
+  fail_streak:              0,
+  completions_toward_reset: 0,
 };
 
 const PREFIX = "alarm_state:";
@@ -81,13 +85,43 @@ async function writeState(state: AlarmState, userId?: string): Promise<void> {
   }
 }
 
-async function submitFailComment(userId?: string): Promise<void> {
-  const now = new Date().toISOString();
+function resetThreshold(streak: number): number {
+  if (streak >= 8) return 3;
+  if (streak >= 4) return 2;
+  return 1;
+}
+
+function melbourneTime(): string {
+  return new Intl.DateTimeFormat("en-AU", {
+    timeZone:  "Australia/Melbourne",
+    dateStyle: "short",
+    timeStyle: "medium",
+    hour12:    false,
+  }).format(new Date());
+}
+
+async function submitFailComment(streak: number, userId?: string): Promise<void> {
+  const threshold = resetThreshold(streak);
+  const content   = `[Focus Alert] fail challenge — ${melbourneTime()} AEST | fail streak = ${streak} | needs ${threshold} pass(es) to reset`;
+  const now       = new Date().toISOString();
+  const uid       = userId ?? OPERATOR_USER_ID;
   await supabase.from("comments").insert({
-    content:    "[Focus Alert] fail challenge, user is not focus",
+    content,
     created_at: now,
     Entry:      now,
-    user_id:    userId ?? OPERATOR_USER_ID,
+    ...(uid ? { user_id: uid } : {}),
+  });
+}
+
+async function submitResetComment(prevStreak: number, userId?: string): Promise<void> {
+  const content = `[Focus Alert] fail streak cleared — ${melbourneTime()} AEST | operator successfully completed required challenge(s) — fail streak of ${prevStreak} resolved`;
+  const now     = new Date().toISOString();
+  const uid     = userId ?? OPERATOR_USER_ID;
+  await supabase.from("comments").insert({
+    content,
+    created_at: now,
+    Entry:      now,
+    ...(uid ? { user_id: uid } : {}),
   });
 }
 
@@ -104,14 +138,16 @@ export async function GET() {
     if (!state.running && state.scheduled_start && Date.now() >= new Date(state.scheduled_start).getTime()) {
       const next: AlarmState = {
         ...state,
-        running:              true,
-        started_at:           state.scheduled_start,  // honour exact scheduled moment
-        scheduled_start:      null,
-        last_ack_cycle:       -1,
-        challenge_number:     null,
-        challenge_cycle:      -1,
-        challenge_status:     null,
-        challenge_expires_at: null,
+        running:                  true,
+        started_at:               state.scheduled_start,  // honour exact scheduled moment
+        scheduled_start:          null,
+        last_ack_cycle:           -1,
+        challenge_number:         null,
+        challenge_cycle:          -1,
+        challenge_status:         null,
+        challenge_expires_at:     null,
+        fail_streak:              0,
+        completions_toward_reset: 0,
       };
       await writeState(next, userId);
       return NextResponse.json(next);
@@ -123,9 +159,16 @@ export async function GET() {
       state.challenge_expires_at &&
       Date.now() > new Date(state.challenge_expires_at).getTime()
     ) {
-      const newState: AlarmState = { ...state, challenge_status: "fail", last_ack_cycle: state.challenge_cycle };
+      const newStreak  = state.fail_streak + 1;
+      const newState: AlarmState = {
+        ...state,
+        challenge_status:         "fail",
+        last_ack_cycle:           state.challenge_cycle,
+        fail_streak:              newStreak,
+        completions_toward_reset: 0,
+      };
       await writeState(newState, userId);
-      await submitFailComment(userId);
+      await submitFailComment(newStreak, userId);
       return NextResponse.json(newState);
     }
 
@@ -165,16 +208,18 @@ export async function PUT(req: Request) {
         ? Math.min(Math.floor(body.focusMin), iMin - 1) : Math.min(current.focus_min, iMin - 1);
       const next: AlarmState = {
         ...current,
-        running:              true,
-        started_at:           new Date().toISOString(),
-        scheduled_start:      null,
-        interval_min:         iMin,
-        focus_min:            Math.max(1, fMin),
-        last_ack_cycle:       -1,
-        challenge_number:     null,
-        challenge_cycle:      -1,
-        challenge_status:     null,
-        challenge_expires_at: null,
+        running:                  true,
+        started_at:               new Date().toISOString(),
+        scheduled_start:          null,
+        interval_min:             iMin,
+        focus_min:                Math.max(1, fMin),
+        last_ack_cycle:           -1,
+        challenge_number:         null,
+        challenge_cycle:          -1,
+        challenge_status:         null,
+        challenge_expires_at:     null,
+        fail_streak:              0,
+        completions_toward_reset: 0,
       };
       await writeState(next, userId);
       return NextResponse.json(next);
@@ -212,7 +257,14 @@ export async function PUT(req: Request) {
 
     if (body.action === "stop") {
       if (!current.running) return NextResponse.json(current);
-      const next: AlarmState = { ...current, running: false, started_at: null, scheduled_start: null };
+      const next: AlarmState = {
+        ...current,
+        running:                  false,
+        started_at:               null,
+        scheduled_start:          null,
+        fail_streak:              0,
+        completions_toward_reset: 0,
+      };
       await writeState(next, userId);
       return NextResponse.json(next);
     }
