@@ -83,10 +83,10 @@ export default function OngoingStrategy() {
   return (
     <div
       style={{
-        border:       "1px solid rgba(0,204,122,0.18)",
+        border:       "1px solid var(--line,rgba(255,255,255,0.06))",
         borderRadius: "8px",
         overflow:     "hidden",
-        background:   "rgba(0,204,122,0.025)",
+        background:   "var(--sub,#07101c)",
       }}
     >
       {/* Header */}
@@ -119,13 +119,13 @@ export default function OngoingStrategy() {
         >
           {loading ? "…" : strategies.length}
         </span>
-        <span style={{ marginLeft: "auto", color: "#6b7280", fontSize: "11px" }}>
+        <span style={{ marginLeft: "auto", color: "var(--ink-2,#5a7490)", fontSize: "11px" }}>
           {collapsed ? "▸" : "▾"}
         </span>
       </button>
 
       {!collapsed && (
-        <div style={{ borderTop: "1px solid rgba(0,204,122,0.1)" }}>
+        <div style={{ borderTop: "1px solid var(--line,rgba(255,255,255,0.06))" }}>
           {error && (
             <div style={{ padding: "6px 13px", fontSize: "11px", color: "#f03a57" }}>{error}</div>
           )}
@@ -139,7 +139,7 @@ export default function OngoingStrategy() {
                 key={s.solution_id}
                 style={{
                   padding:      "9px 13px",
-                  borderTop:    idx === 0 ? "none" : "1px solid rgba(255,255,255,0.04)",
+                  borderTop:    idx === 0 ? "none" : "1px solid var(--line,rgba(255,255,255,0.06))",
                   display:      "flex",
                   flexDirection: "column",
                   gap:          "5px",
@@ -180,7 +180,7 @@ export default function OngoingStrategy() {
                   style={{
                     margin:     0,
                     fontSize:   "11px",
-                    color:      "rgba(180,190,210,0.8)",
+                    color:      "var(--ink-1,#9ab0c8)",
                     lineHeight: 1.5,
                   }}
                 >
@@ -241,7 +241,7 @@ export default function OngoingStrategy() {
                       borderRadius: "4px",
                       border:       "none",
                       background:   "none",
-                      color:        "#6b7280",
+                      color:        "var(--ink-2,#5a7490)",
                       fontSize:     "11px",
                       cursor:       "pointer",
                     }}

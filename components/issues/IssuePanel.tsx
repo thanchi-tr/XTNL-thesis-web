@@ -68,7 +68,7 @@ interface Issue {
 
 /* ── Constants ───────────────────────────────────────────────── */
 const P_LABEL = ["DIRE", "CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
-const P_COLOR = ["#f03a57", "#f03a57", "#f0a030", "#eab308", "#4d9cf5", "#8ea3be"] as const;
+const P_COLOR = ["#f03a57", "#f03a57", "#f0a030", "#eab308", "#4d9cf5", "var(--ink-1,#9ab0c8)"] as const;
 const P_BG    = [
   "rgba(240,58,87,0.16)",  "rgba(240,58,87,0.10)",
   "rgba(240,160,48,0.13)", "rgba(234,179,8,0.11)",
@@ -82,11 +82,11 @@ const CAT: Record<Category, { label: string; icon: string; color: string }> = {
   compliance: { label: "Compliance", icon: "⚖",  color: "#a78bfa" },
   process:    { label: "Process",    icon: "◎",  color: "#34d399" },
   market:     { label: "Market",     icon: "↗",  color: "#f59e0b" },
-  other:      { label: "Other",      icon: "○",  color: "#6b7280" },
+  other:      { label: "Other",      icon: "○",  color: "var(--ink-2,#5a7490)" },
 };
 
 const ST_COLOR: Record<IssueStatus, string> = {
-  open:        "#6b7280",
+  open:        "var(--ink-2,#5a7490)",
   in_progress: "#4d9cf5",
   staging:     "#f0a030",
   archived:    "#34d399",
@@ -130,10 +130,10 @@ async function callApi(url: string, opts: RequestInit): Promise<string | null> {
 
 /* ── Shared style token ──────────────────────────────────────── */
 const INPUT: React.CSSProperties = {
-  background:   "rgba(255,255,255,0.06)",
-  border:       "1px solid rgba(255,255,255,0.12)",
+  background:   "var(--sub,#07101c)",
+  border:       "1px solid var(--line-hi,rgba(255,255,255,0.11))",
   borderRadius: "5px",
-  color:        "var(--fg)",
+  color:        "var(--ink-0,#eef2f8)",
   padding:      "6px 9px",
   fontSize:     "12px",
   outline:      "none",
@@ -155,7 +155,7 @@ const SELECT: React.CSSProperties = {
 };
 
 /* Background/color applied to every <option> so the native popup stays dark */
-const OPT: React.CSSProperties = { background: "#0c1828", color: "#c4d4e4" };
+const OPT: React.CSSProperties = { background: "var(--card,#0b1622)", color: "var(--ink-1,#9ab0c8)" };
 
 /* ── Atom badges ─────────────────────────────────────────────── */
 function PriorityBadge({ p }: { p: number }) {
@@ -204,9 +204,9 @@ function ImpactBar({ score }: { score: number }) {
   const color = score >= 8 ? "#f03a57" : score >= 6 ? "#f0a030" : score >= 4 ? "#eab308" : "#4d9cf5";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "5px", minWidth: "100px" }}>
-      <span style={{ fontSize: "9px", color: "#6b7280", flexShrink: 0 }}>Impact</span>
+      <span style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", flexShrink: 0 }}>Impact</span>
       <div
-        style={{ flex: 1, height: "4px", borderRadius: "2px", background: "rgba(255,255,255,0.08)", overflow: "hidden" }}
+        style={{ flex: 1, height: "4px", borderRadius: "2px", background: "var(--line-hi,rgba(255,255,255,0.11))", overflow: "hidden" }}
       >
         <div style={{ width: `${(score / 10) * 100}%`, height: "100%", background: color, borderRadius: "2px" }} />
       </div>
@@ -229,8 +229,8 @@ function ObsBox({ done, label, onClick }: { done: boolean; label: string; onClic
         fontSize:     "11px",
         fontWeight:   600,
         border:       `1px solid ${done ? "#00cc7a" : "rgba(255,255,255,0.1)"}`,
-        background:   done ? "rgba(0,204,122,0.12)" : "rgba(255,255,255,0.03)",
-        color:        done ? "#00cc7a" : "#6b7280",
+        background:   done ? "rgba(0,204,122,0.12)" : "var(--raised,#0f1e2e)",
+        color:        done ? "#00cc7a" : "var(--ink-2,#5a7490)",
         cursor:       done || !onClick ? "default" : "pointer",
       }}
     >
@@ -250,7 +250,7 @@ function SubIssueRow({ sub }: { sub: SubIssue }) {
         gap:          "6px",
         padding:      "5px 8px",
         borderRadius: "4px",
-        background:   "rgba(255,255,255,0.025)",
+        background:   "var(--raised,#0f1e2e)",
         borderLeft:   `2px solid ${P_COLOR[sub.priority]}`,
       }}
     >
@@ -311,9 +311,9 @@ function RecordSection({
   return (
     <div
       style={{
-        borderLeft:    "3px solid #4d9cf5",
+        borderLeft:    "3px solid var(--blue,#4d9cf5)",
         borderRadius:  "0 6px 6px 0",
-        background:    "rgba(77,156,245,0.04)",
+        background:    "var(--sub,#07101c)",
         padding:       "10px 12px",
         display:       "flex",
         flexDirection: "column",
@@ -339,9 +339,9 @@ function RecordSection({
               padding:      "1px 7px",
               borderRadius: "10px",
               fontSize:     "10px",
-              background:   "rgba(255,255,255,0.05)",
-              color:        "#6b7280",
-              border:       "1px solid rgba(255,255,255,0.07)",
+              background:   "var(--raised,#0f1e2e)",
+              color:        "var(--ink-2,#5a7490)",
+              border:       "1px solid var(--line,rgba(255,255,255,0.06))",
             }}
           >
             #{tag}
@@ -351,7 +351,7 @@ function RecordSection({
 
       {/* Description */}
       {issue.description && (
-        <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.6, color: "var(--fg)", opacity: 0.8, whiteSpace: "pre-wrap" }}>
+        <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.6, color: "var(--ink-1,#9ab0c8)", whiteSpace: "pre-wrap" }}>
           {issue.description}
         </p>
       )}
@@ -383,8 +383,8 @@ function RecordSection({
           style={{
             padding:       "8px",
             borderRadius:  "5px",
-            background:    "rgba(77,156,245,0.06)",
-            border:        "1px solid rgba(77,156,245,0.2)",
+            background:    "var(--raised,#0f1e2e)",
+            border:        "1px solid var(--line-hi,rgba(255,255,255,0.11))",
             display:       "flex",
             flexDirection: "column",
             gap:           "6px",
@@ -431,8 +431,8 @@ function RecordSection({
             <button
               onClick={() => { setFormOpen(false); setSubErr(null); }}
               style={{
-                padding: "5px 10px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)",
-                background: "none", color: "#6b7280", fontSize: "11px", cursor: "pointer",
+                padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+                background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
               }}
             >
               Cancel
@@ -452,12 +452,12 @@ function RecordSection({
             gap:          "3px",
             padding:      "4px 10px",
             borderRadius: "4px",
-            border:       "1px solid rgba(255,255,255,0.1)",
-            background:   "none",
-            color:        "#6b7280",
+            border:       "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+            background:   "var(--sub,#07101c)",
+            color:        "var(--ink-2,#5a7490)",
             fontSize:     "11px",
             cursor:       canRecord ? "pointer" : "default",
-            opacity:      canRecord ? 1 : 0.45,
+            opacity:      canRecord ? 1 : 0.4,
           }}
         >
           ↑ Raise ({issue.raise_count})
@@ -468,9 +468,9 @@ function RecordSection({
             style={{
               padding:      "4px 10px",
               borderRadius: "4px",
-              border:       "1px solid rgba(77,156,245,0.3)",
-              background:   "rgba(77,156,245,0.08)",
-              color:        "#4d9cf5",
+              border:       "1px solid rgba(77,156,245,0.22)",
+              background:   "var(--sub,#07101c)",
+              color:        "var(--blue,#4d9cf5)",
               fontSize:     "11px",
               cursor:       "pointer",
               fontWeight:   500,
@@ -479,7 +479,7 @@ function RecordSection({
             + Sub-issue
           </button>
         )}
-        <span style={{ fontSize: "10px", color: "#6b7280" }}>{timeAgo(issue.created_at)}</span>
+        <span style={{ fontSize: "10px", color: "var(--ink-2,#5a7490)" }}>{timeAgo(issue.created_at)}</span>
       </div>
     </div>
   );
@@ -526,9 +526,9 @@ function ResolveSection({
   return (
     <div
       style={{
-        borderLeft:    "3px solid #00cc7a",
+        borderLeft:    "3px solid var(--green,#00cc7a)",
         borderRadius:  "0 6px 6px 0",
-        background:    "rgba(0,204,122,0.04)",
+        background:    "var(--sub,#07101c)",
         padding:       "10px 12px",
         display:       "flex",
         flexDirection: "column",
@@ -539,7 +539,7 @@ function ResolveSection({
       <div style={{ fontSize: "10px", fontWeight: 700, color: "#00cc7a", letterSpacing: "0.5px" }}>
         RESOLVER
         {issue.solution_proposed_by && (
-          <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: "6px" }}>
+          <span style={{ fontWeight: 400, color: "var(--ink-2,#5a7490)", marginLeft: "6px" }}>
             · {shortEmail(issue.solution_proposed_by)}
           </span>
         )}
@@ -567,7 +567,7 @@ function ResolveSection({
 
       {/* No solution placeholder */}
       {!isArchived && !issue.solution_id && !isSolving && (
-        <p style={{ margin: 0, fontSize: "12px", color: "#6b7280", fontStyle: "italic" }}>
+        <p style={{ margin: 0, fontSize: "12px", color: "var(--ink-2,#5a7490)", fontStyle: "italic" }}>
           No solution proposed yet.
         </p>
       )}
@@ -602,8 +602,8 @@ function ResolveSection({
             <button
               onClick={() => { setSolvingId(null); setSolText(""); }}
               style={{
-                padding: "5px 10px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)",
-                background: "none", color: "#6b7280", fontSize: "11px", cursor: "pointer",
+                padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+                background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
               }}
             >
               Cancel
@@ -618,15 +618,15 @@ function ResolveSection({
           style={{
             padding:       "8px 10px",
             borderRadius:  "5px",
-            background:    "rgba(255,255,255,0.03)",
-            border:        "1px solid rgba(255,255,255,0.07)",
+            background:    "var(--raised,#0f1e2e)",
+            border:        "1px solid var(--line,rgba(255,255,255,0.06))",
             display:       "flex",
             flexDirection: "column",
             gap:           "8px",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-            <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.6, color: "var(--fg)", opacity: 0.85, flex: 1 }}>
+            <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.6, color: "var(--ink-1,#9ab0c8)", flex: 1 }}>
               {issue.solution_description}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexShrink: 0, alignItems: "flex-end" }}>
@@ -689,7 +689,7 @@ function ResolveSection({
 
           {/* Observed weeks */}
           <div>
-            <div style={{ fontSize: "9px", color: "#6b7280", fontWeight: 700, marginBottom: "6px", letterSpacing: "0.4px" }}>
+            <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", fontWeight: 700, marginBottom: "6px", letterSpacing: "0.4px" }}>
               OBSERVED RESOLVE
             </div>
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -736,7 +736,7 @@ function ResolveSection({
           <button
             onClick={() => setScratchedOpen(v => !v)}
             style={{
-              background: "none", border: "none", color: "#6b7280",
+              background: "none", border: "none", color: "var(--ink-2,#5a7490)",
               fontSize: "11px", cursor: "pointer", padding: "0",
             }}
           >
@@ -749,13 +749,13 @@ function ResolveSection({
                   key={s.solution_id}
                   style={{
                     padding: "6px 8px", borderRadius: "4px",
-                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
+                    background: "var(--raised,#0f1e2e)", border: "1px solid var(--line,rgba(255,255,255,0.06))",
                   }}
                 >
-                  <p style={{ margin: 0, fontSize: "11px", color: "#6b7280", textDecoration: "line-through", lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, fontSize: "11px", color: "var(--ink-2,#5a7490)", textDecoration: "line-through", lineHeight: 1.5 }}>
                     {s.description}
                   </p>
-                  <div style={{ fontSize: "9px", color: "rgba(120,120,140,0.55)", marginTop: "3px" }}>
+                  <div style={{ fontSize: "9px", color: "var(--ink-3,#2a3d52)", marginTop: "3px" }}>
                     {shortEmail(s.scratched_by ?? s.proposed_by)}
                     {s.scratched_at ? ` · ${timeAgo(s.scratched_at)}` : ""}
                   </div>
@@ -836,8 +836,8 @@ function ResolveSection({
               <button
                 onClick={() => { setCloseForm(false); setCloseNote(""); }}
                 style={{
-                  padding: "5px 10px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)",
-                  background: "none", color: "#6b7280", fontSize: "11px", cursor: "pointer",
+                  padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+                  background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
                 }}
               >
                 Cancel
@@ -875,8 +875,8 @@ function ResolveSection({
               <button
                 onClick={() => { setReopenForm(false); setReopenReason(""); }}
                 style={{
-                  padding: "5px 10px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)",
-                  background: "none", color: "#6b7280", fontSize: "11px", cursor: "pointer",
+                  padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+                  background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
                 }}
               >
                 Cancel
@@ -1026,7 +1026,7 @@ function InsightTab({ issues }: { issues: Issue[] }) {
   /* ── Shared tooltip style ─────────────────────────────────────── */
   const TT = {
     contentStyle: {
-      background: "rgba(14,14,22,0.97)", border: "1px solid rgba(255,255,255,0.1)",
+      background: "var(--card,#0b1622)", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
       borderRadius: "6px", color: "#d0d4e0", fontSize: "11px", padding: "5px 9px",
     },
   };
@@ -1037,21 +1037,21 @@ function InsightTab({ issues }: { issues: Issue[] }) {
 
   function SLabel({ t }: { t: string }) {
     return (
-      <div style={{ fontSize: "10px", fontWeight: 700, color: "#6b7280", marginBottom: "10px", letterSpacing: "0.6px" }}>
+      <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--ink-2,#5a7490)", marginBottom: "10px", letterSpacing: "0.6px" }}>
         {t}
       </div>
     );
   }
 
-  const backlogColor  = velocity.netBacklog < 0 ? "#00cc7a" : velocity.netBacklog === 0 ? "#6b7280" : "#f03a57";
+  const backlogColor  = velocity.netBacklog < 0 ? "#00cc7a" : velocity.netBacklog === 0 ? "var(--ink-2,#5a7490)" : "#f03a57";
   const backlogPrefix = velocity.netBacklog > 0 ? "+" : "";
-  const resColor = velocity.avgResolutionDays == null ? "#6b7280"
+  const resColor = velocity.avgResolutionDays == null ? "var(--ink-2,#5a7490)"
     : velocity.avgResolutionDays <= 7 ? "#00cc7a" : velocity.avgResolutionDays <= 21 ? "#f0a030" : "#f03a57";
-  const ageColor = velocity.avgAgeDays == null ? "#6b7280"
+  const ageColor = velocity.avgAgeDays == null ? "var(--ink-2,#5a7490)"
     : velocity.avgAgeDays <= 14 ? "#00cc7a" : velocity.avgAgeDays <= 30 ? "#f0a030" : "#f03a57";
 
   if (total === 0) {
-    return <div style={{ textAlign: "center", color: "#6b7280", fontSize: "13px", padding: "60px 0" }}>No issue data yet</div>;
+    return <div style={{ textAlign: "center", color: "var(--ink-2,#5a7490)", fontSize: "13px", padding: "60px 0" }}>No issue data yet</div>;
   }
 
   const G2: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" };
@@ -1063,7 +1063,7 @@ function InsightTab({ issues }: { issues: Issue[] }) {
       {/* ── Status tiles ────────────────────────────────────────── */}
       <div style={G3}>
         {[
-          { label: "Total Issues",  value: total,                  color: "#8ea3be" },
+          { label: "Total Issues",  value: total,                  color: "var(--ink-1,#9ab0c8)" },
           { label: "Open",          value: pureOpenCnt,            color: "#4d9cf5" },
           { label: "In Progress",   value: inProgCnt,              color: "#7c6aff" },
           { label: "Staging",       value: stagCnt,                color: "#f0a030" },
@@ -1072,7 +1072,7 @@ function InsightTab({ issues }: { issues: Issue[] }) {
         ].map(s => (
           <div key={s.label} style={{ padding: "12px 14px", borderRadius: "10px", background: `${s.color}0d`, border: `1px solid ${s.color}28` }}>
             <div style={{ fontSize: "26px", fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</div>
-            <div style={{ fontSize: "10px", color: "#6b7280", marginTop: "5px" }}>{s.label}</div>
+            <div style={{ fontSize: "10px", color: "var(--ink-2,#5a7490)", marginTop: "5px" }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -1091,9 +1091,9 @@ function InsightTab({ issues }: { issues: Issue[] }) {
               { label: "SOLUTION RATE",  value: `${velocity.solutionRate}%`,              sub: "issues with solutions", color: "#7c6aff" },
             ].map(k => (
               <div key={k.label} style={{ padding: "11px 13px", borderRadius: "8px", background: `${k.color}0c`, border: `1px solid ${k.color}22` }}>
-                <div style={{ fontSize: "9px", color: "#6b7280", marginBottom: "4px", letterSpacing: "0.4px" }}>{k.label}</div>
+                <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", marginBottom: "4px", letterSpacing: "0.4px" }}>{k.label}</div>
                 <div style={{ fontSize: "22px", fontWeight: 700, color: k.color, lineHeight: 1 }}>{k.value}</div>
-                <div style={{ fontSize: "9px", color: "#6b7280", marginTop: "4px" }}>{k.sub}</div>
+                <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", marginTop: "4px" }}>{k.sub}</div>
               </div>
             ))}
           </div>
@@ -1117,7 +1117,7 @@ function InsightTab({ issues }: { issues: Issue[] }) {
               {donutData.map(d => (
                 <div key={d.name} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.color, flexShrink: 0, display: "inline-block" }} />
-                  <span style={{ fontSize: "10px", color: "#8ea3be", flex: 1 }}>{d.name}</span>
+                  <span style={{ fontSize: "10px", color: "var(--ink-1,#9ab0c8)", flex: 1 }}>{d.name}</span>
                   <span style={{ fontSize: "10px", fontWeight: 700, color: d.color }}>{d.value}</span>
                 </div>
               ))}
@@ -1144,8 +1144,8 @@ function InsightTab({ issues }: { issues: Issue[] }) {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#6b7280" }} />
-            <YAxis tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "var(--ink-2,#5a7490)" }} />
+            <YAxis tick={{ fontSize: 9, fill: "var(--ink-2,#5a7490)" }} allowDecimals={false} />
             <Tooltip {...TT} />
             <Area type="monotone" dataKey="Created"  stroke="#f03a57" fill="url(#gradCreated)"  strokeWidth={2} dot={false} />
             <Area type="monotone" dataKey="Resolved" stroke="#00cc7a" fill="url(#gradResolved)" strokeWidth={2} dot={false} />
@@ -1153,7 +1153,7 @@ function InsightTab({ issues }: { issues: Issue[] }) {
         </ResponsiveContainer>
         <div style={{ display: "flex", gap: "16px", justifyContent: "center", marginTop: "6px" }}>
           {[{ c: "#f03a57", l: "Created" }, { c: "#00cc7a", l: "Resolved" }].map(({ c, l }) => (
-            <span key={l} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "9px", color: "#6b7280" }}>
+            <span key={l} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "9px", color: "var(--ink-2,#5a7490)" }}>
               <span style={{ width: 12, height: 2, background: c, display: "inline-block", borderRadius: 1 }} />{l}
             </span>
           ))}
@@ -1170,20 +1170,20 @@ function InsightTab({ issues }: { issues: Issue[] }) {
             <ResponsiveContainer width="100%" height={140}>
               <BarChart data={ageBucketData} margin={{ top: 4, right: 12, left: -18, bottom: 0 }} barCategoryGap="30%">
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#6b7280" }} />
-                <YAxis tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "var(--ink-2,#5a7490)" }} />
+                <YAxis tick={{ fontSize: 9, fill: "var(--ink-2,#5a7490)" }} allowDecimals={false} />
                 <Tooltip {...TT} />
                 <Bar dataKey="Count" maxBarSize={52} radius={[5, 5, 0, 0]}>
                   {ageBucketData.map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>staleness of open issues</div>
+            <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", textAlign: "center", marginTop: "4px" }}>staleness of open issues</div>
           </div>
         ) : (
           <div>
             <SLabel t="OPEN ISSUE AGE BUCKETS" />
-            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: "12px", fontStyle: "italic" }}>
+            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink-2,#5a7490)", fontSize: "12px", fontStyle: "italic" }}>
               No open issues
             </div>
           </div>
@@ -1195,8 +1195,8 @@ function InsightTab({ issues }: { issues: Issue[] }) {
             <ResponsiveContainer width="100%" height={Math.max(140, catData.length * 26)}>
               <BarChart data={catData} layout="vertical" margin={{ top: 0, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={70} />
+                <XAxis type="number" tick={{ fontSize: 9, fill: "var(--ink-2,#5a7490)" }} allowDecimals={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "var(--ink-1,#9ab0c8)" }} width={70} />
                 <Tooltip {...TT} />
                 <Bar dataKey="Open"     stackId="a" fill="#4d9cf5" maxBarSize={16} />
                 <Bar dataKey="Resolved" stackId="a" fill="#34d399" maxBarSize={16} radius={[0, 4, 4, 0]} />
@@ -1204,7 +1204,7 @@ function InsightTab({ issues }: { issues: Issue[] }) {
             </ResponsiveContainer>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "6px" }}>
               {[{ c: "#4d9cf5", l: "Open" }, { c: "#34d399", l: "Resolved" }].map(({ c, l }) => (
-                <span key={l} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "#6b7280" }}>
+                <span key={l} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "var(--ink-2,#5a7490)" }}>
                   <span style={{ width: 8, height: 8, background: c, display: "inline-block", borderRadius: 2 }} />{l}
                 </span>
               ))}
@@ -1229,7 +1229,7 @@ function InsightTab({ issues }: { issues: Issue[] }) {
                     <div style={{ width: `${pct}%`, height: "100%", background: d.color, borderRadius: "5px", transition: "width 0.6s ease" }} />
                   </div>
                   <span style={{ fontSize: "10px", color: d.color, fontWeight: 700, minWidth: "48px", textAlign: "right" }}>
-                    {d.count} <span style={{ fontWeight: 400, color: "#6b7280" }}>({pct}%)</span>
+                    {d.count} <span style={{ fontWeight: 400, color: "var(--ink-2,#5a7490)" }}>({pct}%)</span>
                   </span>
                 </div>
               );
@@ -1248,15 +1248,15 @@ function InsightTab({ issues }: { issues: Issue[] }) {
             <ResponsiveContainer width="100%" height={Math.max(120, topRaisedData.length * 26)}>
               <BarChart data={topRaisedData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={120} />
+                <XAxis type="number" tick={{ fontSize: 9, fill: "var(--ink-2,#5a7490)" }} allowDecimals={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "var(--ink-1,#9ab0c8)" }} width={120} />
                 <Tooltip {...TT} />
                 <Bar dataKey="Raises" maxBarSize={16} radius={[0, 4, 4, 0]}>
                   {topRaisedData.map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>recurring pain points by raise count</div>
+            <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", textAlign: "center", marginTop: "4px" }}>recurring pain points by raise count</div>
           </div>
         )}
 
@@ -1266,13 +1266,13 @@ function InsightTab({ issues }: { issues: Issue[] }) {
             <ResponsiveContainer width="100%" height={Math.max(120, reporterData.length * 26)}>
               <BarChart data={reporterData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 9, fill: "#6b7280" }} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#8ea3be" }} width={80} />
+                <XAxis type="number" tick={{ fontSize: 9, fill: "var(--ink-2,#5a7490)" }} allowDecimals={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "var(--ink-1,#9ab0c8)" }} width={80} />
                 <Tooltip {...TT} />
                 <Bar dataKey="Issues" fill="#7c6aff" maxBarSize={16} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
-            <div style={{ fontSize: "9px", color: "#6b7280", textAlign: "center", marginTop: "4px" }}>issues reported per team member</div>
+            <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", textAlign: "center", marginTop: "4px" }}>issues reported per team member</div>
           </div>
         )}
       </div>
@@ -1306,8 +1306,8 @@ function IssueCard({
     <div
       style={{
         borderRadius: "7px",
-        border:       "1px solid rgba(255,255,255,0.07)",
-        background:   "rgba(255,255,255,0.025)",
+        border:       "1px solid var(--line,rgba(255,255,255,0.06))",
+        background:   "var(--sub,#07101c)",
         overflow:     "hidden",
         borderLeft:   `3px solid ${P_COLOR[p]}`,
       }}
@@ -1355,7 +1355,7 @@ function IssueCard({
         {issue.raise_count > 0 && (
           <span style={{ fontSize: "10px", color: "#f0a030", flexShrink: 0 }}>↑{issue.raise_count}</span>
         )}
-        <span style={{ fontSize: "10px", color: "#6b7280" }}>{expanded ? "▾" : "▸"}</span>
+        <span style={{ fontSize: "10px", color: "var(--ink-2,#5a7490)" }}>{expanded ? "▾" : "▸"}</span>
       </div>
 
       {/* Expanded body */}
@@ -1413,7 +1413,7 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
   }
 
   const LBL: React.CSSProperties = {
-    fontSize: "10px", fontWeight: 700, color: "#6b7280",
+    fontSize: "10px", fontWeight: 700, color: "var(--ink-2,#5a7490)",
     letterSpacing: "0.5px", marginBottom: "4px", display: "block",
   };
   const FIELD: React.CSSProperties = { ...INPUT, fontSize: "13px", padding: "8px 10px" };
@@ -1425,7 +1425,7 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
         display:       "flex",
         flexDirection: "column",
         gap:           "12px",
-        borderBottom:  "1px solid rgba(255,255,255,0.07)",
+        borderBottom:  "1px solid var(--line,rgba(255,255,255,0.06))",
         background:    "rgba(0,204,122,0.03)",
       }}
     >
@@ -1490,7 +1490,7 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
           onChange={e => setForm(f => ({ ...f, impact_score: Number(e.target.value) }))}
           style={{ width: "100%", accentColor: "#f03a57" }}
         />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: "#6b7280", marginTop: "2px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: "var(--ink-2,#5a7490)", marginTop: "2px" }}>
           <span>Negligible</span><span>Critical</span>
         </div>
       </div>
@@ -1533,8 +1533,8 @@ function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: (
         <button
           onClick={onCancel}
           style={{
-            padding: "9px 14px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.1)",
-            background: "none", color: "#6b7280", fontSize: "13px", cursor: "pointer",
+            padding: "9px 14px", borderRadius: "6px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+            background: "none", color: "var(--ink-2,#5a7490)", fontSize: "13px", cursor: "pointer",
           }}
         >
           Cancel
@@ -1562,7 +1562,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
   const canRecord  = roles.some(r => ["operator", "analyst", "strategist", "fund_manager"].includes(r));
   const canResolve = roles.some(r => ["strategist", "fund_manager"].includes(r));
   const roleLabel  = canResolve ? "RESOLVER" : canRecord ? "RECORDER" : "VIEWER";
-  const roleColor  = canResolve ? "#00cc7a"  : canRecord ? "#4d9cf5"  : "#6b7280";
+  const roleColor  = canResolve ? "#00cc7a"  : canRecord ? "#4d9cf5"  : "var(--ink-2,#5a7490)";
 
   const loadIssues = useCallback(async () => {
     setLoading(true);
@@ -1621,9 +1621,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
         style={{
           padding:       "5px 11px",
           borderRadius:  "5px",
-          background:    active ? "rgba(255,255,255,0.1)" : "none",
-          border:        "none",
-          color:         active ? "var(--fg)" : "#6b7280",
+          background:    active ? "var(--raised,#0f1e2e)" : "none",
+          border:        active ? "1px solid var(--line,rgba(255,255,255,0.06))" : "1px solid transparent",
+          color:         active ? "var(--ink-0,#eef2f8)" : "var(--ink-2,#5a7490)",
           fontSize:      "11px",
           fontWeight:    active ? 700 : 400,
           cursor:        "pointer",
@@ -1641,7 +1641,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
               borderRadius: "8px",
               fontSize:     "9px",
               fontWeight:   700,
-              background:   k === "open" ? "#f03a57" : "#f0a030",
+              background:   k === "open" ? "var(--red,#f03a57)" : "var(--amber,#f0a030)",
               color:        "#fff",
             }}
           >
@@ -1675,7 +1675,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
           borderRadius:   "50%",
           background:     canResolve
             ? "linear-gradient(135deg,#00cc7a,#00a060)"
-            : "linear-gradient(135deg,#f03a57,#c02040)",
+            : canRecord
+            ? "linear-gradient(135deg,#4d9cf5,#2a72c8)"
+            : "linear-gradient(135deg,#1e3050,#0f1e30)",
           border:         "none",
           color:          "#fff",
           fontSize:       "20px",
@@ -1736,10 +1738,10 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
               left:          "calc((100vw - min(480px,100vw)) * 0.071)",
               right:         "calc(min(480px,100vw) + (100vw - min(480px,100vw)) * 0.071)",
               zIndex:        898,
-              background:    "var(--surface,#1a1a2e)",
-              border:        "1px solid rgba(255,255,255,0.09)",
-              borderRadius:  "12px",
-              boxShadow:     "0 8px 48px rgba(0,0,0,0.6)",
+              background:    "var(--card,#0b1622)",
+              border:        "1px solid var(--line,rgba(255,255,255,0.06))",
+              borderRadius:  "10px",
+              boxShadow:     "0 8px 64px rgba(0,0,0,0.75)",
               display:       "flex",
               flexDirection: "column",
               overflow:      "hidden",
@@ -1749,14 +1751,14 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             <div
               style={{
                 padding:      "14px 18px",
-                borderBottom: "1px solid rgba(255,255,255,0.07)",
+                borderBottom: "1px solid var(--line,rgba(255,255,255,0.06))",
                 flexShrink:   0,
                 display:      "flex",
                 alignItems:   "center",
                 gap:          "10px",
               }}
             >
-              <span style={{ fontSize: "14px", fontWeight: 700, color: "#8ea3be" }}>Issue Analytics</span>
+              <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--ink-1,#9ab0c8)" }}>Issue Analytics</span>
               <span
                 style={{
                   padding:       "2px 8px",
@@ -1776,7 +1778,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                   marginLeft:   "auto",
                   background:   "none",
                   border:       "none",
-                  color:        "#6b7280",
+                  color:        "var(--ink-2,#5a7490)",
                   fontSize:     "18px",
                   lineHeight:   1,
                   cursor:       "pointer",
@@ -1804,9 +1806,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             bottom:        0,
             zIndex:        899,
             width:         "min(480px,100vw)",
-            background:    "var(--surface,#1a1a2e)",
-            borderLeft:    "1px solid rgba(255,255,255,0.07)",
-            boxShadow:     "-4px 0 36px rgba(0,0,0,0.45)",
+            background:    "var(--card,#0b1622)",
+            borderLeft:    "1px solid var(--line,rgba(255,255,255,0.06))",
+            boxShadow:     "-4px 0 56px rgba(0,0,0,0.72)",
             display:       "flex",
             flexDirection: "column",
           }}
@@ -1815,7 +1817,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
           <div
             style={{
               padding:      "15px 15px 0",
-              borderBottom: "1px solid rgba(255,255,255,0.07)",
+              borderBottom: "1px solid var(--line,rgba(255,255,255,0.06))",
               flexShrink:   0,
             }}
           >
@@ -1860,9 +1862,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                   style={{
                     padding:      "4px 10px",
                     borderRadius: "5px",
-                    border:       "1px solid rgba(255,255,255,0.09)",
+                    border:       "1px solid var(--line-hi,rgba(255,255,255,0.11))",
                     background:   "none",
-                    color:        "#6b7280",
+                    color:        "var(--ink-2,#5a7490)",
                     fontSize:     "11px",
                     cursor:       "pointer",
                   }}
@@ -1922,16 +1924,16 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             )}
 
             {tab === "insight" && showInsight && canResolve ? (
-              <div style={{ textAlign: "center", padding: "52px 20px", color: "#6b7280", fontSize: "12px", lineHeight: 1.7 }}>
+              <div style={{ textAlign: "center", padding: "52px 20px", color: "var(--ink-2,#5a7490)", fontSize: "12px", lineHeight: 1.7 }}>
                 <div style={{ fontSize: "22px", marginBottom: "8px" }}>↔</div>
                 Analytics panel open to the left
               </div>
             ) : loading ? (
-              <div style={{ textAlign: "center", padding: "48px 0", color: "#6b7280", fontSize: "13px" }}>
+              <div style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-2,#5a7490)", fontSize: "13px" }}>
                 Loading…
               </div>
             ) : filtered.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "48px 0", color: "#6b7280", fontSize: "13px" }}>
+              <div style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-2,#5a7490)", fontSize: "13px" }}>
                 {tab === "open"     ? "No active issues"
                 : tab === "staging" ? "No issues in staging"
                 :                    "No archived issues"}
