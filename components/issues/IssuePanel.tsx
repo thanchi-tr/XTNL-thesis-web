@@ -487,11 +487,12 @@ function RecordSection({
 
 /* ── RESOLVE section ─────────────────────────────────────────── */
 function ResolveSection({
-  issue, canResolve, canRecord, solvingId, setSolvingId, onRefresh, onSetError,
+  issue, canResolve, canManage, canRecord, solvingId, setSolvingId, onRefresh, onSetError,
   endorsedSolutions, disregardedSolutions, onEndorse, onDisregard,
 }: {
   issue: Issue;
   canResolve: boolean;
+  canManage: boolean;
   canRecord: boolean;
   solvingId: string | null;
   setSolvingId: (id: string | null) => void;
@@ -671,7 +672,7 @@ function ResolveSection({
                   </div>
                 );
               })()}
-              {canResolve && !isStaging && (
+              {canManage && !isStaging && (
                 <button
                   onClick={() => run(() => callApi(`/api/session/issues/${issue.issue_id}/solution`, { method: "DELETE" }))}
                   disabled={busy}
@@ -696,7 +697,7 @@ function ResolveSection({
               <ObsBox
                 done={!!issue.observed_week_1}
                 label="Week 1"
-                onClick={canResolve && !issue.observed_week_1
+                onClick={canManage && !issue.observed_week_1
                   ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
                       method: "PATCH", body: JSON.stringify({ week: 1 }),
                     }))
@@ -705,7 +706,7 @@ function ResolveSection({
               <ObsBox
                 done={!!issue.observed_week_2}
                 label="Week 2"
-                onClick={canResolve && !issue.observed_week_2 && !!issue.observed_week_1
+                onClick={canManage && !issue.observed_week_2 && !!issue.observed_week_1
                   ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
                       method: "PATCH", body: JSON.stringify({ week: 2 }),
                     }))
@@ -714,7 +715,7 @@ function ResolveSection({
               <ObsBox
                 done={!!issue.observed_week_3}
                 label="Week 3"
-                onClick={canResolve && !issue.observed_week_3 && !!issue.observed_week_2
+                onClick={canManage && !issue.observed_week_3 && !!issue.observed_week_2
                   ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
                       method: "PATCH", body: JSON.stringify({ week: 3 }),
                     }))
@@ -768,7 +769,7 @@ function ResolveSection({
 
       {/* Action buttons */}
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-        {canResolve && !isArchived && !isSolving && (
+        {canManage && !isArchived && !isSolving && (
           <button
             onClick={() => setSolvingId(issue.issue_id)}
             style={{
@@ -781,7 +782,7 @@ function ResolveSection({
           </button>
         )}
 
-        {canResolve && !isArchived && !isStaging && !closeForm && (
+        {canManage && !isArchived && !isStaging && !closeForm && (
           <button
             onClick={() => setCloseForm(true)}
             style={{
@@ -794,7 +795,7 @@ function ResolveSection({
           </button>
         )}
 
-        {canResolve && (isStaging || isArchived) && !reopenForm && (
+        {canManage && (isStaging || isArchived) && !reopenForm && (
           <button
             onClick={() => setReopenForm(true)}
             style={{
@@ -1283,11 +1284,11 @@ function InsightTab({ issues }: { issues: Issue[] }) {
 
 /* ── Issue card ──────────────────────────────────────────────── */
 function IssueCard({
-  issue, expanded, onToggle, canRecord, canResolve, solvingId, setSolvingId, onRefresh, onSetError,
+  issue, expanded, onToggle, canRecord, canResolve, canManage, solvingId, setSolvingId, onRefresh, onSetError,
   endorsedSolutions, disregardedSolutions, onEndorse, onDisregard,
 }: {
   issue: Issue; expanded: boolean; onToggle: () => void;
-  canRecord: boolean; canResolve: boolean;
+  canRecord: boolean; canResolve: boolean; canManage: boolean;
   solvingId: string | null; setSolvingId: (id: string | null) => void;
   onRefresh: () => void; onSetError: (err: string | null) => void;
   endorsedSolutions: Set<string>; disregardedSolutions: Set<string>;
@@ -1370,6 +1371,7 @@ function IssueCard({
           <ResolveSection
             issue={issue}
             canResolve={canResolve}
+            canManage={canManage}
             canRecord={canRecord}
             solvingId={solvingId}
             setSolvingId={setSolvingId}
@@ -1561,6 +1563,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
   const roles: string[] = (session as any)?.roles ?? [];
   const canRecord  = roles.some(r => ["operator", "analyst", "strategist", "fund_manager"].includes(r));
   const canResolve = roles.some(r => ["strategist", "fund_manager"].includes(r));
+  const canManage  = canResolve && showInsight;
   const roleLabel  = canResolve ? "RESOLVER" : canRecord ? "RECORDER" : "VIEWER";
   const roleColor  = canResolve ? "#00cc7a"  : canRecord ? "#4d9cf5"  : "var(--ink-2,#5a7490)";
 
@@ -1948,6 +1951,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                     onToggle={() => setExpandedId(v => v === issue.issue_id ? null : issue.issue_id)}
                     canRecord={canRecord}
                     canResolve={canResolve}
+                    canManage={canManage}
                     solvingId={solvingId}
                     setSolvingId={setSolvingId}
                     onRefresh={loadIssues}

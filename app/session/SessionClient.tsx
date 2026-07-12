@@ -4066,7 +4066,7 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
   const [selId,          setSelId]          = useState<string | null>(null);
   const [hydrateValues,  setHydrateValues]  = useState<TradeHydrate | null>(null);
   const [showChecklist,  setShowChecklist]  = useState(false);
-  const [opMainView,     setOpMainView]     = useState<"mirror" | "journal">("mirror");
+  const [opMainView,     setOpMainView]     = useState<"mirror" | "journal" | "strategy">("mirror");
   const [frictionReport, setFrictionReport] = useState<FrictionReport | null>(null);
 
   /* ── Fetch audit report from OneDrive ──────────────── */
@@ -4441,7 +4441,7 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
 
               {/* Tab strip */}
               <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 28 }}>
-                {(["mirror", "journal"] as const).map(view => {
+                {(["mirror", "journal", "strategy"] as const).map(view => {
                   const active = opMainView === view;
                   return (
                     <button key={view} type="button" onClick={() => setOpMainView(view)} style={{
@@ -4453,7 +4453,7 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
                       letterSpacing: "0.015em", cursor: "pointer",
                       transition: "color 0.15s, border-color 0.15s",
                     }}>
-                      {view === "mirror" ? "Mirror · LLM Audit" : "Session Journal"}
+                      {view === "mirror" ? "Mirror · LLM Audit" : view === "journal" ? "Session Journal" : "On-going Strategy"}
                     </button>
                   );
                 })}
@@ -4473,6 +4473,7 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
                   tz={baseTZ} operatorView onRefresh={fetchJournal}
                 />
               )}
+              {opMainView === "strategy" && <OngoingStrategy />}
             </div>
 
             {/* ── Sidebar: always visible regardless of main tab ── */}
@@ -4482,8 +4483,6 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
               {showChecklist && (
                 <EntryChecklistForm baseTZ={baseTZ} onSuccess={fetchComments} showToast={showToast} sessionContract={sessionContract} />
               )}
-
-              <OngoingStrategy />
 
               <AddCommentForm fullWidth failCompliance={challengeStatus === "fail"} onSuccess={fetchComments} showToast={showToast} baseTZ={baseTZ} />
 
