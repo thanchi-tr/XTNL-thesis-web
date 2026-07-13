@@ -2615,6 +2615,9 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
             </div>
           </>
         )}
+
+        {/* Session schedule config — strategist defines when alarm is active vs break */}
+        <SessionScheduleConfig />
       </div>
 
       {/* ── Session Builder modal ── */}
@@ -2671,9 +2674,6 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
           </div>
         </div>
       )}
-
-      {/* Session schedule config — strategist defines when alarm is active vs break */}
-      <SessionScheduleConfig />
 
       {/* Issue tracker — fixed FAB, visible in analytics view; Insight tab for strategist */}
       <IssuePanel showInsight />
