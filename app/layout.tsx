@@ -10,6 +10,7 @@ import SessionProvider          from "@/components/SessionProvider";
 import { SimulatorProvider }   from "@/context/SimulatorContext";
 import FounderWelcome          from "@/components/FounderWelcome";
 import XtnlIntroOverlay        from "@/components/ui/XtnlIntroOverlay";
+import GlobalAlarmNotifier     from "@/components/GlobalAlarmNotifier";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -68,6 +69,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <Calculator />
             <FounderWelcome />
             <XtnlIntroOverlay />
+            <GlobalAlarmNotifier />
           </SimulatorProvider>
         </SessionProvider>
       </body>

@@ -2812,6 +2812,22 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   useEffect(() => { volumeRef.current           = volume;             }, [volume]);
   useEffect(() => { lastAckRef.current          = srv.last_ack_cycle; }, [srv.last_ack_cycle]);
   useEffect(() => { challengeSilencedRef.current = challengeSilenced;  }, [challengeSilenced]);
+
+  // Sync volume to localStorage so GlobalAlarmNotifier can read it
+  useEffect(() => {
+    if (typeof localStorage !== "undefined")
+      localStorage.setItem("xtnl_alarm_volume", String(volume));
+  }, [volume]);
+
+  // Signal to GlobalAlarmNotifier that this page owns the alarm UI
+  useEffect(() => {
+    if (typeof sessionStorage !== "undefined")
+      sessionStorage.setItem("xtnl_alarm_tab", "1");
+    return () => {
+      if (typeof sessionStorage !== "undefined")
+        sessionStorage.removeItem("xtnl_alarm_tab");
+    };
+  }, []);
   useEffect(() => {
     tradingSessionModeRef.current = tradingSessionMode;
     if (typeof window !== "undefined")

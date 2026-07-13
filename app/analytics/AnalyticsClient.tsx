@@ -2683,22 +2683,28 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Session Schedule Config
-   Strategist defines trading session windows (HH:MM Melbourne time).
+   Strategist defines when the alarm is active (Melbourne time + days).
    Alarm pauses automatically outside these windows.
 ───────────────────────────────────────────────────────────────────────────── */
-type SessionWindow = { start: string; end: string };
+type SessionWindow = { start: string; end: string; days: number[] };
+
+const DAY_LABELS = ["Su","Mo","Tu","We","Th","Fr","Sa"] as const;
+const WEEKDAYS   = [1,2,3,4,5]; // Mon–Fri default
 
 function SessionScheduleConfig() {
   const { data: session } = useSession();
   const roles: string[] = (session as any)?.roles ?? [];
   const canEdit = roles.some(r => ["strategist", "fund_manager"].includes(r));
 
-  const [windows, setWindows]   = useState<SessionWindow[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [saving,  setSaving]    = useState(false);
-  const [error,   setError]     = useState<string | null>(null);
+  const [windows, setWindows] = useState<SessionWindow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+
+  // Composer state
   const [newStart, setNewStart] = useState("18:00");
   const [newEnd,   setNewEnd]   = useState("01:00");
+  const [newDays,  setNewDays]  = useState<number[]>(WEEKDAYS);
 
   useEffect(() => {
     fetch("/api/session/alarm")
@@ -2712,26 +2718,46 @@ function SessionScheduleConfig() {
     setSaving(true); setError(null);
     try {
       const r = await fetch("/api/session/alarm", {
-        method: "PUT",
+        method:  "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set_session_windows", sessionWindows: next }),
+        body:    JSON.stringify({ action: "set_session_windows", sessionWindows: next }),
       });
       if (!r.ok) { const j = await r.json(); setError(j.error ?? "Save failed"); return; }
       setWindows(next);
     } catch { setError("Network error"); }
-    finally { setSaving(false); }
+    finally  { setSaving(false); }
+  }
+
+  function toggleDay(d: number) {
+    setNewDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort());
   }
 
   function addWindow() {
     if (!newStart || !newEnd) return;
-    save([...windows, { start: newStart, end: newEnd }]);
+    const sorted = [...newDays].sort((a,b) => a-b);
+    save([...windows, { start: newStart, end: newEnd, days: sorted }]);
   }
 
   function removeWindow(i: number) {
     save(windows.filter((_, idx) => idx !== i));
   }
 
+  function dayLabel(days: number[]): string {
+    if (!days || days.length === 0) return "Every day";
+    if (days.length === 7) return "Every day";
+    if (JSON.stringify(days) === JSON.stringify(WEEKDAYS)) return "Mon – Fri";
+    return days.map(d => DAY_LABELS[d]).join(" ");
+  }
+
   if (!canEdit) return null;
+
+  const inp: React.CSSProperties = {
+    background: "var(--card,#0b1622)",
+    border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+    borderRadius: 5, color: "var(--ink-0,#eef2f8)",
+    fontSize: 11, padding: "4px 8px",
+    fontFamily: "var(--font-mono)", width: 90,
+  };
 
   return (
     <div style={{
@@ -2742,7 +2768,7 @@ function SessionScheduleConfig() {
     }}>
       {/* Header */}
       <div style={{
-        padding: "13px 18px",
+        padding: "12px 18px",
         borderBottom: "1px solid var(--line,rgba(255,255,255,0.06))",
         display: "flex", alignItems: "center", gap: 10,
       }}>
@@ -2756,104 +2782,157 @@ function SessionScheduleConfig() {
           STRATEGIST
         </span>
         <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-2,#5a7490)" }}>
-          Melbourne time · alarm pauses outside these windows
+          Melbourne time · alarm pauses outside active windows
         </span>
       </div>
 
-      <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
         {error && (
           <div style={{ fontSize: 11, color: "var(--red,#f03a57)", padding: "6px 10px", borderRadius: 5, background: "rgba(240,58,87,0.08)" }}>
             {error}
           </div>
         )}
 
+        {/* Existing windows */}
         {loading ? (
           <div style={{ fontSize: 11, color: "var(--ink-2,#5a7490)" }}>Loading…</div>
         ) : windows.length === 0 ? (
           <div style={{ fontSize: 11, color: "var(--ink-2,#5a7490)", fontStyle: "italic" }}>
-            No windows configured — alarm runs continuously (no break enforcement)
+            No windows set — alarm runs continuously with no break enforcement
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {windows.map((w, i) => (
               <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "7px 12px", borderRadius: 6,
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                padding: "8px 12px", borderRadius: 7,
                 border: "1px solid var(--line,rgba(255,255,255,0.06))",
                 background: "var(--card,#0b1622)",
               }}>
-                <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
+                {/* Days */}
+                <div style={{ display: "flex", gap: 3 }}>
+                  {DAY_LABELS.map((lbl, d) => {
+                    const active = !w.days || w.days.length === 0 || w.days.includes(d);
+                    return (
+                      <span key={d} style={{
+                        fontSize: 9, fontWeight: 700, width: 20, height: 20,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        borderRadius: 4,
+                        background: active ? "rgba(0,204,122,0.15)" : "rgba(255,255,255,0.03)",
+                        color: active ? "var(--green,#00cc7a)" : "var(--ink-3,#2a3d52)",
+                        border: `1px solid ${active ? "rgba(0,204,122,0.25)" : "transparent"}`,
+                      }}>
+                        {lbl}
+                      </span>
+                    );
+                  })}
+                </div>
+
+                <span style={{ fontSize: 10, color: "var(--ink-3,#2a3d52)", margin: "0 2px" }}>·</span>
+
+                {/* Times */}
+                <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
                   {w.start}
                 </span>
                 <span style={{ fontSize: 10, color: "var(--ink-3,#2a3d52)" }}>→</span>
-                <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
+                <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
                   {w.end}
                 </span>
-                <span style={{ marginLeft: "auto", fontSize: 9, color: "var(--ink-3,#2a3d52)" }}>
-                  {w.start > w.end ? "overnight" : "same day"}
+                <span style={{ fontSize: 9, color: "var(--ink-3,#2a3d52)" }}>
+                  {w.start > w.end ? "overnight" : "same-day"}
                 </span>
+
                 <button
                   onClick={() => removeWindow(i)}
                   disabled={saving}
                   style={{
-                    background: "none", border: "none", cursor: "pointer",
-                    color: "var(--ink-2,#5a7490)", fontSize: 14, lineHeight: 1, padding: "0 2px",
+                    marginLeft: "auto", background: "none", border: "none",
+                    cursor: "pointer", color: "var(--ink-2,#5a7490)",
+                    fontSize: 15, lineHeight: 1, padding: "0 2px",
                   }}
-                  title="Remove window"
+                  title="Remove"
                 >×</button>
               </div>
             ))}
           </div>
         )}
 
-        {/* Add window */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)", minWidth: 48 }}>Start</span>
-          <input
-            type="time"
-            value={newStart}
-            onChange={e => setNewStart(e.target.value)}
-            style={{
-              background: "var(--card,#0b1622)", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
-              borderRadius: 5, color: "var(--ink-0,#eef2f8)", fontSize: 11,
-              padding: "4px 8px", fontFamily: "var(--font-mono)", width: 96,
-            }}
-          />
-          <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)" }}>End</span>
-          <input
-            type="time"
-            value={newEnd}
-            onChange={e => setNewEnd(e.target.value)}
-            style={{
-              background: "var(--card,#0b1622)", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
-              borderRadius: 5, color: "var(--ink-0,#eef2f8)", fontSize: 11,
-              padding: "4px 8px", fontFamily: "var(--font-mono)", width: 96,
-            }}
-          />
-          <button
-            onClick={addWindow}
-            disabled={saving || !newStart || !newEnd}
-            style={{
-              padding: "5px 14px", borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: "pointer",
-              border: "1px solid rgba(0,204,122,0.3)", background: "rgba(0,204,122,0.08)",
-              color: "var(--green,#00cc7a)", opacity: saving ? 0.5 : 1,
-            }}
-          >
-            {saving ? "Saving…" : "+ Add window"}
-          </button>
-          {windows.length > 0 && (
+        {/* Composer */}
+        <div style={{
+          padding: "12px 14px", borderRadius: 7,
+          border: "1px solid var(--line,rgba(255,255,255,0.06))",
+          background: "var(--card,#0b1622)",
+          display: "flex", flexDirection: "column", gap: 10,
+        }}>
+          {/* Day selector */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)", minWidth: 36 }}>Days</span>
+            <div style={{ display: "flex", gap: 4 }}>
+              {DAY_LABELS.map((lbl, d) => {
+                const on = newDays.includes(d);
+                return (
+                  <button
+                    key={d}
+                    onClick={() => toggleDay(d)}
+                    style={{
+                      fontSize: 10, fontWeight: 700, width: 26, height: 26,
+                      borderRadius: 5, cursor: "pointer",
+                      border: `1px solid ${on ? "rgba(0,204,122,0.4)" : "var(--line,rgba(255,255,255,0.06))"}`,
+                      background: on ? "rgba(0,204,122,0.14)" : "none",
+                      color: on ? "var(--green,#00cc7a)" : "var(--ink-2,#5a7490)",
+                      transition: "all 0.12s",
+                    }}
+                  >
+                    {lbl}
+                  </button>
+                );
+              })}
+            </div>
             <button
-              onClick={() => save([])}
-              disabled={saving}
+              onClick={() => setNewDays(newDays.length === 7 ? [] : [0,1,2,3,4,5,6])}
               style={{
-                padding: "5px 12px", borderRadius: 5, fontSize: 11, cursor: "pointer",
+                fontSize: 9, padding: "2px 7px", borderRadius: 4, cursor: "pointer",
                 border: "1px solid var(--line,rgba(255,255,255,0.06))", background: "none",
                 color: "var(--ink-2,#5a7490)",
               }}
             >
-              Clear all
+              {newDays.length === 7 ? "None" : "All"}
             </button>
-          )}
+          </div>
+
+          {/* Time row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)", minWidth: 36 }}>Start</span>
+            <input type="time" value={newStart} onChange={e => setNewStart(e.target.value)} style={inp} />
+            <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)" }}>End</span>
+            <input type="time" value={newEnd}   onChange={e => setNewEnd(e.target.value)}   style={inp} />
+            <button
+              onClick={addWindow}
+              disabled={saving || !newStart || !newEnd || newDays.length === 0}
+              style={{
+                padding: "5px 14px", borderRadius: 5, fontSize: 11, fontWeight: 700,
+                cursor: "pointer",
+                border: "1px solid rgba(0,204,122,0.3)", background: "rgba(0,204,122,0.08)",
+                color: "var(--green,#00cc7a)",
+                opacity: (saving || newDays.length === 0) ? 0.4 : 1,
+              }}
+            >
+              {saving ? "Saving…" : "+ Add window"}
+            </button>
+            {windows.length > 0 && (
+              <button
+                onClick={() => save([])}
+                disabled={saving}
+                style={{
+                  padding: "5px 11px", borderRadius: 5, fontSize: 11, cursor: "pointer",
+                  border: "1px solid var(--line,rgba(255,255,255,0.06))", background: "none",
+                  color: "var(--ink-2,#5a7490)",
+                }}
+              >
+                Clear all
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -9,7 +9,11 @@ function authed(session: Session | null): boolean {
   return !!(session as AuthedSession | null)?.twoFactorVerified;
 }
 
-export type SessionWindow = { start: string; end: string }; // "HH:MM" Melbourne local time
+export type SessionWindow = {
+  start: string;   // "HH:MM" Melbourne local time
+  end:   string;   // "HH:MM" Melbourne local time
+  days:  number[]; // 0=Sun 1=Mon … 6=Sat; empty = every day
+};
 
 export type AlarmState = {
   running:                  boolean;
@@ -321,7 +325,13 @@ export async function PUT(req: Request) {
             .filter((w): w is { start: string; end: string } =>
               typeof (w as any)?.start === "string" && typeof (w as any)?.end === "string"
             )
-            .map(w => ({ start: w.start.trim(), end: w.end.trim() }))
+            .map(w => ({
+              start: w.start.trim(),
+              end:   w.end.trim(),
+              days:  Array.isArray((w as any).days)
+                ? ((w as any).days as unknown[]).filter((d): d is number => typeof d === "number")
+                : [],
+            }))
         : null;
       const next: AlarmState = { ...current, session_windows: windows };
       await writeState(next, userId);

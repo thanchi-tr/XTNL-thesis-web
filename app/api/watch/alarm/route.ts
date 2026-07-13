@@ -7,7 +7,11 @@ import { NextResponse }           from "next/server";
 import { supabase, OPERATOR_USER_ID } from "@/lib/supabase";
 import { verifyWatchTokenReason } from "@/lib/watchJwt";
 
-export type SessionWindow = { start: string; end: string }; // "HH:MM" Melbourne local time
+export type SessionWindow = {
+  start: string;   // "HH:MM" Melbourne local time
+  end:   string;   // "HH:MM" Melbourne local time
+  days:  number[]; // 0=Sun 1=Mon … 6=Sat; empty = every day
+};
 
 export type AlarmState = {
   running:                  boolean;
@@ -60,22 +64,27 @@ function melbourneTime(): string {
   }).format(new Date());
 }
 
-/** Returns true when the current Melbourne time falls OUTSIDE all defined session windows.
+/** Returns true when current Melbourne time is OUTSIDE all configured session windows.
  *  If no windows are configured, always returns false (no break enforcement). */
 function isInSessionBreak(state: AlarmState): boolean {
   const windows = state.session_windows;
   if (!windows || windows.length === 0) return false;
   const parts = new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Melbourne", hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZone: "Australia/Melbourne",
+    hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false,
   }).formatToParts(new Date());
-  const h   = parseInt(parts.find(p => p.type === "hour")?.value   ?? "0", 10);
-  const m   = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
-  const now = h * 60 + m;
-  const inAny = windows.some(w => {
+  const h       = parseInt(parts.find(p => p.type === "hour")?.value    ?? "0", 10);
+  const m       = parseInt(parts.find(p => p.type === "minute")?.value  ?? "0", 10);
+  const dayStr  = parts.find(p => p.type === "weekday")?.value ?? "Mon";
+  const DAY_MAP: Record<string, number> = { Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6 };
+  const dayNum  = DAY_MAP[dayStr] ?? 1;
+  const nowMin  = h * 60 + m;
+  const inAny   = windows.some(w => {
+    if (w.days && w.days.length > 0 && !w.days.includes(dayNum)) return false;
     const [sh, sm] = w.start.split(":").map(Number);
     const [eh, em] = w.end.split(":").map(Number);
     const s = sh * 60 + sm, e = eh * 60 + em;
-    return s <= e ? (now >= s && now < e) : (now >= s || now < e); // handles overnight
+    return s <= e ? (nowMin >= s && nowMin < e) : (nowMin >= s || nowMin < e);
   });
   return !inAny;
 }
