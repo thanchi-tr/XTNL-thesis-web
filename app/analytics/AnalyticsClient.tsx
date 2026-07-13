@@ -2751,26 +2751,31 @@ function SessionScheduleConfig() {
 
   if (!canEdit) return null;
 
-  const inp: React.CSSProperties = {
-    background: "var(--card,#0b1622)",
-    border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
-    borderRadius: 5, color: "var(--ink-0,#eef2f8)",
-    fontSize: 11, padding: "4px 8px",
-    fontFamily: "var(--font-mono)", width: 90,
+  const TIME_RE = /^\d{2}:\d{2}$/;
+  const timeOk  = TIME_RE.test(newStart) && TIME_RE.test(newEnd);
+
+  const timeInp: React.CSSProperties = {
+    background: "var(--base,#07101c)",
+    border: "1px solid var(--line-hi,rgba(255,255,255,0.13))",
+    borderRadius: 6, color: "var(--ink-0,#eef2f8)",
+    fontSize: 13, padding: "5px 10px",
+    fontFamily: "var(--font-mono)",
+    width: 72, textAlign: "center",
+    outline: "none", letterSpacing: "0.03em",
   };
 
   return (
     <div style={{
       margin: "40px 0 24px",
-      border: "1px solid var(--line,rgba(255,255,255,0.06))",
+      border: "1px solid var(--line,rgba(255,255,255,0.07))",
       borderRadius: 10, overflow: "hidden",
       background: "var(--sub,#07101c)",
     }}>
       {/* Header */}
       <div style={{
-        padding: "12px 18px",
+        padding: "11px 18px",
         borderBottom: "1px solid var(--line,rgba(255,255,255,0.06))",
-        display: "flex", alignItems: "center", gap: 10,
+        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
       }}>
         <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.07em", color: "var(--ink-1,#9ab0c8)" }}>
           SESSION SCHEDULE
@@ -2786,7 +2791,7 @@ function SessionScheduleConfig() {
         </span>
       </div>
 
-      <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
         {error && (
           <div style={{ fontSize: 11, color: "var(--red,#f03a57)", padding: "6px 10px", borderRadius: 5, background: "rgba(240,58,87,0.08)" }}>
             {error}
@@ -2801,16 +2806,18 @@ function SessionScheduleConfig() {
             No windows set — alarm runs continuously with no break enforcement
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {windows.map((w, i) => (
               <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                display: "grid",
+                gridTemplateColumns: "auto 1fr auto",
+                alignItems: "center", gap: 12,
                 padding: "8px 12px", borderRadius: 7,
                 border: "1px solid var(--line,rgba(255,255,255,0.06))",
                 background: "var(--card,#0b1622)",
               }}>
-                {/* Days */}
-                <div style={{ display: "flex", gap: 3 }}>
+                {/* Days pills */}
+                <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
                   {DAY_LABELS.map((lbl, d) => {
                     const active = !w.days || w.days.length === 0 || w.days.includes(d);
                     return (
@@ -2828,27 +2835,27 @@ function SessionScheduleConfig() {
                   })}
                 </div>
 
-                <span style={{ fontSize: 10, color: "var(--ink-3,#2a3d52)", margin: "0 2px" }}>·</span>
-
                 {/* Times */}
-                <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
-                  {w.start}
-                </span>
-                <span style={{ fontSize: 10, color: "var(--ink-3,#2a3d52)" }}>→</span>
-                <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
-                  {w.end}
-                </span>
-                <span style={{ fontSize: 9, color: "var(--ink-3,#2a3d52)" }}>
-                  {w.start > w.end ? "overnight" : "same-day"}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
+                    {w.start}
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--ink-3,#2a3d52)" }}>→</span>
+                  <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
+                    {w.end}
+                  </span>
+                  <span style={{ fontSize: 9, color: "var(--ink-3,#2a3d52)" }}>
+                    {w.start > w.end ? "overnight" : "same-day"}
+                  </span>
+                </div>
 
                 <button
                   onClick={() => removeWindow(i)}
                   disabled={saving}
                   style={{
-                    marginLeft: "auto", background: "none", border: "none",
-                    cursor: "pointer", color: "var(--ink-2,#5a7490)",
-                    fontSize: 15, lineHeight: 1, padding: "0 2px",
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "var(--ink-2,#5a7490)", fontSize: 16, lineHeight: 1,
+                    padding: "0 2px", flexShrink: 0,
                   }}
                   title="Remove"
                 >×</button>
@@ -2857,17 +2864,17 @@ function SessionScheduleConfig() {
           </div>
         )}
 
-        {/* Composer */}
+        {/* ── Composer ── */}
         <div style={{
-          padding: "12px 14px", borderRadius: 7,
-          border: "1px solid var(--line,rgba(255,255,255,0.06))",
+          padding: "12px 14px", borderRadius: 8,
+          border: "1px solid var(--line-hi,rgba(255,255,255,0.09))",
           background: "var(--card,#0b1622)",
           display: "flex", flexDirection: "column", gap: 10,
         }}>
-          {/* Day selector */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)", minWidth: 36 }}>Days</span>
-            <div style={{ display: "flex", gap: 4 }}>
+          {/* Row 1 — day toggles */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)", minWidth: 34 }}>Days</span>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {DAY_LABELS.map((lbl, d) => {
                 const on = newDays.includes(d);
                 return (
@@ -2875,12 +2882,12 @@ function SessionScheduleConfig() {
                     key={d}
                     onClick={() => toggleDay(d)}
                     style={{
-                      fontSize: 10, fontWeight: 700, width: 26, height: 26,
-                      borderRadius: 5, cursor: "pointer",
-                      border: `1px solid ${on ? "rgba(0,204,122,0.4)" : "var(--line,rgba(255,255,255,0.06))"}`,
-                      background: on ? "rgba(0,204,122,0.14)" : "none",
+                      fontSize: 10, fontWeight: 700, width: 28, height: 28,
+                      borderRadius: 6, cursor: "pointer", flexShrink: 0,
+                      border: `1px solid ${on ? "rgba(0,204,122,0.4)" : "rgba(255,255,255,0.07)"}`,
+                      background: on ? "rgba(0,204,122,0.14)" : "rgba(255,255,255,0.02)",
                       color: on ? "var(--green,#00cc7a)" : "var(--ink-2,#5a7490)",
-                      transition: "all 0.12s",
+                      transition: "border-color 0.1s, background 0.1s, color 0.1s",
                     }}
                   >
                     {lbl}
@@ -2891,8 +2898,8 @@ function SessionScheduleConfig() {
             <button
               onClick={() => setNewDays(newDays.length === 7 ? [] : [0,1,2,3,4,5,6])}
               style={{
-                fontSize: 9, padding: "2px 7px", borderRadius: 4, cursor: "pointer",
-                border: "1px solid var(--line,rgba(255,255,255,0.06))", background: "none",
+                fontSize: 9, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+                border: "1px solid rgba(255,255,255,0.07)", background: "none",
                 color: "var(--ink-2,#5a7490)",
               }}
             >
@@ -2900,38 +2907,60 @@ function SessionScheduleConfig() {
             </button>
           </div>
 
-          {/* Time row */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)", minWidth: 36 }}>Start</span>
-            <input type="time" value={newStart} onChange={e => setNewStart(e.target.value)} style={inp} />
+          {/* Row 2 — time pickers + actions */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)" }}>Start</span>
+            <input
+              type="text"
+              value={newStart}
+              onChange={e => setNewStart(e.target.value)}
+              placeholder="HH:MM"
+              maxLength={5}
+              style={timeInp}
+            />
+            <span style={{ fontSize: 10, color: "var(--ink-3,#2a3d52)" }}>→</span>
             <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)" }}>End</span>
-            <input type="time" value={newEnd}   onChange={e => setNewEnd(e.target.value)}   style={inp} />
-            <button
-              onClick={addWindow}
-              disabled={saving || !newStart || !newEnd || newDays.length === 0}
-              style={{
-                padding: "5px 14px", borderRadius: 5, fontSize: 11, fontWeight: 700,
-                cursor: "pointer",
-                border: "1px solid rgba(0,204,122,0.3)", background: "rgba(0,204,122,0.08)",
-                color: "var(--green,#00cc7a)",
-                opacity: (saving || newDays.length === 0) ? 0.4 : 1,
-              }}
-            >
-              {saving ? "Saving…" : "+ Add window"}
-            </button>
-            {windows.length > 0 && (
+            <input
+              type="text"
+              value={newEnd}
+              onChange={e => setNewEnd(e.target.value)}
+              placeholder="HH:MM"
+              maxLength={5}
+              style={timeInp}
+            />
+            <span style={{ fontSize: 9, color: "var(--ink-3,#2a3d52)", minWidth: 44 }}>
+              {timeOk && newStart && newEnd
+                ? (newStart > newEnd ? "overnight" : "same-day")
+                : "24h format"}
+            </span>
+            <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap" }}>
               <button
-                onClick={() => save([])}
-                disabled={saving}
+                onClick={addWindow}
+                disabled={saving || !timeOk || newDays.length === 0}
                 style={{
-                  padding: "5px 11px", borderRadius: 5, fontSize: 11, cursor: "pointer",
-                  border: "1px solid var(--line,rgba(255,255,255,0.06))", background: "none",
-                  color: "var(--ink-2,#5a7490)",
+                  padding: "6px 16px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+                  cursor: "pointer",
+                  border: "1px solid rgba(0,204,122,0.3)", background: "rgba(0,204,122,0.08)",
+                  color: "var(--green,#00cc7a)",
+                  opacity: (saving || !timeOk || newDays.length === 0) ? 0.35 : 1,
                 }}
               >
-                Clear all
+                {saving ? "Saving…" : "+ Add window"}
               </button>
-            )}
+              {windows.length > 0 && (
+                <button
+                  onClick={() => save([])}
+                  disabled={saving}
+                  style={{
+                    padding: "6px 12px", borderRadius: 6, fontSize: 11, cursor: "pointer",
+                    border: "1px solid rgba(255,255,255,0.07)", background: "none",
+                    color: "var(--ink-2,#5a7490)",
+                  }}
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
