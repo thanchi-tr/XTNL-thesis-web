@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useSession } from "next-auth/react";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import IssuePanel from "@/components/issues/IssuePanel";
 
@@ -2671,8 +2672,190 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
         </div>
       )}
 
+      {/* Session schedule config — strategist defines when alarm is active vs break */}
+      <SessionScheduleConfig />
+
       {/* Issue tracker — fixed FAB, visible in analytics view; Insight tab for strategist */}
       <IssuePanel showInsight />
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Session Schedule Config
+   Strategist defines trading session windows (HH:MM Melbourne time).
+   Alarm pauses automatically outside these windows.
+───────────────────────────────────────────────────────────────────────────── */
+type SessionWindow = { start: string; end: string };
+
+function SessionScheduleConfig() {
+  const { data: session } = useSession();
+  const roles: string[] = (session as any)?.roles ?? [];
+  const canEdit = roles.some(r => ["strategist", "fund_manager"].includes(r));
+
+  const [windows, setWindows]   = useState<SessionWindow[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [saving,  setSaving]    = useState(false);
+  const [error,   setError]     = useState<string | null>(null);
+  const [newStart, setNewStart] = useState("18:00");
+  const [newEnd,   setNewEnd]   = useState("01:00");
+
+  useEffect(() => {
+    fetch("/api/session/alarm")
+      .then(r => r.json())
+      .then(d => { setWindows(d.session_windows ?? []); })
+      .catch(() => setError("Failed to load schedule"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save(next: SessionWindow[]) {
+    setSaving(true); setError(null);
+    try {
+      const r = await fetch("/api/session/alarm", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_session_windows", sessionWindows: next }),
+      });
+      if (!r.ok) { const j = await r.json(); setError(j.error ?? "Save failed"); return; }
+      setWindows(next);
+    } catch { setError("Network error"); }
+    finally { setSaving(false); }
+  }
+
+  function addWindow() {
+    if (!newStart || !newEnd) return;
+    save([...windows, { start: newStart, end: newEnd }]);
+  }
+
+  function removeWindow(i: number) {
+    save(windows.filter((_, idx) => idx !== i));
+  }
+
+  if (!canEdit) return null;
+
+  return (
+    <div style={{
+      margin: "40px 0 24px",
+      border: "1px solid var(--line,rgba(255,255,255,0.06))",
+      borderRadius: 10, overflow: "hidden",
+      background: "var(--sub,#07101c)",
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: "13px 18px",
+        borderBottom: "1px solid var(--line,rgba(255,255,255,0.06))",
+        display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.07em", color: "var(--ink-1,#9ab0c8)" }}>
+          SESSION SCHEDULE
+        </span>
+        <span style={{
+          fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 4,
+          background: "rgba(77,156,245,0.12)", color: "var(--blue,#4d9cf5)", letterSpacing: "0.4px",
+        }}>
+          STRATEGIST
+        </span>
+        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-2,#5a7490)" }}>
+          Melbourne time · alarm pauses outside these windows
+        </span>
+      </div>
+
+      <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {error && (
+          <div style={{ fontSize: 11, color: "var(--red,#f03a57)", padding: "6px 10px", borderRadius: 5, background: "rgba(240,58,87,0.08)" }}>
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ fontSize: 11, color: "var(--ink-2,#5a7490)" }}>Loading…</div>
+        ) : windows.length === 0 ? (
+          <div style={{ fontSize: 11, color: "var(--ink-2,#5a7490)", fontStyle: "italic" }}>
+            No windows configured — alarm runs continuously (no break enforcement)
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {windows.map((w, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "7px 12px", borderRadius: 6,
+                border: "1px solid var(--line,rgba(255,255,255,0.06))",
+                background: "var(--card,#0b1622)",
+              }}>
+                <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
+                  {w.start}
+                </span>
+                <span style={{ fontSize: 10, color: "var(--ink-3,#2a3d52)" }}>→</span>
+                <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--green,#00cc7a)", fontWeight: 700 }}>
+                  {w.end}
+                </span>
+                <span style={{ marginLeft: "auto", fontSize: 9, color: "var(--ink-3,#2a3d52)" }}>
+                  {w.start > w.end ? "overnight" : "same day"}
+                </span>
+                <button
+                  onClick={() => removeWindow(i)}
+                  disabled={saving}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "var(--ink-2,#5a7490)", fontSize: 14, lineHeight: 1, padding: "0 2px",
+                  }}
+                  title="Remove window"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add window */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)", minWidth: 48 }}>Start</span>
+          <input
+            type="time"
+            value={newStart}
+            onChange={e => setNewStart(e.target.value)}
+            style={{
+              background: "var(--card,#0b1622)", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+              borderRadius: 5, color: "var(--ink-0,#eef2f8)", fontSize: 11,
+              padding: "4px 8px", fontFamily: "var(--font-mono)", width: 96,
+            }}
+          />
+          <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)" }}>End</span>
+          <input
+            type="time"
+            value={newEnd}
+            onChange={e => setNewEnd(e.target.value)}
+            style={{
+              background: "var(--card,#0b1622)", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
+              borderRadius: 5, color: "var(--ink-0,#eef2f8)", fontSize: 11,
+              padding: "4px 8px", fontFamily: "var(--font-mono)", width: 96,
+            }}
+          />
+          <button
+            onClick={addWindow}
+            disabled={saving || !newStart || !newEnd}
+            style={{
+              padding: "5px 14px", borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: "pointer",
+              border: "1px solid rgba(0,204,122,0.3)", background: "rgba(0,204,122,0.08)",
+              color: "var(--green,#00cc7a)", opacity: saving ? 0.5 : 1,
+            }}
+          >
+            {saving ? "Saving…" : "+ Add window"}
+          </button>
+          {windows.length > 0 && (
+            <button
+              onClick={() => save([])}
+              disabled={saving}
+              style={{
+                padding: "5px 12px", borderRadius: 5, fontSize: 11, cursor: "pointer",
+                border: "1px solid var(--line,rgba(255,255,255,0.06))", background: "none",
+                color: "var(--ink-2,#5a7490)",
+              }}
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

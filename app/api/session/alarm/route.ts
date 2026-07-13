@@ -9,21 +9,24 @@ function authed(session: Session | null): boolean {
   return !!(session as AuthedSession | null)?.twoFactorVerified;
 }
 
+export type SessionWindow = { start: string; end: string }; // "HH:MM" Melbourne local time
+
 export type AlarmState = {
   running:                  boolean;
   started_at:               string | null;
-  scheduled_start:          string | null;  // ISO — auto-starts alarm when GET is called after this time
+  scheduled_start:          string | null;
   interval_min:             number;
   focus_min:                number;
   last_ack_cycle:           number;
   enforce_focus:            boolean;
   entry_checklist_enabled:  boolean;
-  challenge_number:         number | null;  // browser sees this; watch endpoint strips it
+  challenge_number:         number | null;
   challenge_cycle:          number;
   challenge_status:         "pending" | "pass" | "fail" | null;
   challenge_expires_at:     string | null;
-  fail_streak:              number;   // consecutive fails in this session
-  completions_toward_reset: number;   // passes accumulated toward clearing streak
+  fail_streak:              number;
+  completions_toward_reset: number;
+  session_windows:          SessionWindow[] | null;
 };
 
 const DEFAULT: AlarmState = {
@@ -41,6 +44,7 @@ const DEFAULT: AlarmState = {
   challenge_expires_at:     null,
   fail_streak:              0,
   completions_toward_reset: 0,
+  session_windows:          null,
 };
 
 const PREFIX = "alarm_state:";
@@ -188,6 +192,9 @@ export async function PUT(req: Request) {
     const userId = OPERATOR_USER_ID
       ?? (((session as AuthedSession).user) as { id?: string } | undefined)?.id;
 
+    const roles: string[] = ((session as any)?.roles as string[]) ?? [];
+    const isStrategist = roles.some(r => ["strategist", "fund_manager"].includes(r));
+
     const body = await req.json() as {
       action:           string;
       intervalMin?:     unknown;
@@ -196,6 +203,7 @@ export async function PUT(req: Request) {
       challengeNumber?: unknown;
       taps?:            unknown;
       scheduledStart?:  unknown;
+      sessionWindows?:  unknown;
     };
 
     const current = await readState();
@@ -301,6 +309,21 @@ export async function PUT(req: Request) {
         challenge_status:     "pending",
         challenge_expires_at: expiresAt,
       };
+      await writeState(next, userId);
+      return NextResponse.json(next);
+    }
+
+    if (body.action === "set_session_windows") {
+      if (!isStrategist) return NextResponse.json({ error: "Strategist role required." }, { status: 403 });
+      const raw = body.sessionWindows;
+      const windows: SessionWindow[] | null = Array.isArray(raw)
+        ? (raw as unknown[])
+            .filter((w): w is { start: string; end: string } =>
+              typeof (w as any)?.start === "string" && typeof (w as any)?.end === "string"
+            )
+            .map(w => ({ start: w.start.trim(), end: w.end.trim() }))
+        : null;
+      const next: AlarmState = { ...current, session_windows: windows };
       await writeState(next, userId);
       return NextResponse.json(next);
     }

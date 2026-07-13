@@ -7,6 +7,8 @@ import { NextResponse }           from "next/server";
 import { supabase, OPERATOR_USER_ID } from "@/lib/supabase";
 import { verifyWatchTokenReason } from "@/lib/watchJwt";
 
+export type SessionWindow = { start: string; end: string }; // "HH:MM" Melbourne local time
+
 export type AlarmState = {
   running:                  boolean;
   started_at:               string | null;
@@ -18,8 +20,9 @@ export type AlarmState = {
   challenge_cycle:          number;
   challenge_status:         "pending" | "pass" | "fail" | null;
   challenge_expires_at:     string | null;
-  fail_streak:              number;   // consecutive fails in this session
-  completions_toward_reset: number;   // passes accumulated toward clearing streak
+  fail_streak:              number;
+  completions_toward_reset: number;
+  session_windows:          SessionWindow[] | null; // null = no break enforcement
 };
 
 const DEFAULT: AlarmState = {
@@ -35,6 +38,7 @@ const DEFAULT: AlarmState = {
   challenge_expires_at:     null,
   fail_streak:              0,
   completions_toward_reset: 0,
+  session_windows:          null,
 };
 
 const PREFIX = "alarm_state:";
@@ -54,6 +58,26 @@ function melbourneTime(): string {
     timeStyle: "medium",
     hour12:    false,
   }).format(new Date());
+}
+
+/** Returns true when the current Melbourne time falls OUTSIDE all defined session windows.
+ *  If no windows are configured, always returns false (no break enforcement). */
+function isInSessionBreak(state: AlarmState): boolean {
+  const windows = state.session_windows;
+  if (!windows || windows.length === 0) return false;
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Melbourne", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const h   = parseInt(parts.find(p => p.type === "hour")?.value   ?? "0", 10);
+  const m   = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
+  const now = h * 60 + m;
+  const inAny = windows.some(w => {
+    const [sh, sm] = w.start.split(":").map(Number);
+    const [eh, em] = w.end.split(":").map(Number);
+    const s = sh * 60 + sm, e = eh * 60 + em;
+    return s <= e ? (now >= s && now < e) : (now >= s || now < e); // handles overnight
+  });
+  return !inAny;
 }
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
@@ -148,10 +172,12 @@ export async function GET(req: Request) {
   try {
     let state = await readState();
 
-    if (state.enforce_focus) {
+    const inBreak = isInSessionBreak(state);
+
+    if (state.enforce_focus && !inBreak) {
       const info = currentCycleInfo(state);
 
-      // Auto-generate challenge when watch enters a new focus cycle
+      // Auto-generate challenge when watch enters a new focus cycle (master did not generate one yet)
       if (info?.inFocus && state.challenge_cycle < info.cycle) {
         const n         = Math.floor(Math.random() * 5) + 1;
         const expiresAt = new Date(Date.now() + 30_000).toISOString();
@@ -184,7 +210,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json(strip(state));
+    return NextResponse.json({ ...strip(state), in_session_break: inBreak });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
