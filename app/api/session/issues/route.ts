@@ -6,39 +6,61 @@ const VALID_CATEGORIES = [
   "execution", "risk", "technical", "compliance", "process", "market", "other",
 ] as const;
 
+type CurrentSolution = {
+  id:              string;
+  description:     string;
+  proposed_by:     string;
+  created_at:      string;
+  endorsements:    number;
+  disregards:      number;
+  votes:           number;
+  observed_week_1: string | null;
+  observed_week_2: string | null;
+  observed_week_3: string | null;
+  all_observed_at: string | null;
+};
+
 export async function GET() {
   const session = await auth();
   if (!session?.twoFactorVerified)
     return NextResponse.json({ error: "Auth required" }, { status: 401 });
 
-  const [{ data: issues, error: issErr }, { data: solutions, error: solErr }] = await Promise.all([
-    supabase
-      .from("issues")
-      .select("*")
-      .order("priority",    { ascending: true  })
-      .order("raise_count", { ascending: false })
-      .order("created_at",  { ascending: false }),
-    supabase.from("issue_solutions").select("*"),
-  ]);
+  // Single query for issues (current_solution is already denormalized as JSONB)
+  // One additional query for scratched solution history from the event log
+  const [{ data: issues, error: issErr }, { data: scratchedEvents, error: evtErr }] =
+    await Promise.all([
+      supabase
+        .from("issues")
+        .select("*")
+        .order("priority",    { ascending: true  })
+        .order("raise_count", { ascending: false })
+        .order("created_at",  { ascending: false }),
+      supabase
+        .from("issue_events")
+        .select("issue_id, payload, created_at")
+        .eq("event_type", "SOLUTION_SCRATCHED")
+        .order("created_at", { ascending: false }),
+    ]);
 
   if (issErr) return NextResponse.json({ error: issErr.message }, { status: 500 });
-  if (solErr) return NextResponse.json({ error: solErr.message }, { status: 500 });
+  if (evtErr) return NextResponse.json({ error: evtErr.message }, { status: 500 });
 
-  /* Partition solutions into active (one per issue) and scratched (many) */
-  const activeMap    = new Map<string, any>();
+  // Group scratched events by issue_id for O(1) lookup
   const scratchedMap = new Map<string, any[]>();
-  for (const s of solutions ?? []) {
-    const status = s.solution_status ?? "active";
-    if (status === "active") {
-      activeMap.set(s.issue_id, s);
-    } else {
-      const arr = scratchedMap.get(s.issue_id) ?? [];
-      arr.push(s);
-      scratchedMap.set(s.issue_id, arr);
-    }
+  for (const e of scratchedEvents ?? []) {
+    const arr = scratchedMap.get(e.issue_id) ?? [];
+    arr.push({
+      solution_id:  e.payload?.solution_id ?? null,
+      description:  e.payload?.description ?? "",
+      proposed_by:  e.payload?.proposed_by ?? "unknown",
+      created_at:   e.payload?.proposed_at ?? e.created_at,
+      scratched_at: e.payload?.scratched_at ?? e.created_at,
+      scratched_by: e.payload?.scratched_by ?? null,
+    });
+    scratchedMap.set(e.issue_id, arr);
   }
 
-  /* Separate sub-issues from top-level issues */
+  // Partition sub-issues from top-level issues
   const subMap    = new Map<string, any[]>();
   const topLevel: any[] = [];
   for (const i of issues ?? []) {
@@ -61,12 +83,8 @@ export async function GET() {
 
   const now = Date.now();
   const merged = topLevel.map((i: any) => {
-    const sol      = activeMap.get(i.issue_id) ?? null;
-    const scratched = (scratchedMap.get(i.issue_id) ?? [])
-      .sort((a: any, b: any) =>
-        new Date(b.scratched_at ?? b.created_at).getTime() -
-        new Date(a.scratched_at ?? a.created_at).getTime()
-      );
+    const sol: CurrentSolution | null = i.current_solution ?? null;
+
     const stagingMs = i.staging_at ? new Date(i.staging_at).getTime() : null;
     const effectiveStatus =
       i.status === "staging" && stagingMs && stagingMs + 21 * 86_400_000 <= now
@@ -76,28 +94,39 @@ export async function GET() {
       i.status === "staging" && stagingMs
         ? Math.max(0, Math.ceil((stagingMs + 21 * 86_400_000 - now) / 86_400_000))
         : null;
+
     return {
-      ...i,
-      category:               i.category       ?? "other",
-      impact_score:           i.impact_score   ?? 5,
-      tags:                   i.tags           ?? [],
-      parent_issue_id:        i.parent_issue_id ?? null,
-      closed_at:              i.closed_at       ?? null,
-      resolution_note:        i.resolution_note ?? null,
+      issue_id:               i.issue_id,
+      title:                  i.title,
+      description:            i.description         ?? null,
+      reported_by:            i.reported_by,
+      reporter_role:          i.reporter_role        ?? null,
+      priority:               i.priority,
+      category:               i.category             ?? "other",
+      impact_score:           i.impact_score         ?? 5,
+      tags:                   i.tags                 ?? [],
+      parent_issue_id:        i.parent_issue_id      ?? null,
       status:                 effectiveStatus,
+      raise_count:            i.raise_count          ?? 0,
+      reopen_count:           i.reopen_count         ?? 0,
+      created_at:             i.created_at,
+      staging_at:             i.staging_at           ?? null,
       staging_days_remaining: stagingDaysRemaining,
-      solution_id:            sol?.solution_id     ?? null,
-      solution_description:   sol?.description     ?? null,
-      solution_proposed_by:   sol?.proposed_by     ?? null,
-      solution_created_at:    sol?.created_at      ?? null,
-      solution_votes:         sol?.votes           ?? 0,
-      solution_endorsements:  sol?.endorsements    ?? 0,
-      solution_disregards:    sol?.disregards      ?? 0,
-      observed_week_1:        sol?.observed_week_1 ?? null,
-      observed_week_2:        sol?.observed_week_2 ?? null,
-      observed_week_3:        sol?.observed_week_3 ?? null,
-      all_observed_at:        sol?.all_observed_at ?? null,
-      scratched_solutions:    scratched,
+      closed_at:              i.closed_at            ?? null,
+      resolution_note:        i.resolution_note      ?? null,
+      // flatten current_solution JSONB → same shape the frontend already expects
+      solution_id:            sol?.id                ?? null,
+      solution_description:   sol?.description       ?? null,
+      solution_proposed_by:   sol?.proposed_by       ?? null,
+      solution_created_at:    sol?.created_at        ?? null,
+      solution_votes:         sol?.votes             ?? 0,
+      solution_endorsements:  sol?.endorsements      ?? 0,
+      solution_disregards:    sol?.disregards        ?? 0,
+      observed_week_1:        sol?.observed_week_1   ?? null,
+      observed_week_2:        sol?.observed_week_2   ?? null,
+      observed_week_3:        sol?.observed_week_3   ?? null,
+      all_observed_at:        sol?.all_observed_at   ?? null,
+      scratched_solutions:    scratchedMap.get(i.issue_id) ?? [],
       sub_issues:             subMap.get(i.issue_id) ?? [],
     };
   });

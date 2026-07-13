@@ -100,44 +100,33 @@ async function writeState(state: AlarmState, userId?: string): Promise<void> {
   }
 }
 
-// ── Session windows (permanent config — separate store) ───────────────────────
-const WINDOWS_PREFIX = "session_windows_config:";
+// ── Session windows (permanent config — session_schedule table) ───────────────
+// Append-only: every save is a new row; active schedule = most recent row.
 
 async function readWindows(): Promise<SessionWindow[] | null> {
   const { data } = await supabase
-    .from("comments")
-    .select("content")
-    .like("content", `${WINDOWS_PREFIX}%`)
-    .order("Entry", { ascending: false })
+    .from("session_schedule")
+    .select("windows")
+    .order("set_at", { ascending: false })
     .limit(1)
     .single();
 
   if (!data) return null;
-  try { return JSON.parse(data.content.slice(WINDOWS_PREFIX.length)) as SessionWindow[]; }
+  try { return data.windows as SessionWindow[]; }
   catch { return null; }
 }
 
-async function writeWindows(windows: SessionWindow[] | null, userId?: string): Promise<void> {
-  const content = WINDOWS_PREFIX + JSON.stringify(windows ?? []);
-
-  const { data: existing } = await supabase
-    .from("comments")
-    .select("Entry")
-    .like("content", `${WINDOWS_PREFIX}%`)
-    .order("Entry", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (existing) {
-    const { error } = await supabase.from("comments").update({ content }).eq("Entry", existing.Entry);
-    if (error) throw new Error(error.message);
-  } else {
-    const now = new Date().toISOString();
-    const row: Record<string, unknown> = { content, created_at: now, Entry: now };
-    if (userId) row.user_id = userId;
-    const { error } = await supabase.from("comments").insert(row);
-    if (error) throw new Error(error.message);
-  }
+async function writeWindows(
+  windows: SessionWindow[] | null,
+  setBy?: string,
+  note?: string,
+): Promise<void> {
+  const { error } = await supabase.from("session_schedule").insert({
+    windows: windows ?? [],
+    set_by:  setBy  ?? null,
+    note:    note   ?? null,
+  });
+  if (error) throw new Error(error.message);
 }
 
 function resetThreshold(streak: number): number {
@@ -372,7 +361,7 @@ export async function PUT(req: Request) {
       return resp(next);
     }
 
-    // ── set_session_windows — writes to SEPARATE permanent store, never touches alarm state ──
+    // ── set_session_windows — inserts new row in session_schedule table, never touches alarm state ──
     if (body.action === "set_session_windows") {
       if (!isStrategist) return NextResponse.json({ error: "Strategist role required." }, { status: 403 });
       const raw = body.sessionWindows;
@@ -389,7 +378,9 @@ export async function PUT(req: Request) {
                 : [],
             }))
         : null;
-      await writeWindows(validated, userId);  // alarm state is NOT touched
+      // set_by: prefer email over raw userId for readability in the table
+      const userEmail = ((session as AuthedSession).user as { email?: string } | undefined)?.email;
+      await writeWindows(validated, userEmail ?? userId);
       return resp(current, validated);
     }
 

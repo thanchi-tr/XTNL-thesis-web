@@ -2,8 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth }     from "@/auth";
 import { supabase } from "@/lib/supabase";
 
-/** POST — increment disregard count on the active solution for an issue.
- *  Accessible to any authenticated operator / analyst / strategist / fund_manager. */
+/** POST — disregard the active solution for an issue. */
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ issueId: string }> }
@@ -17,24 +16,34 @@ export async function POST(
     return NextResponse.json({ error: "Insufficient role" }, { status: 403 });
 
   const { issueId } = await params;
+  const actor = (session as any).userEmail ?? "unknown";
 
-  const { data: sol, error: fetchErr } = await supabase
-    .from("issue_solutions")
-    .select("solution_id, disregards")
+  const { data: issue, error: fetchErr } = await supabase
+    .from("issues")
+    .select("current_solution")
     .eq("issue_id", issueId)
-    .eq("solution_status", "active")
     .single();
 
-  if (fetchErr || !sol)
+  if (fetchErr || !issue?.current_solution)
     return NextResponse.json({ error: "No active solution found" }, { status: 404 });
 
-  const { error: updateErr } = await supabase
-    .from("issue_solutions")
-    .update({ disregards: (sol.disregards ?? 0) + 1 })
-    .eq("solution_id", sol.solution_id);
+  const sol = issue.current_solution as Record<string, any>;
 
-  if (updateErr)
-    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  // Append event to the audit log
+  await supabase.from("issue_events").insert({
+    issue_id:   issueId,
+    event_type: "SOLUTION_DISREGARDED",
+    actor,
+    payload:    { solution_id: sol.id, disregarder: actor },
+  });
 
-  return NextResponse.json({ ok: true, disregards: (sol.disregards ?? 0) + 1 });
+  // Increment denormalized counter in current_solution JSONB
+  const disregards = (sol.disregards ?? 0) + 1;
+  const { error: updErr } = await supabase
+    .from("issues")
+    .update({ current_solution: { ...sol, disregards } })
+    .eq("issue_id", issueId);
+
+  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+  return NextResponse.json({ ok: true, disregards });
 }

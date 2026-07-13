@@ -44,8 +44,7 @@ const DEFAULT: AlarmState = {
   completions_toward_reset: 0,
 };
 
-const PREFIX         = "alarm_state:";
-const WINDOWS_PREFIX = "session_windows_config:";
+const PREFIX = "alarm_state:";
 
 // ── Streak helpers ────────────────────────────────────────────────────────────
 
@@ -105,10 +104,14 @@ async function readState(): Promise<AlarmState> {
 }
 
 async function readWindows(): Promise<SessionWindow[] | null> {
-  const { data } = await supabase.from("comments").select("content")
-    .like("content", `${WINDOWS_PREFIX}%`).order("Entry", { ascending: false }).limit(1).single();
+  const { data } = await supabase
+    .from("session_schedule")
+    .select("windows")
+    .order("set_at", { ascending: false })
+    .limit(1)
+    .single();
   if (!data) return null;
-  try { return JSON.parse(data.content.slice(WINDOWS_PREFIX.length)) as SessionWindow[]; }
+  try { return data.windows as SessionWindow[]; }
   catch { return null; }
 }
 
