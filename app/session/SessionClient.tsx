@@ -2753,6 +2753,7 @@ function isInTradingSessionMelbourne(): boolean {
 }
 
 function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange, onEntryChecklistEnabledChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void; onEntryChecklistEnabledChange?: (enabled: boolean) => void }) {
+  type SessionWindow = { start: string; end: string; days: number[] };
   type SrvState = {
     running:                  boolean;
     started_at:               string | null;
@@ -2766,11 +2767,13 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     challenge_cycle:          number;
     challenge_status:         "pending" | "pass" | "fail" | null;
     challenge_expires_at:     string | null;
+    session_windows:          SessionWindow[] | null;
   };
   const SRV0: SrvState = {
     running: false, started_at: null, scheduled_start: null, interval_min: 15, focus_min: 2,
     last_ack_cycle: -1, enforce_focus: false, entry_checklist_enabled: false,
     challenge_number: null, challenge_cycle: -1, challenge_status: null, challenge_expires_at: null,
+    session_windows: null,
   };
 
   const [srv,               setSrv]               = useState<SrvState>(SRV0);
@@ -2798,6 +2801,36 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     return localStorage.getItem("xtnl_trading_session_gate") === "1";
   });
   const tradingSessionModeRef = useRef<boolean>(false);
+
+  const [inBreak, setInBreak] = useState(false);
+
+  function computeInBreak(windows: SessionWindow[] | null): boolean {
+    if (!windows || windows.length === 0) return false;
+    const parts = new Intl.DateTimeFormat("en-AU", {
+      timeZone: "Australia/Melbourne",
+      hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false,
+    }).formatToParts(new Date());
+    const h   = parseInt(parts.find(p => p.type === "hour")?.value   ?? "0", 10);
+    const m   = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
+    const DAY_MAP: Record<string, number> = { Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6 };
+    const dayNum  = DAY_MAP[parts.find(p => p.type === "weekday")?.value ?? "Mon"] ?? 1;
+    const nowMin  = h * 60 + m;
+    const inAny = windows.some(w => {
+      if (w.days && w.days.length > 0 && !w.days.includes(dayNum)) return false;
+      const [sh, sm] = w.start.split(":").map(Number);
+      const [eh, em] = w.end.split(":").map(Number);
+      const s = sh * 60 + sm, e = eh * 60 + em;
+      return s <= e ? (nowMin >= s && nowMin < e) : (nowMin >= s || nowMin < e);
+    });
+    return !inAny;
+  }
+
+  useEffect(() => {
+    setInBreak(computeInBreak(srv.session_windows ?? null));
+    const id = setInterval(() => setInBreak(computeInBreak(srv.session_windows ?? null)), 30_000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srv.session_windows]);
 
   const challengeStartedCycle       = useRef(-1); // which cycle we already called challenge_start for
   const challengeResultNotifiedCycle = useRef(-1); // which cycle we already fired pass/fail toast for
@@ -3563,6 +3596,87 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               </button>
             </div>
 
+            {/* Session Schedule — defined by strategist */}
+            <div style={{
+              borderRadius: 6,
+              background: "var(--card)",
+              border: `1px solid ${inBreak && srv.session_windows?.length ? "rgba(240,160,48,0.25)" : srv.session_windows?.length ? "rgba(0,204,122,0.22)" : "var(--line)"}`,
+              overflow: "hidden",
+              transition: "border-color 0.2s",
+            }}>
+              {/* sub-header */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 10px",
+                borderBottom: "1px solid var(--line)",
+                background: inBreak && srv.session_windows?.length
+                  ? "rgba(240,160,48,0.05)"
+                  : srv.session_windows?.length
+                    ? "rgba(0,204,122,0.04)"
+                    : "transparent",
+              }}>
+                <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: "var(--ink-1)", flex: 1 }}>
+                  Session Schedule
+                </p>
+                <span style={{
+                  fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 3,
+                  background: "rgba(77,156,245,0.12)", color: "var(--blue)", letterSpacing: "0.4px",
+                }}>
+                  STRATEGIST
+                </span>
+                {srv.session_windows && srv.session_windows.length > 0 && (
+                  <span style={{
+                    fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 3, letterSpacing: "0.4px",
+                    background: inBreak ? "rgba(240,160,48,0.14)" : "rgba(0,204,122,0.12)",
+                    color: inBreak ? "var(--amber)" : "var(--green)",
+                  }}>
+                    {inBreak ? "ON BREAK" : "IN SESSION"}
+                  </span>
+                )}
+              </div>
+              {/* window list */}
+              <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 5 }}>
+                {!srv.session_windows || srv.session_windows.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 9.5, color: "var(--ink-4)", fontStyle: "italic" }}>
+                    No schedule set — alarm runs all day
+                  </p>
+                ) : srv.session_windows.map((w, i) => {
+                  const DAY_LBL = ["Su","Mo","Tu","We","Th","Fr","Sa"] as const;
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {/* day pills */}
+                      <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                        {DAY_LBL.map((lbl, d) => {
+                          const on = !w.days || w.days.length === 0 || w.days.includes(d);
+                          return (
+                            <span key={d} style={{
+                              fontSize: 8, fontWeight: 700, width: 16, height: 16,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              borderRadius: 3,
+                              background: on ? "rgba(0,204,122,0.14)" : "rgba(255,255,255,0.03)",
+                              color: on ? "var(--green)" : "var(--ink-4)",
+                              border: `1px solid ${on ? "rgba(0,204,122,0.28)" : "transparent"}`,
+                            }}>{lbl}</span>
+                          );
+                        })}
+                      </div>
+                      <span style={{ fontSize: 10, color: "var(--ink-3)" }}>·</span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--green)" }}>
+                        {w.start}
+                      </span>
+                      <span style={{ fontSize: 9, color: "var(--ink-4)" }}>→</span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "var(--green)" }}>
+                        {w.end}
+                      </span>
+                      <span style={{ fontSize: 8.5, color: "var(--ink-4)", marginLeft: 2 }}>
+                        {w.start > w.end ? "overnight" : "same-day"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Trading Session Gate */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -3580,7 +3694,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                     ? isInTradingSessionMelbourne()
                       ? "Active · within session window"
                       : "Frozen · outside session hours"
-                    : "S1 6–7 PM · S2 8 PM–1 AM · Mon–Fri"}
+                    : "Legacy gate · S1 6–7 PM · S2 8 PM–1 AM"}
                 </p>
               </div>
               <button
@@ -3636,6 +3750,48 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               </p>
             </div>
           </div>
+
+          {/* Break status banner — shown when alarm is paused per schedule */}
+          {running && srv.session_windows && srv.session_windows.length > 0 && inBreak && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "7px 10px", borderRadius: 5,
+              background: "rgba(240,160,48,0.07)",
+              border: "1px solid rgba(240,160,48,0.22)",
+            }}>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <rect x="4" y="2" width="3" height="12" rx="1.2" fill="var(--amber)"/>
+                <rect x="9" y="2" width="3" height="12" rx="1.2" fill="var(--amber)"/>
+              </svg>
+              <div>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "var(--amber)", letterSpacing: "0.04em" }}>
+                  ON BREAK
+                </p>
+                <p style={{ margin: 0, fontSize: 9, color: "var(--ink-3)" }}>
+                  Alarm paused · outside session window
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* In-session indicator — shown when running within a scheduled window */}
+          {running && srv.session_windows && srv.session_windows.length > 0 && !inBreak && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "5px 10px", borderRadius: 5,
+              background: "rgba(0,204,122,0.05)",
+              border: "1px solid rgba(0,204,122,0.15)",
+            }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: "50%",
+                background: "var(--green)", flexShrink: 0,
+                boxShadow: "0 0 5px rgba(0,204,122,0.5)",
+              }} />
+              <p style={{ margin: 0, fontSize: 9.5, color: "var(--green)", fontWeight: 600 }}>
+                Within session window
+              </p>
+            </div>
+          )}
 
           {/* Start / Stop / Schedule */}
           {running ? (

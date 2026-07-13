@@ -13,6 +13,7 @@ export type SessionWindow = {
   days:  number[]; // 0=Sun 1=Mon … 6=Sat; empty = every day
 };
 
+// AlarmState is the runtime blob — session_windows are stored separately.
 export type AlarmState = {
   running:                  boolean;
   started_at:               string | null;
@@ -26,7 +27,6 @@ export type AlarmState = {
   challenge_expires_at:     string | null;
   fail_streak:              number;
   completions_toward_reset: number;
-  session_windows:          SessionWindow[] | null; // null = no break enforcement
 };
 
 const DEFAULT: AlarmState = {
@@ -42,10 +42,10 @@ const DEFAULT: AlarmState = {
   challenge_expires_at:     null,
   fail_streak:              0,
   completions_toward_reset: 0,
-  session_windows:          null,
 };
 
-const PREFIX = "alarm_state:";
+const PREFIX         = "alarm_state:";
+const WINDOWS_PREFIX = "session_windows_config:";
 
 // ── Streak helpers ────────────────────────────────────────────────────────────
 
@@ -64,10 +64,8 @@ function melbourneTime(): string {
   }).format(new Date());
 }
 
-/** Returns true when current Melbourne time is OUTSIDE all configured session windows.
- *  If no windows are configured, always returns false (no break enforcement). */
-function isInSessionBreak(state: AlarmState): boolean {
-  const windows = state.session_windows;
+/** Returns true when current Melbourne time is OUTSIDE all configured session windows. */
+function isInSessionBreak(windows: SessionWindow[] | null): boolean {
   if (!windows || windows.length === 0) return false;
   const parts = new Intl.DateTimeFormat("en-AU", {
     timeZone: "Australia/Melbourne",
@@ -99,8 +97,19 @@ async function readState(): Promise<AlarmState> {
   const { data } = await supabase.from("comments").select("content")
     .like("content", `${PREFIX}%`).order("Entry", { ascending: false }).limit(1).single();
   if (!data) return { ...DEFAULT };
-  try { return { ...DEFAULT, ...JSON.parse(data.content.slice(PREFIX.length)) as Partial<AlarmState> }; }
+  try {
+    const { session_windows: _sw, ...rest } = JSON.parse(data.content.slice(PREFIX.length)) as Partial<AlarmState> & { session_windows?: unknown };
+    return { ...DEFAULT, ...rest };
+  }
   catch { return { ...DEFAULT }; }
+}
+
+async function readWindows(): Promise<SessionWindow[] | null> {
+  const { data } = await supabase.from("comments").select("content")
+    .like("content", `${WINDOWS_PREFIX}%`).order("Entry", { ascending: false }).limit(1).single();
+  if (!data) return null;
+  try { return JSON.parse(data.content.slice(WINDOWS_PREFIX.length)) as SessionWindow[]; }
+  catch { return null; }
 }
 
 async function writeState(state: AlarmState): Promise<void> {
@@ -179,9 +188,9 @@ export async function GET(req: Request) {
   }
 
   try {
-    let state = await readState();
+    let [state, windows] = await Promise.all([readState(), readWindows()]);
 
-    const inBreak = isInSessionBreak(state);
+    const inBreak = isInSessionBreak(windows);
 
     if (state.enforce_focus && !inBreak) {
       const info = currentCycleInfo(state);
@@ -219,7 +228,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ ...strip(state), in_session_break: inBreak });
+    return NextResponse.json({ ...strip(state), session_windows: windows, in_session_break: inBreak });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

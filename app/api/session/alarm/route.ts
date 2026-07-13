@@ -15,6 +15,9 @@ export type SessionWindow = {
   days:  number[]; // 0=Sun 1=Mon … 6=Sat; empty = every day
 };
 
+// AlarmState is the *runtime* alarm blob — never contains session_windows.
+// Session windows are stored separately under WINDOWS_PREFIX so they are
+// completely immune to alarm start/stop/reset lifecycle actions.
 export type AlarmState = {
   running:                  boolean;
   started_at:               string | null;
@@ -30,8 +33,10 @@ export type AlarmState = {
   challenge_expires_at:     string | null;
   fail_streak:              number;
   completions_toward_reset: number;
-  session_windows:          SessionWindow[] | null;
 };
+
+// API response type — alarm state merged with the permanent window config
+export type AlarmResponse = AlarmState & { session_windows: SessionWindow[] | null };
 
 const DEFAULT: AlarmState = {
   running:                  false,
@@ -48,9 +53,9 @@ const DEFAULT: AlarmState = {
   challenge_expires_at:     null,
   fail_streak:              0,
   completions_toward_reset: 0,
-  session_windows:          null,
 };
 
+// ── Alarm state (runtime) ─────────────────────────────────────────────────────
 const PREFIX = "alarm_state:";
 
 async function readState(): Promise<AlarmState> {
@@ -64,7 +69,9 @@ async function readState(): Promise<AlarmState> {
 
   if (!data) return { ...DEFAULT };
   try {
-    return { ...DEFAULT, ...JSON.parse(data.content.slice(PREFIX.length)) as Partial<AlarmState> };
+    // strip legacy session_windows that may live in old blobs
+    const { session_windows: _sw, ...rest } = JSON.parse(data.content.slice(PREFIX.length)) as Partial<AlarmState> & { session_windows?: unknown };
+    return { ...DEFAULT, ...rest };
   } catch {
     return { ...DEFAULT };
   }
@@ -77,6 +84,46 @@ async function writeState(state: AlarmState, userId?: string): Promise<void> {
     .from("comments")
     .select("Entry")
     .like("content", `${PREFIX}%`)
+    .order("Entry", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (existing) {
+    const { error } = await supabase.from("comments").update({ content }).eq("Entry", existing.Entry);
+    if (error) throw new Error(error.message);
+  } else {
+    const now = new Date().toISOString();
+    const row: Record<string, unknown> = { content, created_at: now, Entry: now };
+    if (userId) row.user_id = userId;
+    const { error } = await supabase.from("comments").insert(row);
+    if (error) throw new Error(error.message);
+  }
+}
+
+// ── Session windows (permanent config — separate store) ───────────────────────
+const WINDOWS_PREFIX = "session_windows_config:";
+
+async function readWindows(): Promise<SessionWindow[] | null> {
+  const { data } = await supabase
+    .from("comments")
+    .select("content")
+    .like("content", `${WINDOWS_PREFIX}%`)
+    .order("Entry", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!data) return null;
+  try { return JSON.parse(data.content.slice(WINDOWS_PREFIX.length)) as SessionWindow[]; }
+  catch { return null; }
+}
+
+async function writeWindows(windows: SessionWindow[] | null, userId?: string): Promise<void> {
+  const content = WINDOWS_PREFIX + JSON.stringify(windows ?? []);
+
+  const { data: existing } = await supabase
+    .from("comments")
+    .select("Entry")
+    .like("content", `${WINDOWS_PREFIX}%`)
     .order("Entry", { ascending: false })
     .limit(1)
     .single();
@@ -139,15 +186,19 @@ export async function GET() {
     const session = await auth() as Session | null;
     if (!authed(session)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const state = await readState();
+    const [state, windows] = await Promise.all([readState(), readWindows()]);
     const userId = OPERATOR_USER_ID ?? (((session as AuthedSession).user) as { id?: string } | undefined)?.id;
+
+    // Attach permanent windows to every response
+    const resp = (s: AlarmState): ReturnType<typeof NextResponse.json> =>
+      NextResponse.json({ ...s, session_windows: windows } satisfies AlarmResponse);
 
     // Auto-start: scheduled time has arrived
     if (!state.running && state.scheduled_start && Date.now() >= new Date(state.scheduled_start).getTime()) {
       const next: AlarmState = {
         ...state,
         running:                  true,
-        started_at:               state.scheduled_start,  // honour exact scheduled moment
+        started_at:               state.scheduled_start,
         scheduled_start:          null,
         last_ack_cycle:           -1,
         challenge_number:         null,
@@ -158,7 +209,7 @@ export async function GET() {
         completions_toward_reset: 0,
       };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     // Auto-expire pending challenge
@@ -167,20 +218,20 @@ export async function GET() {
       state.challenge_expires_at &&
       Date.now() > new Date(state.challenge_expires_at).getTime()
     ) {
-      const newStreak  = state.fail_streak + 1;
-      const newState: AlarmState = {
+      const newStreak = state.fail_streak + 1;
+      const next: AlarmState = {
         ...state,
         challenge_status:         "fail",
         last_ack_cycle:           state.challenge_cycle,
         fail_streak:              newStreak,
         completions_toward_reset: 0,
       };
-      await writeState(newState, userId);
+      await writeState(next, userId);
       await submitFailComment(newStreak, userId);
-      return NextResponse.json(newState);
+      return resp(next);
     }
 
-    return NextResponse.json(state);
+    return resp(state);
   } catch (e) {
     console.error("[alarm GET]", e);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });
@@ -210,10 +261,15 @@ export async function PUT(req: Request) {
       sessionWindows?:  unknown;
     };
 
-    const current = await readState();
+    // Read alarm state and permanent windows in parallel
+    const [current, windows] = await Promise.all([readState(), readWindows()]);
+
+    // Helper: attach the current (or updated) windows to every response
+    const resp = (s: AlarmState, w: SessionWindow[] | null = windows): ReturnType<typeof NextResponse.json> =>
+      NextResponse.json({ ...s, session_windows: w } satisfies AlarmResponse);
 
     if (body.action === "start") {
-      if (current.running) return NextResponse.json(current);
+      if (current.running) return resp(current);
       const iMin = typeof body.intervalMin === "number" && body.intervalMin >= 2
         ? Math.min(Math.floor(body.intervalMin), 120) : current.interval_min;
       const fMin = typeof body.focusMin === "number" && body.focusMin >= 1
@@ -234,7 +290,7 @@ export async function PUT(req: Request) {
         completions_toward_reset: 0,
       };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     if (body.action === "schedule") {
@@ -242,33 +298,32 @@ export async function PUT(req: Request) {
       const raw = typeof body.scheduledStart === "string" ? body.scheduledStart : null;
       if (!raw) return NextResponse.json({ error: "scheduledStart required." }, { status: 400 });
       const scheduledMs = new Date(raw).getTime();
-      if (isNaN(scheduledMs) || scheduledMs <= Date.now()) {
+      if (isNaN(scheduledMs) || scheduledMs <= Date.now())
         return NextResponse.json({ error: "scheduledStart must be a valid future ISO timestamp." }, { status: 400 });
-      }
       const iMin = typeof body.intervalMin === "number" && body.intervalMin >= 2
         ? Math.min(Math.floor(body.intervalMin), 120) : current.interval_min;
       const fMin = typeof body.focusMin === "number" && body.focusMin >= 1
         ? Math.min(Math.floor(body.focusMin), iMin - 1) : Math.min(current.focus_min, iMin - 1);
       const next: AlarmState = {
         ...current,
-        running:              false,
-        scheduled_start:      raw,
-        interval_min:         iMin,
-        focus_min:            Math.max(1, fMin),
+        running:         false,
+        scheduled_start: raw,
+        interval_min:    iMin,
+        focus_min:       Math.max(1, fMin),
       };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     if (body.action === "cancel_schedule") {
-      if (!current.scheduled_start) return NextResponse.json(current);
+      if (!current.scheduled_start) return resp(current);
       const next: AlarmState = { ...current, scheduled_start: null };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     if (body.action === "stop") {
-      if (!current.running) return NextResponse.json(current);
+      if (!current.running) return resp(current);
       const next: AlarmState = {
         ...current,
         running:                  false,
@@ -278,33 +333,33 @@ export async function PUT(req: Request) {
         completions_toward_reset: 0,
       };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     if (body.action === "ack") {
       const cycle = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
-      if (current.last_ack_cycle >= cycle) return NextResponse.json(current);
+      if (current.last_ack_cycle >= cycle) return resp(current);
       const next: AlarmState = { ...current, last_ack_cycle: cycle };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     if (body.action === "toggle_enforce_focus") {
       const next: AlarmState = { ...current, enforce_focus: !current.enforce_focus };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     if (body.action === "toggle_entry_checklist") {
       const next: AlarmState = { ...current, entry_checklist_enabled: !current.entry_checklist_enabled };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
     if (body.action === "challenge_start") {
       const cycle           = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
       const challengeNumber = typeof body.challengeNumber === "number" ? Math.floor(body.challengeNumber) : 1;
-      if (current.challenge_cycle >= cycle) return NextResponse.json(current); // already started
+      if (current.challenge_cycle >= cycle) return resp(current);
       const expiresAt = new Date(Date.now() + 30_000).toISOString();
       const next: AlarmState = {
         ...current,
@@ -314,13 +369,14 @@ export async function PUT(req: Request) {
         challenge_expires_at: expiresAt,
       };
       await writeState(next, userId);
-      return NextResponse.json(next);
+      return resp(next);
     }
 
+    // ── set_session_windows — writes to SEPARATE permanent store, never touches alarm state ──
     if (body.action === "set_session_windows") {
       if (!isStrategist) return NextResponse.json({ error: "Strategist role required." }, { status: 403 });
       const raw = body.sessionWindows;
-      const windows: SessionWindow[] | null = Array.isArray(raw)
+      const validated: SessionWindow[] | null = Array.isArray(raw)
         ? (raw as unknown[])
             .filter((w): w is { start: string; end: string } =>
               typeof (w as any)?.start === "string" && typeof (w as any)?.end === "string"
@@ -333,9 +389,8 @@ export async function PUT(req: Request) {
                 : [],
             }))
         : null;
-      const next: AlarmState = { ...current, session_windows: windows };
-      await writeState(next, userId);
-      return NextResponse.json(next);
+      await writeWindows(validated, userId);  // alarm state is NOT touched
+      return resp(current, validated);
     }
 
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
