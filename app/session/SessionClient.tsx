@@ -2752,6 +2752,181 @@ function isInTradingSessionMelbourne(): boolean {
   return (hour >= 18 && hour < 19) || hour >= 20 || hour < 1;
 }
 
+// Returns seconds elapsed since the last session window ended today (Melbourne time),
+// or null if still inside a session, if a future session exists today, or no windows are set.
+function secondsSinceLastSessionEnd(
+  windows: Array<{ start: string; end: string; days: number[] }> | null
+): number | null {
+  if (!windows || windows.length === 0) return null;
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Melbourne",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short", hour12: false,
+  }).formatToParts(new Date());
+  const h      = parseInt(parts.find(p => p.type === "hour")?.value   ?? "0", 10);
+  const m      = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
+  const s      = parseInt(parts.find(p => p.type === "second")?.value ?? "0", 10);
+  const dayStr = parts.find(p => p.type === "weekday")?.value ?? "Mon";
+  const DAY: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const ourDow = DAY[dayStr] ?? 1;
+  const nowSec = h * 3600 + m * 60 + s;
+
+  const today = windows.filter(w => !w.days || w.days.length === 0 || w.days.includes(ourDow));
+  if (today.length === 0) return null;
+
+  // Still inside a session window → not after last session
+  const inAny = today.some(w => {
+    const [sh, sm] = w.start.split(":").map(Number);
+    const [eh, em] = w.end.split(":").map(Number);
+    return nowSec >= sh * 3600 + sm * 60 && nowSec < eh * 3600 + em * 60;
+  });
+  if (inAny) return null;
+
+  // A future session exists today → not the last break yet
+  const hasUpcoming = today.some(w => {
+    const [sh, sm] = w.start.split(":").map(Number);
+    return sh * 3600 + sm * 60 > nowSec;
+  });
+  if (hasUpcoming) return null;
+
+  // Seconds elapsed since the latest window end time today
+  const maxEndSec = Math.max(...today.map(w => {
+    const [eh, em] = w.end.split(":").map(Number);
+    return eh * 3600 + em * 60;
+  }));
+  return nowSec - maxEndSec;
+}
+
+function SessionFinishOverlay({ onDone }: { onDone: () => void }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Fade in on next frame so the transition fires
+    const raf = requestAnimationFrame(() => setVisible(true));
+    const t1  = setTimeout(() => setVisible(false), 5_400);
+    const t2  = setTimeout(onDone, 6_200);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const melb = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Melbourne",
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  }).format(new Date());
+
+  return createPortal(
+    <div
+      onClick={() => { setVisible(false); setTimeout(onDone, 800); }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(2,11,20,0.96)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        opacity: visible ? 1 : 0,
+        transition: "opacity 0.8s ease",
+        cursor: "pointer",
+      }}
+    >
+      <style>{`
+        @keyframes xtnl-sf-expand {
+          0%   { transform: scale(0.15); opacity: 1; }
+          80%  { opacity: 0.2; }
+          100% { transform: scale(1); opacity: 0; }
+        }
+        @keyframes xtnl-sf-pulse {
+          0%, 100% { transform: scale(1);    opacity: 0.15; }
+          50%       { transform: scale(1.07); opacity: 0.32; }
+        }
+        @keyframes xtnl-sf-stamp {
+          0%   { transform: scale(0.35); opacity: 0; }
+          60%  { transform: scale(1.1);  opacity: 1; }
+          80%  { transform: scale(0.95); }
+          100% { transform: scale(1);    opacity: 1; }
+        }
+        @keyframes xtnl-sf-up {
+          0%   { opacity: 0; transform: translateY(14px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* One-shot expanding rings (entrance effect) */}
+      {[1, 2, 3].map(i => (
+        <div key={`exp-${i}`} style={{
+          position: "absolute",
+          width: `${i * 22 + 18}vmin`, height: `${i * 22 + 18}vmin`,
+          borderRadius: "50%",
+          border: "1.5px solid rgba(0,204,122,0.75)",
+          animation: `xtnl-sf-expand 1.1s ease-out ${(i - 1) * 0.18}s both`,
+          pointerEvents: "none",
+        }} />
+      ))}
+
+      {/* Ambient pulsing rings */}
+      {[90, 150, 210].map((size, i) => (
+        <div key={`pulse-${size}`} style={{
+          position: "absolute",
+          width: size, height: size,
+          borderRadius: "50%",
+          border: "1px solid rgba(0,204,122,0.18)",
+          animation: `xtnl-sf-pulse ${2 + i * 0.5}s ease-in-out ${i * 0.3}s infinite`,
+          pointerEvents: "none",
+        }} />
+      ))}
+
+      {/* Logo stamp */}
+      <div style={{ marginBottom: 24, animation: "xtnl-sf-stamp 0.65s cubic-bezier(0.34,1.56,0.64,1) 0.1s both" }}>
+        <svg width="60" height="60" viewBox="0 0 60 60">
+          <circle cx="30" cy="30" r="29" stroke="rgba(0,204,122,0.2)" strokeWidth="1" fill="none"/>
+          <circle cx="30" cy="30" r="22" stroke="rgba(0,204,122,0.12)" strokeWidth="1" fill="none"/>
+          <text x="30" y="35" textAnchor="middle" fontSize="13" fontWeight="700"
+                fontFamily="monospace" letterSpacing="1.5" fill="rgba(0,204,122,0.9)">
+            XTNL
+          </text>
+        </svg>
+      </div>
+
+      {/* "SESSION" */}
+      <p style={{
+        margin: 0, lineHeight: 1,
+        fontSize: "clamp(26px, 5vw, 44px)", fontWeight: 700,
+        color: "rgba(220,235,255,0.92)", letterSpacing: "-0.02em",
+        animation: "xtnl-sf-up 0.5s ease 0.45s both",
+      }}>
+        SESSION
+      </p>
+
+      {/* "COMPLETE" */}
+      <p style={{
+        margin: "2px 0 18px", lineHeight: 1,
+        fontSize: "clamp(26px, 5vw, 44px)", fontWeight: 700,
+        color: "var(--green, #00cc7a)", letterSpacing: "-0.02em",
+        animation: "xtnl-sf-up 0.5s ease 0.58s both",
+      }}>
+        COMPLETE
+      </p>
+
+      {/* Date */}
+      <p style={{
+        margin: 0, fontSize: 12.5,
+        color: "rgba(160,190,220,0.45)",
+        letterSpacing: "0.06em", fontFamily: "var(--font-mono, monospace)",
+        animation: "xtnl-sf-up 0.5s ease 0.72s both",
+      }}>
+        {melb}
+      </p>
+
+      {/* Dismiss hint */}
+      <p style={{
+        position: "absolute", bottom: 28, margin: 0,
+        fontSize: 10.5, color: "rgba(160,190,220,0.28)",
+        letterSpacing: "0.12em", fontFamily: "var(--font-mono, monospace)",
+        animation: "xtnl-sf-up 0.5s ease 1.1s both",
+      }}>
+        TAP ANYWHERE TO DISMISS
+      </p>
+    </div>,
+    document.body
+  );
+}
+
 function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeStatusChange, onEntryChecklistEnabledChange }: { showToast: ShowToast; onRunningChange?: (r: boolean) => void; isAnalystMode?: boolean; onChallengeStatusChange?: (status: string | null) => void; onEntryChecklistEnabledChange?: (enabled: boolean) => void }) {
   type SessionWindow = { start: string; end: string; days: number[] };
   type SrvState = {
@@ -2831,6 +3006,38 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srv.session_windows]);
+
+  // ── Session finish animation ───────────────────────────────────────────────
+  const sessionFinishShownDateRef = useRef<string>("");
+  const finishTimerRef            = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sessionDayFinished, setSessionDayFinished] = useState(false);
+
+  useEffect(() => {
+    function check() {
+      if (!srv.running) return;
+      const sec = secondsSinceLastSessionEnd(srv.session_windows ?? null);
+      if (sec === null) return;
+      const today = new Date().toDateString();
+      if (sessionFinishShownDateRef.current === today) return;
+      if (sec >= 30) {
+        sessionFinishShownDateRef.current = today;
+        setSessionDayFinished(true);
+      } else if (sec >= 0) {
+        if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
+        finishTimerRef.current = setTimeout(() => {
+          sessionFinishShownDateRef.current = new Date().toDateString();
+          setSessionDayFinished(true);
+        }, (30 - sec) * 1_000);
+      }
+    }
+    check();
+    const id = setInterval(check, 10_000);
+    return () => {
+      clearInterval(id);
+      if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srv.session_windows, srv.running]);
 
   const challengeStartedCycle       = useRef(-1); // which cycle we already called challenge_start for
   const challengeResultNotifiedCycle = useRef(-1); // which cycle we already fired pass/fail toast for
@@ -3906,6 +4113,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
           )}
         </div>
       </div>
+
+      {sessionDayFinished && typeof document !== "undefined" && createPortal(
+        <SessionFinishOverlay onDone={() => setSessionDayFinished(false)} />,
+        document.body
+      )}
     </>
   );
 }
