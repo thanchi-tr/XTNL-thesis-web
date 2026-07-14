@@ -1851,7 +1851,7 @@ function SnapshotTable({
 
 /* ─── Session Builder ─────────────────────────────────────── */
 
-function SessionBuilder({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
+function SessionBuilder({ hourly, compact = false }: { hourly: Record<string, HourlyRow[]>; compact?: boolean }) {
   const keys = Object.keys(hourly);
   const [dataset,  setDataset]  = useState(keys[0] ?? "");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -1899,7 +1899,7 @@ function SessionBuilder({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
   const maxCum = Math.max(0.01, ...cums);
   const minCum = Math.min(-0.01, ...cums);
 
-  const W = 720, H = 260, PL = 8, PR = 52, PT = 16, PB = 32;
+  const W = 720, H = compact ? 130 : 260, PL = 8, PR = 52, PT = compact ? 8 : 16, PB = compact ? 20 : 32;
   const iW = W - PL - PR, iH = H - PT - PB;
   const bW = iW / 24;
   const BAR_FRAC = 0.58, DIV = 10;
@@ -1963,20 +1963,35 @@ function SessionBuilder({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
       </div>
 
       {/* Row 2: Session stat summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
-        {([
-          ["HOURS",        String(selected.size),                                                      "var(--ink-0)"],
-          ["TRADES (n)",   String(sessionCount),                                                       "var(--ink-1)"],
-          ["WTD EXPECT.",  `${sessionExpect >= 0 ? "+" : ""}${sessionExpect.toFixed(3)} R`,            sessionExpect  > 0 ? "var(--green)" : "var(--red)"],
-          ["WTD WIN RATE", `${sessionWinRate.toFixed(1)}%`,                                            sessionWinRate > 50 ? "var(--green)" : "var(--amber)"],
-          ["PROJECTED ∑R", `${sessionTotalR >= 0 ? "+" : ""}${sessionTotalR.toFixed(2)}`,             sessionTotalR  > 0 ? "var(--green)" : "var(--red)"],
-        ] as [string, string, string][]).map(([label, value, color]) => (
-          <div key={label} style={{ background: "var(--raised)", border: "1px solid var(--line)", borderRadius: 7, padding: "12px 14px" }}>
-            <div className="mono" style={{ fontSize: 7.5, letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 6 }}>{label}</div>
-            <div className="mono" style={{ fontSize: 18, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-          </div>
-        ))}
-      </div>
+      {compact ? (
+        <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "4px 0 2px" }}>
+          <span className="mono" style={{ fontSize: 8.5, color: "var(--ink-3)" }}>{selected.size}h · {sessionCount} trades</span>
+          <span className="mono" style={{ fontSize: 9, fontWeight: 700, color: sessionExpect >= 0 ? "var(--green)" : "var(--red)" }}>
+            {sessionExpect >= 0 ? "+" : ""}{sessionExpect.toFixed(3)} R
+          </span>
+          <span className="mono" style={{ fontSize: 8.5, color: sessionWinRate > 50 ? "var(--green)" : "var(--amber)" }}>
+            {sessionWinRate.toFixed(1)}% WR
+          </span>
+          <span className="mono" style={{ fontSize: 8.5, color: sessionTotalR >= 0 ? "var(--green)" : "var(--red)" }}>
+            ∑{sessionTotalR >= 0 ? "+" : ""}{sessionTotalR.toFixed(2)}R
+          </span>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+          {([
+            ["HOURS",        String(selected.size),                                                      "var(--ink-0)"],
+            ["TRADES (n)",   String(sessionCount),                                                       "var(--ink-1)"],
+            ["WTD EXPECT.",  `${sessionExpect >= 0 ? "+" : ""}${sessionExpect.toFixed(3)} R`,            sessionExpect  > 0 ? "var(--green)" : "var(--red)"],
+            ["WTD WIN RATE", `${sessionWinRate.toFixed(1)}%`,                                            sessionWinRate > 50 ? "var(--green)" : "var(--amber)"],
+            ["PROJECTED ∑R", `${sessionTotalR >= 0 ? "+" : ""}${sessionTotalR.toFixed(2)}`,             sessionTotalR  > 0 ? "var(--green)" : "var(--red)"],
+          ] as [string, string, string][]).map(([label, value, color]) => (
+            <div key={label} style={{ background: "var(--raised)", border: "1px solid var(--line)", borderRadius: 7, padding: "12px 14px" }}>
+              <div className="mono" style={{ fontSize: 7.5, letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 6 }}>{label}</div>
+              <div className="mono" style={{ fontSize: 18, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Row 3: Artifact — Expectancy bars + cumulative R trajectory */}
       <div style={{ background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, overflow: "hidden" }}>
@@ -2091,28 +2106,29 @@ function SessionBuilder({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
                   background: inSel && row ? `${col}18` : "rgba(255,255,255,0.025)",
                   border: `1px solid ${inSel && row ? col + "50" : "rgba(255,255,255,0.07)"}`,
                   borderTop: inSel && row ? `2px solid ${col}` : "2px solid transparent",
-                  borderRadius: 6, padding: "10px 6px 8px",
+                  borderRadius: compact ? 4 : 6,
+                  padding: compact ? "4px 3px 3px" : "10px 6px 8px",
                   cursor: row ? "pointer" : "default",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: compact ? 1 : 3,
                   opacity: row ? 1 : 0.3,
-                  boxShadow: sig && inSel ? `0 0 0 1px ${col}50` : "none",
+                  boxShadow: !compact && sig && inSel ? `0 0 0 1px ${col}50` : "none",
                   transition: "background 0.15s, border-color 0.15s",
                 }}>
-                <span className="mono" style={{ fontSize: 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
+                <span className="mono" style={{ fontSize: compact ? 7 : 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
                   {String(h).padStart(2, "0")}h
                 </span>
                 {row ? (
                   <>
-                    <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
+                    <span className="mono" style={{ fontSize: compact ? 10 : 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
                       {row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(2)}
                     </span>
-                    <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>
-                    {sig ? (
+                    {!compact && <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>}
+                    {!compact && (sig ? (
                       <span style={{ fontSize: 7.5, color: col, fontFamily: "var(--font-mono)", fontWeight: 700, letterSpacing: "0.04em" }}>★ sig</span>
-                    ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>}
+                    ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>)}
                   </>
                 ) : (
-                  <span style={{ fontSize: 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
+                  <span style={{ fontSize: compact ? 7 : 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
                 )}
               </button>
             );
@@ -2137,28 +2153,29 @@ function SessionBuilder({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
                   background: inSel && row ? `${col}18` : "rgba(255,255,255,0.025)",
                   border: `1px solid ${inSel && row ? col + "50" : "rgba(255,255,255,0.07)"}`,
                   borderTop: inSel && row ? `2px solid ${col}` : "2px solid transparent",
-                  borderRadius: 6, padding: "10px 6px 8px",
+                  borderRadius: compact ? 4 : 6,
+                  padding: compact ? "4px 3px 3px" : "10px 6px 8px",
                   cursor: row ? "pointer" : "default",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: compact ? 1 : 3,
                   opacity: row ? 1 : 0.3,
-                  boxShadow: sig && inSel ? `0 0 0 1px ${col}50` : "none",
+                  boxShadow: !compact && sig && inSel ? `0 0 0 1px ${col}50` : "none",
                   transition: "background 0.15s, border-color 0.15s",
                 }}>
-                <span className="mono" style={{ fontSize: 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
+                <span className="mono" style={{ fontSize: compact ? 7 : 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
                   {String(h).padStart(2, "0")}h
                 </span>
                 {row ? (
                   <>
-                    <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
+                    <span className="mono" style={{ fontSize: compact ? 10 : 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
                       {row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(2)}
                     </span>
-                    <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>
-                    {sig ? (
+                    {!compact && <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>}
+                    {!compact && (sig ? (
                       <span style={{ fontSize: 7.5, color: col, fontFamily: "var(--font-mono)", fontWeight: 700, letterSpacing: "0.04em" }}>★ sig</span>
-                    ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>}
+                    ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>)}
                   </>
                 ) : (
-                  <span style={{ fontSize: 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
+                  <span style={{ fontSize: compact ? 7 : 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
                 )}
               </button>
             );
@@ -2167,7 +2184,7 @@ function SessionBuilder({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
       </div>
 
       {/* Row 5: Top hours ranked */}
-      {sessionRows.length > 0 && (
+      {!compact && sessionRows.length > 0 && (
         <div style={{ background: "var(--raised)", border: "1px solid var(--line)", borderRadius: 7, padding: "14px 16px" }}>
           <div className="mono" style={{ fontSize: 8, letterSpacing: "0.12em", color: "var(--ink-3)", marginBottom: 12 }}>TOP HOURS BY EXPECTANCY</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px 24px" }}>
@@ -2728,192 +2745,231 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
         </span>
       </div>
 
-      {/* Inline Session Builder — hourly edge analysis above the schedule */}
-      {Object.keys(hourly).length > 0 && (
-        <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid var(--line)" }}>
-          <SessionBuilder hourly={hourly} />
-        </div>
-      )}
+      {/* Two-column body: left = compact edge chart, right = schedule (primary) */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: Object.keys(hourly).length > 0 ? "minmax(0,1fr) minmax(0,1.45fr)" : "1fr",
+        alignItems: "start",
+      }}>
 
-      <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {error && (
-          <div style={{ fontSize: 11, color: "var(--red)", padding: "6px 10px", borderRadius: 5, background: "rgba(240,58,87,0.08)" }}>
-            {error}
+        {/* Left — compact hourly edge chart */}
+        {Object.keys(hourly).length > 0 && (
+          <div style={{ padding: "14px 16px", borderRight: "1px solid var(--line)" }}>
+            <div className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)", marginBottom: 10 }}>
+              HOURLY EDGE ANALYSIS
+            </div>
+            <SessionBuilder hourly={hourly} compact />
           </div>
         )}
 
-        {/* Existing windows */}
-        {loading ? (
-          <div style={{ fontSize: 11, color: "var(--ink-3)" }}>Loading…</div>
-        ) : windows.length === 0 ? (
-          <div style={{ fontSize: 11, color: "var(--ink-3)", fontStyle: "italic" }}>
-            No windows set — alarm runs continuously with no break enforcement
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {windows.map((w, i) => (
-              <div key={i} style={{
-                display: "grid",
-                gridTemplateColumns: "auto 1fr auto",
-                alignItems: "center", gap: 12,
-                padding: "7px 12px", borderRadius: 6,
-                border: "1px solid var(--line)",
-                background: "var(--sub)",
+        {/* Right — session schedule (primary focus) */}
+        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="mono" style={{ fontSize: 10, letterSpacing: "0.14em", color: "var(--ink-0)", fontWeight: 700 }}>
+              ACTIVE WINDOWS
+            </span>
+            {!loading && windows.length > 0 && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 4,
+                background: "rgba(0,204,122,0.14)", color: "var(--green)",
               }}>
-                {/* Day pills */}
-                <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-                  {DAY_LABELS.map((lbl, d) => {
-                    const active = !w.days || w.days.length === 0 || w.days.includes(d);
-                    return (
-                      <span key={d} style={{
-                        fontSize: 9, fontWeight: 700, width: 20, height: 20,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        borderRadius: 4,
-                        background: active ? "rgba(0,204,122,0.14)" : "rgba(255,255,255,0.03)",
-                        color: active ? "var(--green)" : "var(--ink-3)",
-                        border: `1px solid ${active ? "rgba(0,204,122,0.28)" : "transparent"}`,
-                      }}>
-                        {lbl}
-                      </span>
-                    );
-                  })}
-                </div>
-
-                {/* Times + projected stats */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className="mono" style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>
-                      {w.start}
-                    </span>
-                    <span style={{ fontSize: 10, color: "var(--ink-3)" }}>→</span>
-                    <span className="mono" style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>
-                      {w.end}
-                    </span>
-                    <span style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                      {w.start > w.end ? "overnight" : "same-day"}
-                    </span>
-                  </div>
-                  {firstHourlyRows.length > 0 && (() => {
-                    const s = windowStats(w.start, w.end, firstHourlyRows);
-                    if (!s) return null;
-                    return (
-                      <span className="mono" style={{ fontSize: 9, color: s.expect >= 0 ? "var(--green)" : "var(--red)", opacity: 0.8 }}>
-                        {s.expect >= 0 ? "+" : ""}{s.expect.toFixed(3)}R exp · {s.winRate.toFixed(1)}% WR · {s.count} trades
-                      </span>
-                    );
-                  })()}
-                </div>
-
-                <button
-                  onClick={() => removeWindow(i)}
-                  disabled={saving}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", fontSize: 16, lineHeight: 1, padding: "0 2px" }}
-                  title="Remove"
-                >×</button>
-              </div>
-            ))}
+                {windows.length}
+              </span>
+            )}
           </div>
-        )}
 
-        {/* ── Composer ── */}
-        <div style={{
-          padding: "12px 14px", borderRadius: 6,
-          border: "1px solid var(--line)",
-          background: "var(--sub)",
-          display: "flex", flexDirection: "column", gap: 10,
-        }}>
-          {/* Row 1 — day toggles */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--ink-3)", minWidth: 32 }}>DAYS</span>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {DAY_LABELS.map((lbl, d) => {
-                const on = newDays.includes(d);
+          {error && (
+            <div style={{ fontSize: 11, color: "var(--red)", padding: "6px 10px", borderRadius: 5, background: "rgba(240,58,87,0.08)" }}>
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div style={{ fontSize: 11, color: "var(--ink-3)" }}>Loading…</div>
+          ) : windows.length === 0 ? (
+            <div style={{ fontSize: 11, color: "var(--ink-3)", fontStyle: "italic", padding: "4px 0" }}>
+              No windows set — alarm runs continuously
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {windows.map((w, i) => {
+                const s = firstHourlyRows.length > 0 ? windowStats(w.start, w.end, firstHourlyRows) : null;
+                const edgeColor = s ? (s.expect >= 0 ? "#00cc7a" : "#f03a57") : "rgba(255,255,255,0.15)";
                 return (
-                  <button
-                    key={d}
-                    onClick={() => toggleDay(d)}
-                    style={{
-                      fontSize: 10, fontWeight: 700, width: 28, height: 28,
-                      borderRadius: 5, cursor: "pointer", flexShrink: 0,
-                      border: `1px solid ${on ? "rgba(0,204,122,0.35)" : "var(--line)"}`,
-                      background: on ? "rgba(0,204,122,0.12)" : "transparent",
-                      color: on ? "var(--green)" : "var(--ink-2)",
-                      transition: "border-color 0.1s, background 0.1s, color 0.1s",
-                    }}
-                  >
-                    {lbl}
-                  </button>
+                  <div key={i} style={{
+                    position: "relative",
+                    padding: "12px 36px 10px 16px",
+                    borderRadius: 6,
+                    border: "1px solid var(--line)",
+                    borderLeft: `3px solid ${edgeColor}`,
+                    background: s && s.expect >= 0
+                      ? "rgba(0,204,122,0.04)"
+                      : s && s.expect < 0
+                      ? "rgba(240,58,87,0.04)"
+                      : "var(--sub)",
+                  }}>
+                    <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+                      {DAY_LABELS.map((lbl, d) => {
+                        const active = !w.days || w.days.length === 0 || w.days.includes(d);
+                        return (
+                          <span key={d} style={{
+                            fontSize: 9, fontWeight: 700, width: 22, height: 18,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            borderRadius: 3,
+                            background: active ? "rgba(0,204,122,0.14)" : "rgba(255,255,255,0.03)",
+                            color: active ? "var(--green)" : "var(--ink-3)",
+                            border: `1px solid ${active ? "rgba(0,204,122,0.28)" : "transparent"}`,
+                          }}>
+                            {lbl}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                      <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: "var(--green)", lineHeight: 1 }}>
+                        {w.start}
+                      </span>
+                      <span style={{ fontSize: 14, color: "var(--ink-3)" }}>→</span>
+                      <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: "var(--green)", lineHeight: 1 }}>
+                        {w.end}
+                      </span>
+                      <span style={{ fontSize: 9, color: "var(--ink-3)", marginLeft: 2 }}>
+                        {w.start > w.end ? "overnight" : "same-day"}
+                      </span>
+                    </div>
+                    {s ? (
+                      <div style={{ marginTop: 8, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: s.expect >= 0 ? "var(--green)" : "var(--red)" }}>
+                          {s.expect >= 0 ? "+" : ""}{s.expect.toFixed(3)}R
+                        </span>
+                        <span style={{ fontSize: 9, color: "var(--ink-3)" }}>exp ·</span>
+                        <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: s.winRate > 50 ? "var(--green)" : "var(--amber)" }}>
+                          {s.winRate.toFixed(1)}%
+                        </span>
+                        <span style={{ fontSize: 9, color: "var(--ink-3)" }}>WR ·</span>
+                        <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)" }}>
+                          {s.count} trades
+                        </span>
+                      </div>
+                    ) : <div style={{ marginTop: 6 }} />}
+                    <button
+                      onClick={() => removeWindow(i)}
+                      disabled={saving}
+                      style={{
+                        position: "absolute", top: 8, right: 10,
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "var(--ink-3)", fontSize: 16, lineHeight: 1, padding: "2px 4px",
+                        borderRadius: 3, transition: "color 0.1s",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.color = "var(--ink-1)")}
+                      onMouseLeave={e => (e.currentTarget.style.color = "var(--ink-3)")}
+                      title="Remove"
+                    >×</button>
+                  </div>
                 );
               })}
             </div>
-            <button
-              onClick={() => setNewDays(newDays.length === 7 ? [] : [0,1,2,3,4,5,6])}
-              style={{
-                fontSize: 9, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-                border: "1px solid var(--line)", background: "none",
-                color: "var(--ink-3)",
-              }}
-            >
-              {newDays.length === 7 ? "None" : "All"}
-            </button>
-          </div>
+          )}
 
-          {/* Row 2 — time fields + actions */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--ink-3)" }}>START</span>
-            <input
-              type="text"
-              value={newStart}
-              onChange={e => setNewStart(e.target.value)}
-              placeholder="HH:MM"
-              maxLength={5}
-              style={timeInp}
-            />
-            <span style={{ fontSize: 10, color: "var(--ink-3)" }}>→</span>
-            <span className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--ink-3)" }}>END</span>
-            <input
-              type="text"
-              value={newEnd}
-              onChange={e => setNewEnd(e.target.value)}
-              placeholder="HH:MM"
-              maxLength={5}
-              style={timeInp}
-            />
-            {timeOk && (
-              <span style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                {newStart > newEnd ? "overnight" : "same-day"}
-              </span>
-            )}
-            {timeOk && firstHourlyRows.length > 0 && (() => {
-              const s = windowStats(newStart, newEnd, firstHourlyRows);
-              return s ? (
-                <span className="mono" style={{ fontSize: 9, color: s.expect >= 0 ? "var(--green)" : "var(--red)" }}>
-                  {s.expect >= 0 ? "+" : ""}{s.expect.toFixed(3)}R · {s.winRate.toFixed(1)}% WR · {s.count}n
-                </span>
-              ) : null;
-            })()}
-            <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+          {/* Composer */}
+          <div style={{
+            padding: "12px 14px", borderRadius: 6,
+            border: "1px solid var(--line)",
+            background: "var(--sub)",
+            display: "flex", flexDirection: "column", gap: 10,
+          }}>
+            <span className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)" }}>NEW WINDOW</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--ink-3)", minWidth: 32 }}>DAYS</span>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {DAY_LABELS.map((lbl, d) => {
+                  const on = newDays.includes(d);
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => toggleDay(d)}
+                      style={{
+                        fontSize: 10, fontWeight: 700, width: 28, height: 28,
+                        borderRadius: 5, cursor: "pointer", flexShrink: 0,
+                        border: `1px solid ${on ? "rgba(0,204,122,0.35)" : "var(--line)"}`,
+                        background: on ? "rgba(0,204,122,0.12)" : "transparent",
+                        color: on ? "var(--green)" : "var(--ink-2)",
+                        transition: "border-color 0.1s, background 0.1s, color 0.1s",
+                      }}
+                    >
+                      {lbl}
+                    </button>
+                  );
+                })}
+              </div>
               <button
-                onClick={addWindow}
-                disabled={saving || !timeOk || newDays.length === 0}
-                className="btn btn-primary"
+                onClick={() => setNewDays(newDays.length === 7 ? [] : [0,1,2,3,4,5,6])}
                 style={{
-                  fontSize: 11, padding: "5px 14px",
-                  opacity: (saving || !timeOk || newDays.length === 0) ? 0.35 : 1,
+                  fontSize: 9, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+                  border: "1px solid var(--line)", background: "none",
+                  color: "var(--ink-3)",
                 }}
               >
-                {saving ? "Saving…" : "+ Add window"}
+                {newDays.length === 7 ? "None" : "All"}
               </button>
-              {windows.length > 0 && (
-                <button
-                  onClick={() => save([])}
-                  disabled={saving}
-                  className="btn btn-ghost"
-                  style={{ fontSize: 11, padding: "5px 12px" }}
-                >
-                  Clear all
-                </button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--ink-3)" }}>START</span>
+              <input
+                type="text"
+                value={newStart}
+                onChange={e => setNewStart(e.target.value)}
+                placeholder="HH:MM"
+                maxLength={5}
+                style={timeInp}
+              />
+              <span style={{ fontSize: 10, color: "var(--ink-3)" }}>→</span>
+              <span className="mono" style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--ink-3)" }}>END</span>
+              <input
+                type="text"
+                value={newEnd}
+                onChange={e => setNewEnd(e.target.value)}
+                placeholder="HH:MM"
+                maxLength={5}
+                style={timeInp}
+              />
+              {timeOk && (
+                <span style={{ fontSize: 9, color: "var(--ink-3)" }}>
+                  {newStart > newEnd ? "overnight" : "same-day"}
+                </span>
               )}
+              {timeOk && firstHourlyRows.length > 0 && (() => {
+                const s = windowStats(newStart, newEnd, firstHourlyRows);
+                return s ? (
+                  <span className="mono" style={{ fontSize: 9, fontWeight: 600, color: s.expect >= 0 ? "var(--green)" : "var(--red)" }}>
+                    {s.expect >= 0 ? "+" : ""}{s.expect.toFixed(3)}R · {s.winRate.toFixed(1)}% WR · {s.count}n
+                  </span>
+                ) : null;
+              })()}
+              <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                <button
+                  onClick={addWindow}
+                  disabled={saving || !timeOk || newDays.length === 0}
+                  className="btn btn-primary"
+                  style={{
+                    fontSize: 11, padding: "5px 14px",
+                    opacity: (saving || !timeOk || newDays.length === 0) ? 0.35 : 1,
+                  }}
+                >
+                  {saving ? "Saving…" : "+ Add window"}
+                </button>
+                {windows.length > 0 && (
+                  <button
+                    onClick={() => save([])}
+                    disabled={saving}
+                    className="btn btn-ghost"
+                    style={{ fontSize: 11, padding: "5px 12px" }}
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
