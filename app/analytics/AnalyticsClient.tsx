@@ -1851,9 +1851,21 @@ function SnapshotTable({
 
 /* ─── Session Builder ─────────────────────────────────────── */
 
-function SessionBuilder({ hourly, compact = false }: { hourly: Record<string, HourlyRow[]>; compact?: boolean }) {
+function SessionBuilder({
+  hourly,
+  compact = false,
+  dataset: externalDataset,
+  onDatasetChange,
+}: {
+  hourly: Record<string, HourlyRow[]>;
+  compact?: boolean;
+  dataset?: string;
+  onDatasetChange?: (d: string) => void;
+}) {
   const keys = Object.keys(hourly);
-  const [dataset,  setDataset]  = useState(keys[0] ?? "");
+  const [localDataset, setLocalDataset] = useState(keys[0] ?? "");
+  const dataset  = externalDataset !== undefined ? externalDataset : localDataset;
+  const setDataset = useCallback((d: string) => { setLocalDataset(d); onDatasetChange?.(d); }, [onDatasetChange]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const rows    = useMemo(() => hourly[dataset] ?? [], [hourly, dataset]);
@@ -1923,44 +1935,81 @@ function SessionBuilder({ hourly, compact = false }: { hourly: Record<string, Ho
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* Row 1: Dataset tabs + quick-select filters */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        {/* Dataset tabs */}
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", flex: 1 }}>
-          {keys.map(k => (
-            <button key={k} onClick={() => setDataset(k)} className="mono"
-              style={{ padding: "5px 12px", borderRadius: 5, cursor: "pointer",
-                fontSize: 9, letterSpacing: "0.07em",
-                background: dataset === k ? "rgba(77,156,245,0.12)" : "transparent",
-                border: `1px solid ${dataset === k ? "rgba(77,156,245,0.35)" : "var(--line)"}`,
-                color: dataset === k ? "#4d9cf5" : "var(--ink-3)",
-                transition: "all 0.12s",
-              }}>
-              {k.replace(/_/g, " ").replace("full optimal sample", "").trim() || k}
-            </button>
-          ))}
+      {compact ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {keys.length > 1 && (
+            <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+              {keys.map(k => (
+                <button key={k} onClick={() => setDataset(k)} className="mono"
+                  style={{ padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+                    fontSize: 8, letterSpacing: "0.05em",
+                    background: dataset === k ? "rgba(77,156,245,0.14)" : "transparent",
+                    border: `1px solid ${dataset === k ? "rgba(77,156,245,0.4)" : "var(--line)"}`,
+                    color: dataset === k ? "#4d9cf5" : "var(--ink-3)",
+                  }}>
+                  {k.replace(/_/g, " ").replace("full optimal sample", "").trim() || k}
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="mono" style={{ fontSize: 7.5, color: "var(--ink-3)", letterSpacing: "0.08em", flexShrink: 0 }}>FILTER</span>
+            {([
+              ["+ Exp",   () => setSelected(new Set(rows.filter(r => r.expectancy > 0).map(r => r.hour)))],
+              ["|t|≥1.5", () => setSelected(new Set(rows.filter(r => Math.abs(r.tStat ?? 0) >= 1.5).map(r => r.hour)))],
+              ["All",     () => setSelected(new Set(rows.map(r => r.hour)))],
+              ["Clear",   () => setSelected(new Set<number>())],
+            ] as [string, () => void][]).map(([label, fn]) => (
+              <button key={label} onClick={fn}
+                style={{ padding: "2px 7px", borderRadius: 3, background: "var(--sub)",
+                  border: "1px solid var(--line)", color: "var(--ink-2)", fontSize: 9, cursor: "pointer",
+                }}>
+                {label}
+              </button>
+            ))}
+            <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", marginLeft: "auto" }}>
+              {selected.size}/{rows.length} hrs
+            </span>
+          </div>
         </div>
-        {/* Quick-select */}
-        <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
-          <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em" }}>FILTER</span>
-          {([
-            ["+ Expect.", () => setSelected(new Set(rows.filter(r => r.expectancy > 0).map(r => r.hour)))],
-            ["|t| ≥ 1.5",  () => setSelected(new Set(rows.filter(r => Math.abs(r.tStat ?? 0) >= 1.5).map(r => r.hour)))],
-            ["All",        () => setSelected(new Set(rows.map(r => r.hour)))],
-            ["Clear",      () => setSelected(new Set<number>())],
-          ] as [string, () => void][]).map(([label, fn]) => (
-            <button key={label} onClick={fn}
-              style={{ padding: "4px 10px", borderRadius: 4, background: "var(--sub)",
-                border: "1px solid var(--line)", color: "var(--ink-2)", fontSize: 10, cursor: "pointer",
-                transition: "background 0.12s",
-              }}>
-              {label}
-            </button>
-          ))}
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", flex: 1 }}>
+            {keys.map(k => (
+              <button key={k} onClick={() => setDataset(k)} className="mono"
+                style={{ padding: "5px 12px", borderRadius: 5, cursor: "pointer",
+                  fontSize: 9, letterSpacing: "0.07em",
+                  background: dataset === k ? "rgba(77,156,245,0.12)" : "transparent",
+                  border: `1px solid ${dataset === k ? "rgba(77,156,245,0.35)" : "var(--line)"}`,
+                  color: dataset === k ? "#4d9cf5" : "var(--ink-3)",
+                  transition: "all 0.12s",
+                }}>
+                {k.replace(/_/g, " ").replace("full optimal sample", "").trim() || k}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
+            <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em" }}>FILTER</span>
+            {([
+              ["+ Expect.", () => setSelected(new Set(rows.filter(r => r.expectancy > 0).map(r => r.hour)))],
+              ["|t| ≥ 1.5",  () => setSelected(new Set(rows.filter(r => Math.abs(r.tStat ?? 0) >= 1.5).map(r => r.hour)))],
+              ["All",        () => setSelected(new Set(rows.map(r => r.hour)))],
+              ["Clear",      () => setSelected(new Set<number>())],
+            ] as [string, () => void][]).map(([label, fn]) => (
+              <button key={label} onClick={fn}
+                style={{ padding: "4px 10px", borderRadius: 4, background: "var(--sub)",
+                  border: "1px solid var(--line)", color: "var(--ink-2)", fontSize: 10, cursor: "pointer",
+                  transition: "background 0.12s",
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="mono" style={{ fontSize: 8.5, color: "var(--ink-3)", flexShrink: 0 }}>
+            {selected.size}/{rows.length} hrs · {sessionCount} trades
+          </span>
         </div>
-        <span className="mono" style={{ fontSize: 8.5, color: "var(--ink-3)", flexShrink: 0 }}>
-          {selected.size}/{rows.length} hrs · {sessionCount} trades
-        </span>
-      </div>
+      )}
 
       {/* Row 2: Session stat summary */}
       {compact ? (
@@ -1996,19 +2045,32 @@ function SessionBuilder({ hourly, compact = false }: { hourly: Record<string, Ho
       {/* Row 3: Artifact — Expectancy bars + cumulative R trajectory */}
       <div style={{ background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, overflow: "hidden" }}>
         {/* Chart legend header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "12px 16px 6px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: "#00cc7a88" }} />
-            <span className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)" }}>HOURLY EXPECTANCY</span>
+        {compact ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px 4px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: "#00cc7a88", flexShrink: 0 }} />
+              <svg width="14" height="3" viewBox="0 0 14 3" style={{ flexShrink: 0 }}><line x1="0" y1="1.5" x2="14" y2="1.5" stroke="#4d9cf5" strokeWidth="2"/></svg>
+            </div>
+            <span className="mono" style={{ fontSize: 7.5, color: "var(--ink-3)", letterSpacing: "0.06em" }}>EXP · CUM</span>
+            <span className="mono" style={{ marginLeft: "auto", fontSize: 8.5, fontWeight: 700, color: finalCum >= 0 ? "var(--green)" : "var(--red)" }}>
+              ∑R {finalCum >= 0 ? "+" : ""}{finalCum.toFixed(2)}
+            </span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <svg width="20" height="4" viewBox="0 0 20 4"><line x1="0" y1="2" x2="20" y2="2" stroke="#4d9cf5" strokeWidth="2"/><circle cx="10" cy="2" r="2.5" fill="#4d9cf5"/></svg>
-            <span className="mono" style={{ fontSize: 8, color: "rgba(77,156,245,0.7)", letterSpacing: "0.08em" }}>CUMULATIVE R — SELECTED HOURS</span>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "12px 16px 6px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: "#00cc7a88" }} />
+              <span className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)" }}>HOURLY EXPECTANCY</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <svg width="20" height="4" viewBox="0 0 20 4"><line x1="0" y1="2" x2="20" y2="2" stroke="#4d9cf5" strokeWidth="2"/><circle cx="10" cy="2" r="2.5" fill="#4d9cf5"/></svg>
+              <span className="mono" style={{ fontSize: 8, color: "rgba(77,156,245,0.7)", letterSpacing: "0.08em" }}>CUMULATIVE R — SELECTED HOURS</span>
+            </div>
+            <span className="mono" style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: finalCum >= 0 ? "var(--green)" : "var(--red)" }}>
+              ∑R {finalCum >= 0 ? "+" : ""}{finalCum.toFixed(2)}
+            </span>
           </div>
-          <span className="mono" style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: finalCum >= 0 ? "var(--green)" : "var(--red)" }}>
-            ∑R {finalCum >= 0 ? "+" : ""}{finalCum.toFixed(2)}
-          </span>
-        </div>
+        )}
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
 
           {/* Background grid */}
@@ -2093,7 +2155,7 @@ function SessionBuilder({ hourly, compact = false }: { hourly: Record<string, Ho
           <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em", minWidth: 28 }}>AM</span>
           <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 5 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: compact ? 2 : 5 }}>
           {Array.from({ length: 12 }, (_, h) => {
             const row   = hourMap.get(h);
             const inSel = selected.has(h);
@@ -2139,7 +2201,7 @@ function SessionBuilder({ hourly, compact = false }: { hourly: Record<string, Ho
           <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em", minWidth: 28 }}>PM</span>
           <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 5 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: compact ? 2 : 5 }}>
           {Array.from({ length: 12 }, (_, i) => {
             const h   = i + 12;
             const row   = hourMap.get(h);
@@ -2656,8 +2718,17 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
   const [newEnd,   setNewEnd]   = useState("01:00");
   const [newDays,  setNewDays]  = useState<number[]>(WEEKDAYS);
 
-  const firstHourlyKey  = Object.keys(hourly)[0] ?? "";
-  const firstHourlyRows = useMemo(() => hourly[firstHourlyKey] ?? [], [hourly, firstHourlyKey]);
+  const hourlyKeys = Object.keys(hourly);
+  const [activeDataset, setActiveDataset] = useState(() => hourlyKeys[0] ?? "");
+  const activeRows = useMemo(() => hourly[activeDataset] ?? [], [hourly, activeDataset]);
+
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const check = () => setIsNarrow(window.innerWidth < 860);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     fetch("/api/session/alarm")
@@ -2748,17 +2819,26 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
       {/* Two-column body: left = compact edge chart, right = schedule (primary) */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: Object.keys(hourly).length > 0 ? "minmax(0,1fr) minmax(0,1.45fr)" : "1fr",
+        gridTemplateColumns: hourlyKeys.length > 0 && !isNarrow ? "minmax(0,1fr) minmax(0,1.45fr)" : "1fr",
         alignItems: "start",
       }}>
 
         {/* Left — compact hourly edge chart */}
-        {Object.keys(hourly).length > 0 && (
-          <div style={{ padding: "14px 16px", borderRight: "1px solid var(--line)" }}>
+        {hourlyKeys.length > 0 && (
+          <div style={{
+            padding: "14px 16px",
+            borderRight: isNarrow ? "none" : "1px solid var(--line)",
+            borderBottom: isNarrow ? "1px solid var(--line)" : "none",
+          }}>
             <div className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)", marginBottom: 10 }}>
               HOURLY EDGE ANALYSIS
             </div>
-            <SessionBuilder hourly={hourly} compact />
+            <SessionBuilder
+              hourly={hourly}
+              compact
+              dataset={activeDataset}
+              onDatasetChange={setActiveDataset}
+            />
           </div>
         )}
 
@@ -2794,7 +2874,7 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {windows.map((w, i) => {
-                const s = firstHourlyRows.length > 0 ? windowStats(w.start, w.end, firstHourlyRows) : null;
+                const s = activeRows.length > 0 ? windowStats(w.start, w.end, activeRows) : null;
                 const edgeColor = s ? (s.expect >= 0 ? "#00cc7a" : "#f03a57") : "rgba(255,255,255,0.15)";
                 return (
                   <div key={i} style={{
@@ -2939,8 +3019,8 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
                   {newStart > newEnd ? "overnight" : "same-day"}
                 </span>
               )}
-              {timeOk && firstHourlyRows.length > 0 && (() => {
-                const s = windowStats(newStart, newEnd, firstHourlyRows);
+              {timeOk && activeRows.length > 0 && (() => {
+                const s = windowStats(newStart, newEnd, activeRows);
                 return s ? (
                   <span className="mono" style={{ fontSize: 9, fontWeight: 600, color: s.expect >= 0 ? "var(--green)" : "var(--red)" }}>
                     {s.expect >= 0 ? "+" : ""}{s.expect.toFixed(3)}R · {s.winRate.toFixed(1)}% WR · {s.count}n
