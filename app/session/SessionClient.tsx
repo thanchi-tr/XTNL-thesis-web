@@ -6,6 +6,7 @@ import { XtnlLogoAnimation } from "@/components/ui/XtnlLogoAnimation";
 import { DatetimePicker } from "@/components/ui/DatetimePicker";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import { getSessionStatus } from "@/lib/sessionStatus";
+import { playAlarmBeeps, unlockAudio } from "@/lib/alarmAudio";
 import IssuePanel from "@/components/issues/IssuePanel";
 import OngoingStrategy from "@/components/issues/OngoingStrategy";
 
@@ -2565,42 +2566,6 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
    into each cycle so the operator has `focus` min to engage.
 ═══════════════════════════════════════════════════════════ */
 
-function playAlarmBeeps(volume: number) {
-  if (volume <= 0) return;
-  try {
-    const ctx  = new AudioContext();
-    const dest = ctx.destination;
-    const v    = Math.min(1, Math.max(0, volume));
-
-    const tone = (t: number, freq: number, dur: number, rel = 1.0) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(dest);
-      osc.type = "sawtooth";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(v * rel, t + 0.008);
-      gain.gain.setValueAtTime(v * rel, t + dur - 0.03);
-      gain.gain.linearRampToValueAtTime(0, t + dur);
-      osc.start(t); osc.stop(t + dur + 0.01);
-    };
-
-    const now = ctx.currentTime;
-    tone(now,        1320, 0.08, 0.55);
-    tone(now + 0.11, 1320, 0.08, 0.55);
-    tone(now + 0.28, 1760, 0.22, 0.65);
-    tone(now + 0.70, 1320, 0.08, 0.60);
-    tone(now + 0.81, 1320, 0.08, 0.60);
-    tone(now + 0.98, 1760, 0.22, 0.70);
-    tone(now + 1.40, 1320, 0.08, 0.65);
-    tone(now + 1.51, 1320, 0.08, 0.65);
-    tone(now + 1.68, 1760, 0.36, 0.75);
-    setTimeout(() => ctx.close(), 2500);
-  } catch {
-    /* AudioContext unavailable */
-  }
-}
-
 function AnalystToggle({
   showToast, label, subOn, subOff, fetchKey, apiAction, locked, refreshSignal, commentLabel,
 }: {
@@ -3243,13 +3208,62 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
 
     tick();
     tickRef.current = setInterval(tick, 1000);
-    return () => { if (tickRef.current) clearInterval(tickRef.current); };
+
+    // ── Background backup alarm ──────────────────────────────────────────────
+    // Chrome throttles setInterval to ≥ 1 s in background tabs and may freeze it
+    // entirely in minimised windows. A one-shot setTimeout aimed at the exact
+    // focus-window epoch fires reliably even when the 1 s tick is frozen.
+    // The soundFiredCycle guard prevents double-firing if both fire.
+    let backupTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleBackupAlarm = () => {
+      if (backupTimeout) clearTimeout(backupTimeout);
+      const elapsed    = (Date.now() - epoch) / 1000;
+      const cyclePos   = elapsed % cycleSec;
+      const msToFocus  = cyclePos >= triggerSec
+        ? (cycleSec - cyclePos + triggerSec) * 1_000   // next cycle's focus open
+        : (triggerSec - cyclePos) * 1_000;              // this cycle's focus open
+      if (msToFocus < 1_000) return; // imminent — the 1 s tick will catch it
+      backupTimeout = setTimeout(() => {
+        const now2  = (Date.now() - epoch) / 1000;
+        const cn    = Math.floor(now2 / cycleSec);
+        const cp    = now2 % cycleSec;
+        if (cp >= triggerSec && soundFiredCycle.current < cn && lastAckRef.current < cn) {
+          soundFiredCycle.current = cn;
+          const offHours = tradingSessionModeRef.current && !isInTradingSessionMelbourne();
+          if (challengeSilencedRef.current || offHours) {
+            void callAPI({ action: "ack", cycle: cn });
+          } else {
+            playAlarmBeeps(volumeRef.current);
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification("Focus Window", {
+                body:               `${srv.focus_min} min — stay present.`,
+                requireInteraction: true,
+                silent:             volumeRef.current <= 0,
+              });
+            }
+          }
+        }
+        scheduleBackupAlarm(); // chain for the next focus window
+      }, msToFocus);
+    };
+
+    const onBgHide = () => { if (document.hidden) scheduleBackupAlarm(); };
+    document.addEventListener("visibilitychange", onBgHide);
+    if (document.hidden) scheduleBackupAlarm();
+
+    return () => {
+      if (tickRef.current) clearInterval(tickRef.current);
+      if (backupTimeout)   clearTimeout(backupTimeout);
+      document.removeEventListener("visibilitychange", onBgHide);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srv.running, srv.started_at, srv.interval_min, srv.focus_min, srv.enforce_focus, srv.challenge_status, srv.challenge_cycle, showToast, callAPI]);
 
   const handleStart = useCallback(() => {
     if (typeof Notification !== "undefined" && Notification.permission === "default")
       Notification.requestPermission().catch(() => {});
+    unlockAudio();
     soundFiredCycle.current              = -1;
     challengeStartedCycle.current        = -1;
     challengeResultNotifiedCycle.current = -1;
@@ -3262,6 +3276,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const handleSchedule = useCallback(() => {
     if (typeof Notification !== "undefined" && Notification.permission === "default")
       Notification.requestPermission().catch(() => {});
+    unlockAudio();
     const [h, m] = scheduleTime.split(":").map(Number);
     const d = new Date();
     d.setHours(h, m, 0, 0);

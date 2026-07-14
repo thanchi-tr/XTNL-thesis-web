@@ -13,39 +13,7 @@
 
 import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
-
-/* ── Audio (identical to SessionClient.playAlarmBeeps) ───────────────────── */
-function playAlarmBeeps(volume: number) {
-  if (volume <= 0) return;
-  try {
-    const ctx  = new AudioContext();
-    const dest = ctx.destination;
-    const v    = Math.min(1, Math.max(0, volume));
-    const tone = (t: number, freq: number, dur: number, rel = 1.0) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(dest);
-      osc.type = "sawtooth";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(v * rel, t + 0.008);
-      gain.gain.setValueAtTime(v * rel, t + dur - 0.03);
-      gain.gain.linearRampToValueAtTime(0, t + dur);
-      osc.start(t); osc.stop(t + dur + 0.01);
-    };
-    const now = ctx.currentTime;
-    tone(now,        1320, 0.08, 0.55);
-    tone(now + 0.11, 1320, 0.08, 0.55);
-    tone(now + 0.28, 1760, 0.22, 0.65);
-    tone(now + 0.70, 1320, 0.08, 0.60);
-    tone(now + 0.81, 1320, 0.08, 0.60);
-    tone(now + 0.98, 1760, 0.22, 0.70);
-    tone(now + 1.40, 1320, 0.08, 0.65);
-    tone(now + 1.51, 1320, 0.08, 0.65);
-    tone(now + 1.68, 1760, 0.36, 0.75);
-    setTimeout(() => ctx.close(), 2500);
-  } catch { /* AudioContext unavailable */ }
-}
+import { playAlarmBeeps, unlockAudio } from "../lib/alarmAudio";
 
 /* ── Trading-session gate (identical to SessionClient) ───────────────────── */
 function isInTradingSessionMelbourne(): boolean {
@@ -78,14 +46,17 @@ export default function GlobalAlarmNotifier() {
     ["operator","analyst","strategist","fund_manager"].includes(r)
   );
 
-  const srvRef           = useRef<SrvState | null>(null);
-  const soundFiredCycle  = useRef(-1);
-  const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tickRef          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const srvRef          = useRef<SrvState | null>(null);
+  const soundFiredCycle = useRef(-1);
+  const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tickRef         = useRef<ReturnType<typeof setInterval> | null>(null);
+  const backupRef       = useRef<ReturnType<typeof setTimeout>  | null>(null);
 
   useEffect(() => {
-    // Only run for authenticated users with record access
     if (status !== "authenticated" || !canRecord) return;
+
+    // Pre-unlock the AudioContext on every user click so background playback works.
+    window.addEventListener("click", unlockAudio, { passive: true });
 
     const poll = async () => {
       try {
@@ -97,47 +68,94 @@ export default function GlobalAlarmNotifier() {
     poll();
     pollRef.current = setInterval(poll, 20_000);
 
-    tickRef.current = setInterval(() => {
-      // Session page's AlarmConfig is mounted — it owns the alarm UI, yield to it
-      if (sessionStorage.getItem("xtnl_alarm_tab") === "1") return;
+    /* ── Shared fire helper ──────────────────────────────────────────────── */
+    const fireSound = (srv: SrvState, cycle: number) => {
+      soundFiredCycle.current = cycle;
+      const gateOn = localStorage.getItem("xtnl_trading_session_gate") === "1";
+      if (gateOn && !isInTradingSessionMelbourne()) return;
+      const vol = parseFloat(localStorage.getItem("xtnl_alarm_volume") ?? "0.7");
+      playAlarmBeeps(vol);
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("XTNL — Focus Window", {
+          body:               `${srv.focus_min} min — return your attention now.`,
+          requireInteraction: true,
+          silent:             vol <= 0,
+        });
+      } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+    };
 
+    /* ── 1 s interval tick (handles visible-tab case) ────────────────────── */
+    tickRef.current = setInterval(() => {
+      if (sessionStorage.getItem("xtnl_alarm_tab") === "1") return;
       const srv = srvRef.current;
       if (!srv?.running || !srv.started_at) return;
 
-      const startMs    = new Date(srv.started_at).getTime();
-      const elapsedMs  = Date.now() - startMs;
-      const intervalMs = srv.interval_min * 60_000;
-      const focusMs    = srv.focus_min    * 60_000;
-      if (intervalMs <= 0) return;
-
-      const cycle        = Math.floor(elapsedMs / intervalMs);
-      const inFocusWindow = (elapsedMs % intervalMs) >= (intervalMs - focusMs);
+      const epoch        = new Date(srv.started_at).getTime();
+      const elapsed      = (Date.now() - epoch) / 1000;
+      const cycleSec     = srv.interval_min * 60;
+      const triggerSec   = (srv.interval_min - srv.focus_min) * 60;
+      const cycle        = Math.floor(elapsed / cycleSec);
+      const inFocusWindow = (elapsed % cycleSec) >= triggerSec;
 
       if (inFocusWindow && soundFiredCycle.current < cycle && srv.last_ack_cycle < cycle) {
-        soundFiredCycle.current = cycle;
-
-        // Respect trading-session gate from localStorage (same key as AlarmConfig)
-        const gateOn = localStorage.getItem("xtnl_trading_session_gate") === "1";
-        if (gateOn && !isInTradingSessionMelbourne()) return;
-
-        const vol = parseFloat(localStorage.getItem("xtnl_alarm_volume") ?? "0.7");
-        playAlarmBeeps(vol);
-
-        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-          new Notification("XTNL — Focus Window", {
-            body:              `${srv.focus_min} min — return your attention now.`,
-            requireInteraction: true,
-            silent:            vol <= 0,
-          });
-        } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
-          Notification.requestPermission().catch(() => {});
-        }
+        fireSound(srv, cycle);
       }
     }, 1_000);
 
+    /* ── Background backup alarm ─────────────────────────────────────────── */
+    // Chrome throttles setInterval to ≥ 1 s in background tabs and may freeze it
+    // entirely for minimised windows. A one-shot setTimeout aimed at the exact
+    // focus-window open time fires far more reliably than hoping the 1 s tick wakes.
+    const scheduleBackup = () => {
+      if (backupRef.current) clearTimeout(backupRef.current);
+      if (sessionStorage.getItem("xtnl_alarm_tab") === "1") return; // session page owns it
+      const srv = srvRef.current;
+      if (!srv?.running || !srv.started_at) return;
+
+      const epoch      = new Date(srv.started_at).getTime();
+      const cycleSec   = srv.interval_min * 60;
+      const triggerSec = (srv.interval_min - srv.focus_min) * 60;
+      const elapsed    = (Date.now() - epoch) / 1000;
+      const cyclePos   = elapsed % cycleSec;
+
+      // ms until the next focus window opens
+      const msToFocus  = cyclePos >= triggerSec
+        ? (cycleSec - cyclePos + triggerSec) * 1_000   // next cycle
+        : (triggerSec - cyclePos) * 1_000;              // this cycle
+
+      if (msToFocus < 1_000) return; // let the 1 s tick handle imminent windows
+
+      backupRef.current = setTimeout(() => {
+        if (sessionStorage.getItem("xtnl_alarm_tab") !== "1") {
+          const srv2 = srvRef.current;
+          if (srv2?.running && srv2.started_at) {
+            const epoch2     = new Date(srv2.started_at).getTime();
+            const elapsed2   = (Date.now() - epoch2) / 1000;
+            const cycleSec2  = srv2.interval_min * 60;
+            const triggerSec2 = (srv2.interval_min - srv2.focus_min) * 60;
+            const cn          = Math.floor(elapsed2 / cycleSec2);
+            const cp          = elapsed2 % cycleSec2;
+            if (cp >= triggerSec2 && soundFiredCycle.current < cn && srv2.last_ack_cycle < cn) {
+              fireSound(srv2, cn);
+            }
+          }
+        }
+        scheduleBackup(); // chain for the next focus window
+      }, msToFocus);
+    };
+
+    const onVisibilityChange = () => { if (document.hidden) scheduleBackup(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    if (document.hidden) scheduleBackup();
+
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (tickRef.current) clearInterval(tickRef.current);
+      window.removeEventListener("click", unlockAudio);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (pollRef.current)  clearInterval(pollRef.current);
+      if (tickRef.current)  clearInterval(tickRef.current);
+      if (backupRef.current) clearTimeout(backupRef.current);
     };
   }, [status, canRecord]);
 
