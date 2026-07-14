@@ -215,33 +215,48 @@ export default function Calculator() {
 
   return (
     <>
-      {/* Keyboard hint chip — always shown when authed */}
+      {/* Launcher — circular icon button, stacked above the issue-resolve FAB */}
       {!open && (
-        <div
-          title="Open calculator (Ctrl+`)"
+        <button
+          type="button"
+          title="Calculator (Ctrl+`)"
+          aria-label="Open calculator"
           onClick={() => setOpen(true)}
           style={{
-            position: "fixed", bottom: 60, right: 16, zIndex: 190,
-            background: "rgba(4,8,15,0.80)", backdropFilter: "blur(12px)",
-            border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5,
-            padding: "3px 8px", cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 5,
-            opacity: 0.6, transition: "opacity 0.15s",
+            position: "fixed", bottom: 90, right: 33, zIndex: 190,
+            width: 40, height: 40, borderRadius: "50%",
+            background: "rgba(14,20,30,0.85)",
+            backdropFilter: "blur(12px) saturate(160%)",
+            WebkitBackdropFilter: "blur(12px) saturate(160%)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
+            cursor: "pointer", padding: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "var(--ink-2)",
+            transition: "color 0.15s, border-color 0.15s, transform 0.15s",
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.opacity = "1"}
-          onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.opacity = "0.6"}
+          onMouseEnter={e => {
+            e.currentTarget.style.color       = "var(--ink-0)";
+            e.currentTarget.style.borderColor = "rgba(0,204,122,0.50)";
+            e.currentTarget.style.transform   = "translateY(-1px)";
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.color       = "var(--ink-2)";
+            e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
+            e.currentTarget.style.transform   = "none";
+          }}
         >
-          <span style={{ fontSize: 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>Ctrl+`</span>
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden style={{ flexShrink: 0, color: "var(--ink-3)" }}>
-            <rect x="1.5" y="1.5" width="9" height="9" rx="1.8" stroke="currentColor" strokeWidth="1.0"/>
-            <rect x="3" y="3.5" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
-            <rect x="7.4" y="3.5" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
-            <rect x="3" y="5.4" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
-            <rect x="7.4" y="5.4" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
-            <rect x="3" y="7.3" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
-            <rect x="7.4" y="7.3" width="1.6" height="1.2" rx="0.4" fill="currentColor"/>
+          <svg width="17" height="17" viewBox="0 0 18 18" fill="none" aria-hidden>
+            <rect x="2.5" y="1.5" width="13" height="15" rx="2.4" stroke="currentColor" strokeWidth="1.3"/>
+            <rect x="5"   y="4"   width="8"  height="2.6" rx="0.8" fill="currentColor" opacity="0.5"/>
+            <circle cx="6"  cy="9.6"  r="0.95" fill="currentColor"/>
+            <circle cx="9"  cy="9.6"  r="0.95" fill="currentColor"/>
+            <circle cx="12" cy="9.6"  r="0.95" fill="currentColor"/>
+            <circle cx="6"  cy="12.9" r="0.95" fill="currentColor"/>
+            <circle cx="9"  cy="12.9" r="0.95" fill="currentColor"/>
+            <circle cx="12" cy="12.9" r="0.95" fill="currentColor"/>
           </svg>
-        </div>
+        </button>
       )}
 
       {open && (
