@@ -17,6 +17,7 @@ export type SessionWindow = {
 export type AlarmState = {
   running:                  boolean;
   started_at:               string | null;
+  scheduled_start:          string | null;   // ISO — auto-starts when schedule time arrives
   interval_min:             number;
   focus_min:                number;
   last_ack_cycle:           number;
@@ -32,6 +33,7 @@ export type AlarmState = {
 const DEFAULT: AlarmState = {
   running:                  false,
   started_at:               null,
+  scheduled_start:          null,
   interval_min:             15,
   focus_min:                2,
   last_ack_cycle:           -1,
@@ -192,6 +194,25 @@ export async function GET(req: Request) {
 
   try {
     let [state, windows] = await Promise.all([readState(), readWindows()]);
+
+    // Auto-start: scheduled time has arrived (mirrors master's GET logic so the watch
+    // can self-start even when the master session page isn't open).
+    if (!state.running && state.scheduled_start && Date.now() >= new Date(state.scheduled_start).getTime()) {
+      state = {
+        ...state,
+        running:                  true,
+        started_at:               state.scheduled_start,
+        scheduled_start:          null,
+        last_ack_cycle:           -1,
+        challenge_number:         null,
+        challenge_cycle:          -1,
+        challenge_status:         null,
+        challenge_expires_at:     null,
+        fail_streak:              0,
+        completions_toward_reset: 0,
+      };
+      await writeState(state);
+    }
 
     const inBreak = isInSessionBreak(windows);
 
