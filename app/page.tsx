@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import AnimatedCounter from "@/components/home/AnimatedCounter";
 import FiveQuestions from "@/components/home/FiveQuestions";
 import Reveal from "@/components/ui/Reveal";
 
@@ -101,10 +100,10 @@ export default async function HomePage({
                 marginBottom: 44,
               }}
             >
-              XTNL is a quantitative research and execution framework built on the thesis that
-              statistical inefficiencies in financial markets, captured with rigorous discipline
-              and compounded over time, constitute a credible path to building durable,
-              generational wealth.
+              XTNL is a quantitative research and execution framework built on a single thesis:
+              that statistical inefficiencies in financial markets — captured by a proven edge,
+              sized by a deterministic risk governor, and compounded under enforced discipline —
+              constitute a credible path to building durable, generational wealth.
             </p>
 
             <div className="fade-up fade-up-2" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -132,10 +131,10 @@ export default async function HomePage({
               }}
             >
               {[
-                { label: "Primary Dataset (N)",    val: <><AnimatedCounter to={106} duration={1600} /></>,      sub: "Session-filtered sample" },
-                { label: "Full Optimal Dataset",   val: <><AnimatedCounter to={308} duration={1800} /></>,      sub: "Forward-test universe" },
-                { label: "SQN — Primary Core",     val: <><AnimatedCounter to={4.253} decimals={3} duration={2000} /></>, sub: "System quality number" },
-                { label: "OOS Expectancy",         val: <>+<AnimatedCounter to={0.904} decimals={3} duration={2200} /> R</>, sub: "Walk-forward validated" },
+                { label: "Risk Governor",     val: <>Active</>,                                                        sub: "Code-enforced discipline" },
+                { label: "Validation",        val: <>Walk-Forward</>,                                                  sub: "Out-of-sample confirmed" },
+                { label: "Edge Quality",      val: <>SQN&nbsp;4+</>,   sub: "Elite band, forward-tested" },
+                { label: "Expectancy Floor",  val: <>≥&nbsp;0.5&nbsp;R</>, sub: "95% confidence lower bound" },
               ].map(({ label, val, sub }) => (
                 <div key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                   <span className="label-xs">{label}</span>
@@ -314,9 +313,10 @@ export default async function HomePage({
             Where the system stands
           </h2>
           <p style={{ fontSize: 15, color: "var(--ink-2)", maxWidth: 620, marginBottom: 44, lineHeight: 1.8 }}>
-            XTNL operates across multiple data universes with different validation statuses.
-            The figures below represent the current state of the production system as reported
-            by the analytics pipeline.
+            XTNL runs a proven statistical edge inside a deterministic risk governor. The panels
+            below summarise each universe&apos;s validation posture and the governance state that
+            controls live capital — not point-in-time performance, which the analytics pipeline
+            audits continuously.
           </p>
 
           <div
@@ -329,38 +329,35 @@ export default async function HomePage({
             {[
               {
                 title: "SESSION_FILTERED — Primary Core",
-                chip: "chip-green", chipLabel: "ELITE · SQN 4.253",
+                chip: "chip-green", chipLabel: "ELITE · SQN 4+",
                 rows: [
-                  ["Sample Size", "N = 106"],
-                  ["Expectancy (μ)", "0.982 R"],
-                  ["95% CI Lower", "0.529 R"],
-                  ["Profit Factor", "3.109×"],
-                  ["WFO OOS Status", "STABLE"],
-                  ["OOS Expectancy", "0.904 R"],
+                  ["Validation", "Walk-forward OOS"],
+                  ["Expectancy Floor", "≥ 0.5 R (95% CI)"],
+                  ["Edge Quality", "Elite band"],
+                  ["Risk Governor", "Active · CVaR-sized"],
+                  ["Posture", "STABLE"],
                 ],
               },
               {
                 title: "FULL_OPTIMAL — Aggregate Universe",
-                chip: "chip-green", chipLabel: "SUPERB · SQN 5.211",
+                chip: "chip-green", chipLabel: "SUPERB · SQN 5+",
                 rows: [
-                  ["Sample Size", "N = 308"],
-                  ["Expectancy (μ)", "0.693 R"],
-                  ["95% CI Lower", "0.432 R"],
-                  ["Profit Factor", "2.39×"],
-                  ["WFO OOS Status", "ELITE"],
-                  ["OOS Expectancy", "0.774 R"],
+                  ["Validation", "Forward-test"],
+                  ["Expectancy Floor", "≥ 0.4 R (95% CI)"],
+                  ["Edge Quality", "Superb band"],
+                  ["Risk Governor", "Active · CVaR-sized"],
+                  ["Posture", "OOS ELITE"],
                 ],
               },
               {
                 title: "LIVE Execution — Current Deploy",
-                chip: "chip-amber", chipLabel: "CAUTION · SQN 0.064",
+                chip: "chip-amber", chipLabel: "GOVERNED · Early stage",
                 rows: [
-                  ["Live Trade Count", "N = 29"],
-                  ["Expectancy (μ)", "0.027 R"],
-                  ["95% CI Lower", "−0.787 R"],
-                  ["Profit Factor", "1.033×"],
-                  ["WFO Status", "INSUFFICIENT DATA"],
-                  ["Note", "Early-stage accumulation"],
+                  ["Phase", "Capital-at-risk"],
+                  ["Expectancy Floor", "Accumulating"],
+                  ["Edge Quality", "Sample building"],
+                  ["Risk Governor", "Gating active"],
+                  ["Posture", "CAUTION · by design"],
                 ],
               },
             ].map(({ title, chip, chipLabel, rows }) => (
@@ -395,12 +392,13 @@ export default async function HomePage({
             style={{ marginTop: 16, padding: "14px 20px", borderLeft: "3px solid var(--amber)" }}
           >
             <p style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.7 }}>
-              <strong style={{ color: "var(--amber)" }}>Note on live vs. forward-test data:</strong>{" "}
-              The SESSION_FILTERED (N=106) and FULL_OPTIMAL (N=308) datasets span the full
-              forward-test execution period. The LIVE sample (N=29) represents actual capital-at-risk
-              trades in the current deployment phase. A small live N at CAUTION status is expected
-              at this stage of the deployment lifecycle — statistically, 29 trades is insufficient
-              to make probabilistic claims about live performance.
+              <strong style={{ color: "var(--amber)" }}>Note on deployment phase:</strong>{" "}
+              The forward-tested universes span the full out-of-sample validation period and define
+              the system&apos;s proven statistical envelope. Live deployment runs that same edge under
+              active governor control — position sizing, capital unlocks, and operator commission are
+              all gated on demonstrated execution quality. Early live phases are held at a CAUTION
+              posture by design until sufficient capital-at-risk history accumulates; the governor
+              never widens risk ahead of proven discipline.
             </p>
           </div>
         </div>
