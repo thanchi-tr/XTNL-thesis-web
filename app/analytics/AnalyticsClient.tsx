@@ -2216,15 +2216,6 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
   const [activeHourly,  setActiveHourly]  = useState<string>("");
   const [inputOpen,          setInputOpen]          = useState(true);
   const [parseError,         setParseError]         = useState("");
-  const [sessionBuilderOpen, setSessionBuilderOpen] = useState(false);
-
-  /* Close Session Builder on Escape */
-  useEffect(() => {
-    if (!sessionBuilderOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSessionBuilderOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [sessionBuilderOpen]);
 
   /* Persist custom raw text to sessionStorage only when in custom mode */
   useEffect(() => {
@@ -2533,32 +2524,6 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
                   </>
                 )}
 
-                {/* Session Builder — opens modal */}
-                {Object.keys(report.hourly).length > 0 && (
-                  <>
-                    <div style={{ height: 1, background: "var(--line)", margin: "8px 0" }} />
-                    <button
-                      onClick={() => setSessionBuilderOpen(true)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 8,
-                        background: "transparent",
-                        border: "1px solid transparent",
-                        borderRadius: 6, padding: "7px 10px", cursor: "pointer",
-                        textAlign: "left", whiteSpace: "nowrap", flexShrink: 0,
-                        transition: "background 0.12s",
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--raised)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                    >
-                      <span className="mono" style={{ fontSize: 10, color: "var(--blue)", letterSpacing: "0.04em" }}>
-                        Session Builder
-                      </span>
-                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, opacity: 0.6 }}>
-                        <path d="M2 2h6v6M8 2L2 8" stroke="var(--blue)" strokeWidth="1.3" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-                  </>
-                )}
 
                 {hourlyKeys.length > 0 && (
                   <>
@@ -2617,63 +2582,9 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
         )}
 
         {/* Session schedule config — strategist defines when alarm is active vs break */}
-        <SessionScheduleConfig />
+        <SessionScheduleConfig hourly={report?.hourly ?? {}} />
       </div>
 
-      {/* ── Session Builder modal ── */}
-      {sessionBuilderOpen && report && Object.keys(report.hourly).length > 0 && (
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
-          onClick={() => setSessionBuilderOpen(false)}
-        >
-          {/* Backdrop */}
-          <div style={{ position: "absolute", inset: 0, background: "rgba(4,8,15,0.88)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }} />
-
-          {/* Modal */}
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              position: "relative", zIndex: 1,
-              background: "var(--card)",
-              border: "1px solid var(--line-hi)",
-              borderRadius: 12,
-              width: "min(1160px, 96vw)",
-              height: "92vh",
-              display: "flex", flexDirection: "column",
-              boxShadow: "0 32px 96px rgba(0,0,0,0.8)",
-            }}
-          >
-            {/* Modal header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span className="mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", color: "var(--ink-1)" }}>SESSION BUILDER</span>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--blue)", display: "inline-block", boxShadow: "0 0 6px rgba(77,156,245,0.6)" }} />
-                <span className="mono" style={{ fontSize: 8.5, letterSpacing: "0.12em", color: "var(--ink-3)" }}>HOURLY EDGE ANALYSIS</span>
-              </div>
-              <button
-                onClick={() => setSessionBuilderOpen(false)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6, padding: "5px 10px",
-                  background: "none", border: "1px solid var(--line)", borderRadius: 5,
-                  cursor: "pointer", color: "var(--ink-3)", transition: "border-color 0.15s, color 0.15s",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--line-hi)"; e.currentTarget.style.color = "var(--ink-1)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.color = "var(--ink-3)"; }}
-              >
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                  <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-                <span className="mono" style={{ fontSize: 9, letterSpacing: "0.10em" }}>ESC</span>
-              </button>
-            </div>
-
-            {/* Modal body */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
-              <SessionBuilder hourly={report.hourly} />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Issue tracker — fixed FAB, visible in analytics view; Insight tab for strategist */}
       <IssuePanel showInsight />
@@ -2691,7 +2602,29 @@ type SessionWindow = { start: string; end: string; days: number[] };
 const DAY_LABELS = ["Su","Mo","Tu","We","Th","Fr","Sa"] as const;
 const WEEKDAYS   = [1,2,3,4,5]; // Mon–Fri default
 
-function SessionScheduleConfig() {
+function hoursInWindow(start: string, end: string): number[] {
+  const sh = parseInt(start.split(":")[0], 10);
+  const eh = parseInt(end.split(":")[0], 10);
+  if (sh < eh) return Array.from({ length: eh - sh }, (_, i) => sh + i);
+  if (sh === eh) return [];
+  return [...Array.from({ length: 24 - sh }, (_, i) => sh + i), ...Array.from({ length: eh }, (_, i) => i)];
+}
+
+function windowStats(start: string, end: string, rows: HourlyRow[]) {
+  const hrs = hoursInWindow(start, end);
+  const hm  = new Map(rows.map(r => [r.hour, r]));
+  const rel  = hrs.map(h => hm.get(h)).filter((r): r is HourlyRow => !!r);
+  const n    = rel.reduce((s, r) => s + r.count, 0);
+  if (n === 0) return null;
+  return {
+    expect:  rel.reduce((s, r) => s + r.expectancy * r.count, 0) / n,
+    winRate: rel.reduce((s, r) => s + r.winRate * r.count, 0) / n,
+    count:   n,
+    totalR:  rel.reduce((s, r) => s + r.expectancy * r.count, 0),
+  };
+}
+
+function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
   const { data: session } = useSession();
   const roles: string[] = (session as any)?.roles ?? [];
   const canEdit = roles.some(r => ["strategist", "fund_manager"].includes(r));
@@ -2705,6 +2638,9 @@ function SessionScheduleConfig() {
   const [newStart, setNewStart] = useState("18:00");
   const [newEnd,   setNewEnd]   = useState("01:00");
   const [newDays,  setNewDays]  = useState<number[]>(WEEKDAYS);
+
+  const firstHourlyKey  = Object.keys(hourly)[0] ?? "";
+  const firstHourlyRows = useMemo(() => hourly[firstHourlyKey] ?? [], [hourly, firstHourlyKey]);
 
   useEffect(() => {
     fetch("/api/session/alarm")
@@ -2792,6 +2728,13 @@ function SessionScheduleConfig() {
         </span>
       </div>
 
+      {/* Inline Session Builder — hourly edge analysis above the schedule */}
+      {Object.keys(hourly).length > 0 && (
+        <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid var(--line)" }}>
+          <SessionBuilder hourly={hourly} />
+        </div>
+      )}
+
       <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
         {error && (
           <div style={{ fontSize: 11, color: "var(--red)", padding: "6px 10px", borderRadius: 5, background: "rgba(240,58,87,0.08)" }}>
@@ -2836,18 +2779,29 @@ function SessionScheduleConfig() {
                   })}
                 </div>
 
-                {/* Times */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="mono" style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>
-                    {w.start}
-                  </span>
-                  <span style={{ fontSize: 10, color: "var(--ink-3)" }}>→</span>
-                  <span className="mono" style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>
-                    {w.end}
-                  </span>
-                  <span style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                    {w.start > w.end ? "overnight" : "same-day"}
-                  </span>
+                {/* Times + projected stats */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="mono" style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>
+                      {w.start}
+                    </span>
+                    <span style={{ fontSize: 10, color: "var(--ink-3)" }}>→</span>
+                    <span className="mono" style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>
+                      {w.end}
+                    </span>
+                    <span style={{ fontSize: 9, color: "var(--ink-3)" }}>
+                      {w.start > w.end ? "overnight" : "same-day"}
+                    </span>
+                  </div>
+                  {firstHourlyRows.length > 0 && (() => {
+                    const s = windowStats(w.start, w.end, firstHourlyRows);
+                    if (!s) return null;
+                    return (
+                      <span className="mono" style={{ fontSize: 9, color: s.expect >= 0 ? "var(--green)" : "var(--red)", opacity: 0.8 }}>
+                        {s.expect >= 0 ? "+" : ""}{s.expect.toFixed(3)}R exp · {s.winRate.toFixed(1)}% WR · {s.count} trades
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <button
@@ -2930,6 +2884,14 @@ function SessionScheduleConfig() {
                 {newStart > newEnd ? "overnight" : "same-day"}
               </span>
             )}
+            {timeOk && firstHourlyRows.length > 0 && (() => {
+              const s = windowStats(newStart, newEnd, firstHourlyRows);
+              return s ? (
+                <span className="mono" style={{ fontSize: 9, color: s.expect >= 0 ? "var(--green)" : "var(--red)" }}>
+                  {s.expect >= 0 ? "+" : ""}{s.expect.toFixed(3)}R · {s.winRate.toFixed(1)}% WR · {s.count}n
+                </span>
+              ) : null;
+            })()}
             <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
               <button
                 onClick={addWindow}
