@@ -172,13 +172,16 @@ export default function DataClient() {
   const [debugLog, setDebugLog] = useState<string[] | null>(null);
   const [showDebug, setShowDebug] = useState(false);
 
-  const load = useCallback(async (withDebug = false) => {
+  /* force=true → POST, which re-pulls from OneDrive and overwrites the server
+     cache (the analyst's on-demand refresh). Default GET is read-through: it
+     serves the server-side cache and only touches OneDrive on a cold miss. */
+  const load = useCallback(async (withDebug = false, force = false) => {
     setLoading(true);
     setError(null);
     setDebugLog(null);
     try {
       const url  = withDebug ? "/api/data/report?debug=1" : "/api/data/report";
-      const res  = await fetch(url);
+      const res  = await fetch(url, force ? { method: "POST" } : undefined);
       const j    = await res.json() as ReportData & { error?: string; _log?: string[] };
       if (j._log) setDebugLog(j._log);
       if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`);
@@ -249,8 +252,9 @@ export default function DataClient() {
         <div style={{ display: "flex", gap: 6 }}>
           <button
             type="button"
-            onClick={() => { void load(); }}
+            onClick={() => { void load(false, true); }}
             disabled={loading}
+            title="Pull the latest report from OneDrive and refresh the server cache"
             style={{
               display: "flex", alignItems: "center", gap: 6,
               padding: "6px 14px", borderRadius: 5,
@@ -287,7 +291,7 @@ export default function DataClient() {
             <path d="M13 8A5 5 0 1 1 8 3h3.5M11.5 3v3.5H8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          Fetching latest report from OneDrive…
+          Loading report…
         </div>
       )}
 

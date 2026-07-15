@@ -367,10 +367,15 @@ export default function PipelineBanner() {
         const metrics = parseAuditMetrics(raw);
 
         window.dispatchEvent(new CustomEvent("audit-report-ready", { detail: raw }));
-        window.dispatchEvent(new CustomEvent("analysis-session-complete"));
         setAnalysisDone(true);
         // Persist server-side so all devices + refreshes reflect done state
         fetch("/api/session/analysis-session", { method: "POST" }).catch(() => {});
+        // On-demand pull: refresh the server-side report cache from OneDrive,
+        // then tell the data/analytics pages to re-read it. This is the only
+        // path that fetches new OneDrive data outside a cold cache miss.
+        fetch("/api/data/report", { method: "POST" })
+          .catch(() => {})
+          .finally(() => window.dispatchEvent(new CustomEvent("analysis-session-complete")));
         setCelebrationTs(ts);
         setCelebrationMetrics(metrics);
         setCelebration(true);

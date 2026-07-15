@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import FiveQuestions from "@/components/home/FiveQuestions";
 import Reveal from "@/components/ui/Reveal";
+import HeroBackground from "@/components/hero/HeroBackground";
+import SceneAccent from "@/components/hero/SceneAccent";
 
 /* ─── helpers ─────────────────────────────────────────────── */
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -56,20 +58,29 @@ export default async function HomePage({
           transform: "translateX(-50%)",
           width: "min(1600px, 160vw)",
           height: "72vh",
-          background: "radial-gradient(ellipse at 50% -8%, rgba(0,204,122,0.072) 0%, rgba(0,185,255,0.022) 36%, transparent 66%)",
+          background: "radial-gradient(ellipse at 50% -8%, rgba(0,204,122,0.09) 0%, rgba(0,185,255,0.03) 36%, transparent 66%)",
           pointerEvents: "none",
         }} />
         {/* Dot grid — fades downward */}
         <div aria-hidden style={{
           position: "absolute", inset: 0,
-          backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.038) 1px, transparent 1px)",
+          backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)",
           backgroundSize: "36px 36px",
           WebkitMaskImage: "radial-gradient(ellipse 88% 68% at 50% 0%, black 0%, transparent 100%)",
           maskImage: "radial-gradient(ellipse 88% 68% at 50% 0%, black 0%, transparent 100%)",
           pointerEvents: "none",
         }} />
 
-        <div className="site-container" style={{ paddingTop: 48, paddingBottom: 72 }}>
+        {/* 3D Monte Carlo probability plume (client, lazy, reduced-motion aware) */}
+        <HeroBackground />
+
+        {/* Left legibility scrim — keeps copy crisp, leaves the plume vivid on the right */}
+        <div aria-hidden style={{
+          position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
+          background: "linear-gradient(90deg, var(--base) 0%, rgba(4,8,15,0.9) 30%, rgba(4,8,15,0.66) 48%, rgba(4,8,15,0.2) 66%, transparent 82%)",
+        }} />
+
+        <div className="site-container" style={{ paddingTop: 48, paddingBottom: 72, position: "relative", zIndex: 2 }}>
           <div style={{ maxWidth: 820 }}>
             <p className="section-eyebrow fade-up" style={{ marginBottom: 22 }}>
               XTNL Solutions · Thesis Document
@@ -87,7 +98,12 @@ export default async function HomePage({
               }}
             >
               Building Legacy Through{" "}
-              <span style={{ color: "var(--green)", textShadow: "0 0 48px rgba(0,204,122,0.32)" }}>Systematic Arbitrage.</span>
+              <span style={{
+                background: "linear-gradient(104deg, #00f090 0%, #00cc7a 40%, #7df0b0 64%, #f0c874 100%)",
+                WebkitBackgroundClip: "text", backgroundClip: "text",
+                WebkitTextFillColor: "transparent", color: "transparent",
+                filter: "drop-shadow(0 0 42px rgba(0,204,122,0.35))",
+              }}>Systematic Arbitrage.</span>
             </h1>
 
             <p
@@ -98,6 +114,7 @@ export default async function HomePage({
                 lineHeight: 1.8,
                 maxWidth: 660,
                 marginBottom: 44,
+                textShadow: "0 1px 16px rgba(4,8,15,0.95), 0 0 30px rgba(4,8,15,0.7)",
               }}
             >
               XTNL is a quantitative research and execution framework built on a single thesis:
@@ -244,8 +261,13 @@ export default async function HomePage({
       </section>
 
       {/* ══ ARCHITECTURE PILLARS ════════════════════════════════ */}
-      <section style={{ background: "var(--sub)", paddingTop: 80, paddingBottom: 80 }}>
-        <div className="site-container">
+      <section style={{ background: "var(--sub)", paddingTop: 80, paddingBottom: 80, position: "relative", overflow: "hidden" }}>
+        <SceneAccent
+          variant="surface"
+          size={680}
+          style={{ position: "absolute", top: -90, right: "clamp(-240px, -13vw, -90px)", opacity: 0.42, zIndex: 0 }}
+        />
+        <div className="site-container" style={{ position: "relative", zIndex: 1 }}>
           <Eyebrow>System Architecture</Eyebrow>
           <h2
             style={{
@@ -405,8 +427,13 @@ export default async function HomePage({
       </section>
 
       {/* ══ AGENCY PROBLEM ══════════════════════════════════════ */}
-      <section style={{ paddingTop: 80, paddingBottom: 80 }}>
-        <div className="site-container">
+      <section style={{ paddingTop: 80, paddingBottom: 80, position: "relative", overflow: "hidden" }}>
+        <SceneAccent
+          variant="well"
+          size={660}
+          style={{ position: "absolute", top: -70, right: "clamp(-220px, -11vw, -70px)", opacity: 0.4, zIndex: 0 }}
+        />
+        <div className="site-container" style={{ position: "relative", zIndex: 1 }}>
           <Eyebrow>Governance</Eyebrow>
           <h2
             style={{

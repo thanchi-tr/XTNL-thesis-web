@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth }                           from "@/auth";
-import { unstable_cache }                 from "next/cache";
+import { readFile, writeFile, mkdir }     from "fs/promises";
+import { join }                           from "path";
 import { getMondayAESTKey }               from "@/lib/weekKey";
 
 /* ── Config ─────────────────────────────────────────────────── */
@@ -15,6 +16,36 @@ const REPORT_BASE   = (process.env.REPORT_BASE_URL ?? "XTNLSolutions/Operations/
 /* Fixed live report path — pipeline writes here every Monday */
 const LIVE_FILE = "live.general.txt";
 const LIVE_PATH = `${REPORT_BASE}/${LIVE_FILE}`;
+
+/* ── Server-side report cache ────────────────────────────────
+   The report is pulled from OneDrive ON DEMAND (analyst weekend
+   session → POST) and cached locally on the server. Page loads
+   read through this cache and only touch OneDrive on a cold miss.
+   On Vercel the CWD is read-only, so the cache lives in /tmp.     */
+const DATA_DIR    = process.env.VERCEL ? "/tmp/xtnl-data" : join(process.cwd(), "data");
+const CACHE_FILE  = join(DATA_DIR, "report-cache.json");
+
+interface CachedReport {
+  content:    string;
+  filename:   string;
+  reportDate: string;   // weekKey the report belongs to (Monday AEST)
+  fetchedAt:  string;   // ISO timestamp of the OneDrive pull
+  weekKey:    string;   // weekKey at time of pull (== reportDate)
+}
+
+async function readCache(): Promise<CachedReport | null> {
+  try {
+    const raw = await readFile(CACHE_FILE, "utf-8");
+    return JSON.parse(raw) as CachedReport;
+  } catch {
+    return null;   // no file / unreadable → treated as a cache miss
+  }
+}
+
+async function writeCache(report: CachedReport): Promise<void> {
+  await mkdir(DATA_DIR, { recursive: true });
+  await writeFile(CACHE_FILE, JSON.stringify(report), "utf-8");
+}
 
 /* ── Graph API helpers ──────────────────────────────────────── */
 async function getGraphToken(): Promise<string> {
@@ -63,63 +94,123 @@ async function downloadById(token: string, itemId: string): Promise<string> {
   return res.text();
 }
 
-/* ── Cached fetcher — re-runs when weekKey changes (Monday AEST) ──
+/* ── OneDrive pull ──────────────────────────────────────────────
    Strategy: list the Reports folder children, find the file by name
-   (avoids Graph API's tilde-in-path-segment bug), then download by item ID. */
-interface LiveReport { content: string; fetchedAt: string; weekKey: string }
+   (avoids Graph API's tilde-in-path-segment bug), then download by
+   item ID. This is the expensive path — three sequential Graph calls.
+   Only invoked on a cold cache miss (GET) or an on-demand refresh (POST). */
+async function pullFromOneDrive(weekKey: string, log?: string[]): Promise<CachedReport> {
+  const token = await getGraphToken();
+  log?.push("Graph token acquired");
 
-const getCachedReport = unstable_cache(
-  async (weekKey: string): Promise<LiveReport> => {
-    const token = await getGraphToken();
+  const items = await listChildren(token, REPORT_BASE);
+  log?.push(`Listed ${items.length} item(s) in Reports folder`);
 
-    /* List the Reports folder to find the live file by name */
-    const items = await listChildren(token, REPORT_BASE);
-    const item  = items.find(f => (f.name as string) === LIVE_FILE);
+  const item = items.find(f => (f.name as string) === LIVE_FILE);
+  if (!item) {
+    const names = items.map(f => f.name as string).join(", ");
+    throw new Error(`"${LIVE_FILE}" not found in Reports folder. Items found: [${names || "none"}]`);
+  }
 
-    if (!item) {
-      const names = items.map(f => f.name as string).join(", ");
-      throw new Error(
-        `"${LIVE_FILE}" not found in Reports folder. Items found: [${names || "none"}]`
-      );
-    }
+  const content = await downloadById(token, item.id as string);
+  log?.push(`Downloaded ${content.length} chars`);
 
-    const content = await downloadById(token, item.id as string);
-    return { content, fetchedAt: new Date().toISOString(), weekKey };
-  },
-  ["xtnl-live-report"],
-  { revalidate: 86400 }   // daily background refresh; weekKey change forces immediate re-fetch
-);
+  return {
+    content,
+    filename:   LIVE_FILE,
+    reportDate: weekKey,
+    fetchedAt:  new Date().toISOString(),
+    weekKey,
+  };
+}
 
-/* ── Route handler ──────────────────────────────────────────── */
+/* Shape the JSON payload returned to clients (never expose the raw cache struct). */
+function toResponse(
+  report: CachedReport,
+  source: "cache" | "onedrive",
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    content:    report.content,
+    filename:   report.filename,
+    reportDate: report.reportDate,
+    fetchedAt:  report.fetchedAt,
+    source,                                              // "cache" | "onedrive"
+    stale:      report.weekKey !== getMondayAESTKey(),   // cached data is from a prior week
+    ...extra,
+  };
+}
+
+function isRefresher(session: unknown): boolean {
+  const roles = ((session as { roles?: string[] } | null)?.roles) ?? [];
+  return roles.some(r => ["analyst", "strategist", "fund_manager"].includes(r));
+}
+
+/* ── GET — read-through cache ────────────────────────────────────
+   Serve the locally-cached report immediately. Only when the cache
+   is genuinely empty (cold miss) do we pull from OneDrive, populate
+   the cache, and return. Never revalidates against OneDrive on a
+   time schedule — fresh data arrives via the on-demand POST refresh. */
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!(session as { twoFactorVerified?: boolean } | null)?.twoFactorVerified)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const debug   = process.env.NODE_ENV === "development" &&
-                  req.nextUrl.searchParams.get("debug") === "1";
-  const weekKey = getMondayAESTKey();
+  const debug = process.env.NODE_ENV === "development" &&
+                req.nextUrl.searchParams.get("debug") === "1";
   const log: string[] = [];
 
+  const cached = await readCache();
+  if (cached) {
+    log.push(`Cache hit — pulled ${cached.fetchedAt}, week ${cached.weekKey}`);
+    return NextResponse.json(toResponse(cached, "cache", debug ? { _log: log } : {}));
+  }
+
+  /* Cold miss — no cache on this server instance yet. Pull once. */
+  const weekKey = getMondayAESTKey();
+  log.push(`Cache miss — pulling ${LIVE_PATH} from OneDrive user ${USER_ID}`);
   try {
-    log.push(`Week key (Monday AEST): ${weekKey}`);
-    log.push(`Fetching: ${LIVE_PATH} from OneDrive user ${USER_ID}`);
-
-    const report = await getCachedReport(weekKey);
-
-    log.push(`OK — ${report.content.length} chars, originally fetched ${report.fetchedAt}`);
-    return NextResponse.json({
-      content:    report.content,
-      filename:   LIVE_FILE,
-      reportDate: report.weekKey,
-      fetchedAt:  report.fetchedAt,
-      ...(debug ? { _log: log } : {}),
-    });
+    const report = await pullFromOneDrive(weekKey, log);
+    await writeCache(report);
+    log.push("Cache populated");
+    return NextResponse.json(toResponse(report, "onedrive", debug ? { _log: log } : {}));
   } catch (e) {
     console.error("[report GET]", e);
     log.push(`Error: ${String(e)}`);
     return NextResponse.json(
       { error: "Failed to load report. Please try again later.", ...(debug ? { _log: log } : {}) },
+      { status: 500 }
+    );
+  }
+}
+
+/* ── POST — on-demand refresh ────────────────────────────────────
+   Invoked by the analyst during the weekend analysis session. Always
+   pulls fresh from OneDrive and overwrites the server cache. Gated to
+   roles that run analysis so the expensive Graph path can't be abused. */
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!(session as { twoFactorVerified?: boolean } | null)?.twoFactorVerified)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isRefresher(session))
+    return NextResponse.json({ error: "Analyst role required to refresh." }, { status: 403 });
+
+  const debug = process.env.NODE_ENV === "development" &&
+                req.nextUrl.searchParams.get("debug") === "1";
+  const log: string[] = [];
+  const weekKey = getMondayAESTKey();
+
+  try {
+    log.push(`On-demand refresh — pulling ${LIVE_PATH} from OneDrive user ${USER_ID}`);
+    const report = await pullFromOneDrive(weekKey, log);
+    await writeCache(report);
+    log.push("Cache overwritten with fresh pull");
+    return NextResponse.json(toResponse(report, "onedrive", debug ? { _log: log } : {}));
+  } catch (e) {
+    console.error("[report POST]", e);
+    log.push(`Error: ${String(e)}`);
+    return NextResponse.json(
+      { error: "Refresh failed. Please try again.", ...(debug ? { _log: log } : {}) },
       { status: 500 }
     );
   }
