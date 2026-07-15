@@ -161,19 +161,19 @@ const VERT = /* glsl */ `
 
     // milestone singularity — pull toward (uFocusX, 0, 0)
     float d    = pos.x - uFocusX;
-    float prox = exp(-d * d * 6.5);
+    float prox = exp(-d * d * 4.2);
     float pull = uFocusStrength * prox * fluid;
-    pos = mix(pos, vec3(uFocusX, 0.0, 0.0), pull * 0.86);
+    pos = mix(pos, vec3(uFocusX, 0.0, 0.0), pull * 0.92);
     float focusGlow = pull;
 
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mv;
 
-    float size = uSize * (0.6 + aPathT * 0.9) * (0.5 + frontGlow + focusGlow * 2.2 + uLock * 0.35);
-    gl_PointSize = clamp(size * uPixelRatio * (260.0 / -mv.z), 1.0, 46.0);
+    float size = uSize * (0.6 + aPathT * 0.9) * (0.5 + frontGlow + focusGlow * 3.2 + uLock * 0.35);
+    gl_PointSize = clamp(size * uPixelRatio * (260.0 / -mv.z), 1.0, 54.0);
 
     vColorT = aPathT;
-    vGlow   = frontGlow + focusGlow * 2.7;
+    vGlow   = frontGlow + focusGlow * 3.6;
     vAlpha  = mix(appear * (0.5 + aStep * 0.55) * (0.6 + aRand * 0.4), appear * 0.9, uLock);
     vLock   = uLock;
   }
@@ -234,6 +234,9 @@ function Plume({
 
   const camPos = useMemo(() => new THREE.Vector3(...CAM_KEYS[0].pos), []);
   const camTgt = useMemo(() => new THREE.Vector3(...CAM_KEYS[0].tgt), []);
+  const tmpP = useMemo(() => new THREE.Vector3(), []);
+  const tmpT = useMemo(() => new THREE.Vector3(), []);
+  const smoothProg = useRef(0);
 
   const [paths, steps] = quality === "high" ? [1000, 56] : [380, 42];
 
@@ -256,12 +259,13 @@ function Plume({
     []
   );
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const m = matRef.current;
     if (!m) return;
     const t = state.clock.elapsedTime;
     if (start.current === 0) start.current = t;
     const since = t - start.current;
+    const dt = Math.min(delta, 0.05);   // clamp to avoid jumps after a stall
 
     m.uniforms.uTime.value = t;
 
@@ -269,31 +273,38 @@ function Plume({
     const rp = Math.min(since / 2.4, 1);
     m.uniforms.uReveal.value = 1 - Math.pow(1 - rp, 3);
 
-    // milestone focus — lerp strength + snap target
+    // milestone focus — framerate-independent ease
     const focus = focusRef.current;
-    m.uniforms.uFocusStrength.value += ((focus === null ? 0 : 1) - m.uniforms.uFocusStrength.value) * 0.12;
+    m.uniforms.uFocusStrength.value = THREE.MathUtils.damp(
+      m.uniforms.uFocusStrength.value, focus === null ? 0 : 1, 9, dt);
     if (focus !== null) m.uniforms.uFocusX.value = focus;
 
     // lockdown phase-shift — quick snap into the rigid red state
-    const targetLock = lockRef.current ? 1 : 0;
-    m.uniforms.uLock.value += (targetLock - m.uniforms.uLock.value) * 0.22;
+    m.uniforms.uLock.value = THREE.MathUtils.damp(
+      m.uniforms.uLock.value, lockRef.current ? 1 : 0, 12, dt);
 
-    // scroll-driven camera traversal
-    const prog = Math.min(Math.max(progressRef.current, 0), 1);
+    // scroll-driven camera traversal — smooth the scroll input first, then derive
+    // the camera deterministically so discrete wheel steps read as fluid motion.
+    const progTarget = Math.min(Math.max(progressRef.current, 0), 1);
+    // silky for small scroll deltas, but snap fast on big jumps (e.g. returning
+    // to the hero) so the camera never reads as "stuck" off-screen
+    const lambda = Math.abs(progTarget - smoothProg.current) > 0.35 ? 9 : 3.2;
+    smoothProg.current = THREE.MathUtils.damp(smoothProg.current, progTarget, lambda, dt);
+    const prog = smoothProg.current;
     let a: number, b: number, u: number;
     if (prog < 0.5) { a = 0; b = 1; u = ease(prog / 0.5); }
     else            { a = 1; b = 2; u = ease((prog - 0.5) / 0.5); }
-    camPos.set(...CAM_KEYS[a].pos).lerp(new THREE.Vector3(...CAM_KEYS[b].pos), u);
-    camTgt.set(...CAM_KEYS[a].tgt).lerp(new THREE.Vector3(...CAM_KEYS[b].tgt), u);
-    state.camera.position.lerp(camPos, 0.09);
+    camPos.set(...CAM_KEYS[a].pos).lerp(tmpP.set(...CAM_KEYS[b].pos), u);
+    camTgt.set(...CAM_KEYS[a].tgt).lerp(tmpT.set(...CAM_KEYS[b].tgt), u);
+    state.camera.position.copy(camPos);
     state.camera.lookAt(camTgt);
 
     // subtle pointer parallax — fades out as we dive / lock
     const g = groupRef.current;
     if (g) {
       const damp = (1 - prog) * (1 - m.uniforms.uLock.value);
-      g.rotation.y += (state.pointer.x * 0.13 * damp - g.rotation.y) * 0.05;
-      g.rotation.x += (-state.pointer.y * 0.09 * damp - g.rotation.x) * 0.05;
+      g.rotation.y = THREE.MathUtils.damp(g.rotation.y, state.pointer.x * 0.13 * damp, 3, dt);
+      g.rotation.x = THREE.MathUtils.damp(g.rotation.x, -state.pointer.y * 0.09 * damp, 3, dt);
     }
   });
 

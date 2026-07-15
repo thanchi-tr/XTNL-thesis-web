@@ -237,12 +237,20 @@ export default function NavBar() {
           style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}
         >
           {/* ── Logo ──────────────────────────────────── */}
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flexShrink: 0 }}>
-            <XtnlLogo width="20" height="20" />
-            <span className="mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.18em", color: "var(--ink-0)" }}>
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 11, textDecoration: "none", flexShrink: 0 }}>
+            <span style={{ display: "inline-flex", filter: "drop-shadow(0 0 9px rgba(0,204,122,0.5))" }}>
+              <XtnlLogo width="24" height="24" />
+            </span>
+            <span className="mono" style={{
+              fontSize: 17, fontWeight: 800, letterSpacing: "0.13em",
+              background: "linear-gradient(180deg, #ffffff 8%, #8ff2b8 150%)",
+              WebkitBackgroundClip: "text", backgroundClip: "text",
+              WebkitTextFillColor: "transparent", color: "transparent",
+              filter: "drop-shadow(0 0 12px rgba(0,204,122,0.42))",
+            }}>
               XTNL
             </span>
-            <span className="nav-desktop mono" style={{ fontSize: 9, letterSpacing: "0.10em", color: "var(--ink-3)", paddingLeft: 10, borderLeft: "1px solid var(--line)" }}>
+            <span className="nav-desktop mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--ink-2)", paddingLeft: 11, borderLeft: "1px solid var(--line-hi)" }}>
               SOLUTIONS
             </span>
           </Link>

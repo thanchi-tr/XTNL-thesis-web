@@ -21,12 +21,13 @@ const MonteCarloPlume = dynamic(() => import("./MonteCarloPlume"), {
   loading: () => null,
 });
 
-/* World-x range must match MonteCarloPlume (X_MIN / X_MAX). */
+/* World-x range must match MonteCarloPlume (X_MIN / X_MAX).
+   Milestones sit over the *visible* diverged plume (right of the anchor) so a
+   hover visibly compresses the particles right where the marker is. */
 const X_MIN = -4.3;
 const X_MAX = 4.7;
-const MILESTONES = [0, 1, 2, 3, 4];
-const markerFraction = (i: number) => (i + 0.72) / (MILESTONES.length + 0.4);
-const markerWorldX = (i: number) => X_MIN + (X_MAX - X_MIN) * markerFraction(i);
+const MILE_X = [0.5, 1.4, 2.3, 3.2, 4.05];
+const screenPct = (x: number) => ((x - X_MIN) / (X_MAX - X_MIN)) * 100;
 
 export default function HeroBackground() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -108,7 +109,7 @@ export default function HeroBackground() {
   }, []);
 
   function focus(i: number | null) {
-    focusRef.current = i === null ? null : markerWorldX(i);
+    focusRef.current = i === null ? null : MILE_X[i];
     setHovered(i);
   }
 
@@ -142,11 +143,11 @@ export default function HeroBackground() {
         }}
       />
 
-      {/* "What am I looking at?" annotation */}
+      {/* "What am I looking at?" annotation — three lines */}
       {wide && (
         <div style={{
-          position: "absolute", top: "13%", right: "clamp(20px, 6vw, 96px)",
-          textAlign: "right", pointerEvents: "none", maxWidth: 300,
+          position: "absolute", top: "14%", right: "clamp(20px, 6vw, 96px)",
+          textAlign: "right", pointerEvents: "none", whiteSpace: "nowrap",
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 7 }}>
             <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 8px var(--green)" }} />
@@ -154,11 +155,11 @@ export default function HeroBackground() {
               MONTE CARLO PROJECTION
             </span>
           </div>
-          <div style={{ fontSize: 11, color: "var(--ink-2, #9ab0c8)", marginTop: 5, lineHeight: 1.5 }}>
-            1,000 simulated capital paths diverging from a single anchor
+          <div style={{ fontSize: 12, color: "var(--ink-2, #9ab0c8)", marginTop: 6 }}>
+            1,000 simulated capital paths
           </div>
           <div className="mono" style={{ fontSize: 9.5, color: "var(--ink-3, #64788c)", marginTop: 4, letterSpacing: "0.04em" }}>
-            hover a milestone to inspect the compounding front
+            hover a node to inspect →
           </div>
         </div>
       )}
@@ -171,53 +172,50 @@ export default function HeroBackground() {
         <i style={envDot("#3f78d8")} /> P5 · baseline
       </span>
 
-      {/* Milestone markers — hover to compress the plume into a singularity */}
-      <div
-        style={{
-          position: "absolute", left: 0, right: 0, bottom: "20%",
-          display: "flex", justifyContent: "center", gap: "clamp(18px, 5vw, 64px)",
-          pointerEvents: "none",
-        }}
-      >
-        {MILESTONES.map((i) => {
-          const on = hovered === i;
-          return (
-            <button
-              key={i}
-              type="button"
-              onMouseEnter={() => focus(i)}
-              onMouseLeave={() => focus(null)}
-              onFocus={() => focus(i)}
-              onBlur={() => focus(null)}
-              aria-label={`Milestone ${i + 1}`}
+      {/* Milestone nodes — positioned over the visible plume; hover compresses
+          the particles into a bright singularity right at the node. */}
+      {MILE_X.map((x, i) => {
+        const on = hovered === i;
+        return (
+          <button
+            key={i}
+            type="button"
+            onMouseEnter={() => focus(i)}
+            onMouseLeave={() => focus(null)}
+            onFocus={() => focus(i)}
+            onBlur={() => focus(null)}
+            aria-label={`Milestone ${i + 1}`}
+            style={{
+              position: "absolute", left: `${screenPct(x)}%`, top: "47%",
+              transform: "translate(-50%, -50%)",
+              pointerEvents: "auto",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 7,
+              background: "none", border: "none", cursor: "pointer", padding: "10px 12px",
+            }}
+          >
+            <span
               style={{
-                pointerEvents: "auto",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-                background: "none", border: "none", cursor: "pointer", padding: "6px 4px",
+                width: on ? 13 : 8, height: on ? 13 : 8, borderRadius: "50%",
+                background: on ? "var(--green-hi, #00f090)" : "rgba(154,176,200,0.5)",
+                boxShadow: on
+                  ? "0 0 20px 4px rgba(0,240,144,0.8)"
+                  : "0 0 8px 1px rgba(154,176,200,0.25)",
+                transition: "all 0.22s cubic-bezier(0.16,1,0.3,1)",
+              }}
+            />
+            <span
+              className="mono"
+              style={{
+                fontSize: 9, letterSpacing: "0.12em",
+                color: on ? "var(--green)" : "var(--ink-3, #64788c)",
+                opacity: on ? 1 : 0.6, transition: "all 0.2s",
               }}
             >
-              <span
-                style={{
-                  width: on ? 11 : 7, height: on ? 11 : 7, borderRadius: "50%",
-                  background: on ? "var(--green-hi, #00f090)" : "rgba(154,176,200,0.4)",
-                  boxShadow: on ? "0 0 16px 3px rgba(0,240,144,0.7)" : "none",
-                  transition: "all 0.22s cubic-bezier(0.16,1,0.3,1)",
-                }}
-              />
-              <span
-                className="mono"
-                style={{
-                  fontSize: 9, letterSpacing: "0.12em",
-                  color: on ? "var(--green)" : "var(--ink-3, #64788c)",
-                  opacity: on ? 1 : 0.55, transition: "all 0.2s",
-                }}
-              >
-                M{i + 1}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+              M{i + 1}
+            </span>
+          </button>
+        );
+      })}
 
       {/* Focus-lockdown indicator — rigid red state + chromatic-aberration frame */}
       {locked && (
