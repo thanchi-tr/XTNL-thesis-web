@@ -159,22 +159,23 @@ const VERT = /* glsl */ `
     float front     = fract(uTime * 0.085);
     float frontGlow = smoothstep(0.05, 0.0, abs(aStep - front)) * 0.85 * fluid;
 
-    // milestone singularity — pull toward (uFocusX, 0, 0)
+    // milestone singularity — draw particles toward (uFocusX, 0, 0) into a
+    // defined bright core (tighter gather + softer pull avoids a white blow-out)
     float d    = pos.x - uFocusX;
-    float prox = exp(-d * d * 4.2);
+    float prox = exp(-d * d * 5.5);
     float pull = uFocusStrength * prox * fluid;
-    pos = mix(pos, vec3(uFocusX, 0.0, 0.0), pull * 0.92);
+    pos = mix(pos, vec3(uFocusX, 0.0, 0.0), pull * 0.8);
     float focusGlow = pull;
 
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mv;
 
-    float size = uSize * (0.6 + aPathT * 0.9) * (0.5 + frontGlow + focusGlow * 3.2 + uLock * 0.35);
-    gl_PointSize = clamp(size * uPixelRatio * (260.0 / -mv.z), 1.0, 54.0);
+    float size = uSize * (0.6 + aPathT * 0.9) * (0.5 + frontGlow + focusGlow * 2.0 + uLock * 0.35);
+    gl_PointSize = clamp(size * uPixelRatio * (260.0 / -mv.z), 1.0, 40.0);
 
     vColorT = aPathT;
-    vGlow   = frontGlow + focusGlow * 3.6;
-    vAlpha  = mix(appear * (0.5 + aStep * 0.55) * (0.6 + aRand * 0.4), appear * 0.9, uLock);
+    vGlow   = frontGlow + focusGlow * 2.2;
+    vAlpha  = mix(appear * (0.42 + aStep * 0.5) * (0.58 + aRand * 0.42), appear * 0.85, uLock);
     vLock   = uLock;
   }
 `;
@@ -199,7 +200,7 @@ const FRAG = /* glsl */ `
     vec3 col = vColorT < 0.5
       ? mix(uColorLow, uColorMid, vColorT * 2.0)
       : mix(uColorMid, uColorHigh, (vColorT - 0.5) * 2.0);
-    col += vGlow * 0.9;
+    col += vGlow * 0.62;
 
     // lockdown → deep red rigid matrix
     col = mix(col, uColorLock, vLock);

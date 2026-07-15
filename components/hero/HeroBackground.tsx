@@ -188,9 +188,10 @@ export default function HeroBackground() {
             style={{
               position: "absolute", left: `${screenPct(x)}%`, top: "47%",
               transform: "translate(-50%, -50%)",
+              zIndex: 4,                       // lift above the hero content (zIndex 2) so all nodes are hoverable
               pointerEvents: "auto",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 7,
-              background: "none", border: "none", cursor: "pointer", padding: "10px 12px",
+              background: "none", border: "none", cursor: "pointer", padding: "12px 16px",
             }}
           >
             <span

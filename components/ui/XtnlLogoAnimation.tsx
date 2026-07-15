@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import XtnlLogo from "./XtnlLogo";
 
 export type XtnlAnimMode = "intro" | "success";
 
@@ -9,206 +10,92 @@ interface Props {
 }
 
 /*
- * Animation timeline (all timings in ms):
- *
- * Phase 1 — white dots appear one by one     0 – 480 ms
- * Phase 2 — green nodes grow, verts appear   540 – 1060 ms
- * Phase 3 — lines draw from left vertex      990 – 1740 ms
- * Phase 4 — XTNL word fades in             1750 – 2030 ms
- * Fade-out                                  2100 – 2500 ms
- * onDone callback                           2550 ms
+ * Refined intro — a single, composed reveal (no piece-by-piece construction):
+ *   0 – 620 ms   logo eases up from 0.9→1 with a glow bloom + expanding ring
+ *   360 – 780 ms wordmark settles in (letter-spacing relaxes)
+ *   1050 ms      overlay begins its fade
+ *   ~1480 ms     onDone
  */
-
 const CSS = `
-/* ── Phase 1: white dots ─────────────────────────────────────────────────── */
-.xa-wd {
-  fill: white;
+.xi-wrap { animation: xi-fade-out 400ms ease 1060ms both; }
+@keyframes xi-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+.xi-logo {
   opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: xa-dot 160ms cubic-bezier(0.34,1.56,0.64,1) both;
+  animation: xi-logo-in 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.xa-wd-a { animation-delay:   0ms; }
-.xa-wd-b { animation-delay:  80ms; }
-.xa-wd-c { animation-delay: 160ms; }
-.xa-wd-d { animation-delay: 240ms; }
-.xa-wd-e { animation-delay: 320ms; }
-@keyframes xa-dot {
-  from { opacity: 0; transform: scale(0); }
-  to   { opacity: 1; transform: scale(1); }
+@keyframes xi-logo-in {
+  0%   { opacity: 0; transform: scale(0.9);  filter: drop-shadow(0 0 4px rgba(0,204,122,0)); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; transform: scale(1);    filter: drop-shadow(0 0 24px rgba(0,204,122,0.38)); }
 }
 
-/* ── Phase 2: green nodes ────────────────────────────────────────────────── */
-.xa-node {
+.xi-ring {
+  transform-box: fill-box; transform-origin: center;
+  animation: xi-ring 950ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
+}
+@keyframes xi-ring {
+  from { opacity: 0.55; transform: scale(0.35); }
+  to   { opacity: 0;    transform: scale(1.9);  }
+}
+
+.xi-word {
   opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: xa-node-grow 330ms cubic-bezier(0.34,1.56,0.64,1) both;
+  animation: xi-word-in 460ms cubic-bezier(0.22, 1, 0.36, 1) 360ms both;
 }
-.xa-node-a { animation-delay: 540ms; }
-.xa-node-b { animation-delay: 640ms; }
-@keyframes xa-node-grow {
-  from { opacity: 0; transform: scale(0);    }
-  65%  {             transform: scale(1.10); }
-  to   { opacity: 1; transform: scale(1);    }
+@keyframes xi-word-in {
+  from { opacity: 0; transform: translateY(7px); letter-spacing: 0.44em; }
+  to   { opacity: 1; transform: translateY(0);   letter-spacing: 0.22em; }
 }
 
-/* ── Phase 2: dim vertices ───────────────────────────────────────────────── */
-.xa-vert {
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: xa-vert-in 220ms ease both;
-}
-.xa-vert-l { animation-delay: 720ms; }
-.xa-vert-r { animation-delay: 780ms; }
-.xa-vert-b { animation-delay: 840ms; }
-@keyframes xa-vert-in {
-  from { opacity: 0; transform: scale(0.4); }
-  to   { opacity: 1; transform: scale(1);   }
-}
-
-/* ── Phase 3: lines (stroke-dashoffset draw) ─────────────────────────────── */
-@keyframes xa-l-mid     { from { stroke-dashoffset: 46; } to { stroke-dashoffset: 0; } }
-@keyframes xa-l-lower-l { from { stroke-dashoffset: 32; } to { stroke-dashoffset: 0; } }
-@keyframes xa-l-cross-b { from { stroke-dashoffset: 52; } to { stroke-dashoffset: 0; } }
-@keyframes xa-l-upper-l { from { stroke-dashoffset: 33; } to { stroke-dashoffset: 0; } }
-@keyframes xa-l-upper-r { from { stroke-dashoffset: 33; } to { stroke-dashoffset: 0; } }
-@keyframes xa-l-cross-a { from { stroke-dashoffset: 57; } to { stroke-dashoffset: 0; } }
-@keyframes xa-l-lower-r { from { stroke-dashoffset: 32; } to { stroke-dashoffset: 0; } }
-
-.xa-l-mid     { stroke-dasharray: 46; animation: xa-l-mid      130ms ease  990ms both; }
-.xa-l-lower-l { stroke-dasharray: 32; animation: xa-l-lower-l  100ms ease 1110ms both; }
-.xa-l-cross-b { stroke-dasharray: 52; animation: xa-l-cross-b  140ms ease 1210ms both; }
-.xa-l-upper-l { stroke-dasharray: 33; animation: xa-l-upper-l  100ms ease 1330ms both; }
-.xa-l-upper-r { stroke-dasharray: 33; animation: xa-l-upper-r  100ms ease 1430ms both; }
-.xa-l-cross-a { stroke-dasharray: 57; animation: xa-l-cross-a  150ms ease 1530ms both; }
-.xa-l-lower-r { stroke-dasharray: 32; animation: xa-l-lower-r   90ms ease 1650ms both; }
-
-.xa-poly {
-  opacity: 0;
-  animation: xa-vert-in 200ms ease 1430ms both;
-}
-
-/* ── Phase 4: XTNL word ─────────────────────────────────────────────────── */
-.xa-word {
-  opacity: 0;
-  animation: xa-word-in 280ms ease 1750ms both;
-}
-@keyframes xa-word-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-/* ── Overlay exit ────────────────────────────────────────────────────────── */
-.xa-exit {
-  animation: xa-fade-out 400ms ease both;
-  pointer-events: none;
-}
-@keyframes xa-fade-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .xi-logo, .xi-ring, .xi-word { animation-duration: 1ms !important; }
 }
 `;
 
 export function XtnlLogoAnimation({ mode: _mode, onDone }: Props) {
-  const [exiting, setExiting] = useState(false);
-
   useEffect(() => {
-    const t1 = setTimeout(() => setExiting(true), 2100);
-    const t2 = setTimeout(() => onDone?.(), 2550);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const t = setTimeout(() => onDone?.(), 1480);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div
-      className={exiting ? "xa-exit" : undefined}
+      className="xi-wrap"
       style={{
         position: "fixed", inset: 0, zIndex: 10000,
         background: "var(--canvas, #020508)",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        gap: 28,
+        gap: 26,
       }}
     >
       <style>{CSS}</style>
 
-      <svg viewBox="0 0 80 80" width="244" height="244" fill="none" aria-hidden>
+      <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <svg
+          className="xi-ring"
+          width="220" height="220" viewBox="0 0 220 220"
+          style={{ position: "absolute" }}
+          aria-hidden
+        >
+          <circle cx="110" cy="110" r="66" fill="none" stroke="rgba(0,204,122,0.4)" strokeWidth="1" />
+        </svg>
+        <div className="xi-logo">
+          <XtnlLogo width={150} height={150} />
+        </div>
+      </div>
 
-        {/* ── Phase 1: white dots ─────────────────────────────────────── */}
-        <circle className="xa-wd xa-wd-a" cx="27" cy="8"  r="3.4" />
-        <circle className="xa-wd xa-wd-b" cx="51" cy="13" r="3.0" />
-        <circle className="xa-wd xa-wd-c" cx="17" cy="52" r="2.4" />
-        <circle className="xa-wd xa-wd-d" cx="63" cy="52" r="2.4" />
-        <circle className="xa-wd xa-wd-e" cx="40" cy="74" r="2.0" />
-
-        {/* ── Phase 3: lines draw from left vertex (17,52) outward ──── */}
-        <line className="xa-l-mid"
-          x1="17" y1="52" x2="63" y2="52"
-          stroke="rgba(0,204,122,0.22)" strokeWidth="1" />
-        <line className="xa-l-lower-l"
-          x1="17" y1="52" x2="40" y2="74"
-          stroke="rgba(0,204,122,0.09)" strokeWidth="1.5" strokeLinecap="round" />
-        <line className="xa-l-cross-b"
-          x1="17" y1="52" x2="51" y2="13"
-          stroke="rgba(0,204,122,0.28)" strokeWidth="1.5" strokeLinecap="round" />
-        <line className="xa-l-upper-l"
-          x1="17" y1="52" x2="40" y2="29"
-          stroke="rgba(0,204,122,0.15)" strokeWidth="1.3" strokeLinecap="round" />
-        <line className="xa-l-upper-r"
-          x1="40" y1="29" x2="63" y2="52"
-          stroke="rgba(0,204,122,0.15)" strokeWidth="1.3" strokeLinecap="round" />
-        <polygon className="xa-poly"
-          points="40,29 63,52 17,52"
-          fill="rgba(0,204,122,0.03)" />
-        <line className="xa-l-cross-a"
-          x1="27" y1="8" x2="63" y2="52"
-          stroke="rgba(0,204,122,0.52)" strokeWidth="1.5" strokeLinecap="round" />
-        <line className="xa-l-lower-r"
-          x1="63" y1="52" x2="40" y2="74"
-          stroke="rgba(0,204,122,0.09)" strokeWidth="1.5" strokeLinecap="round" />
-
-        {/* ── Phase 2: colored elements appear over white dots ─────── */}
-        <g className="xa-node xa-node-a"
-          style={{ transformBox: "fill-box" as const, transformOrigin: "center" }}>
-          <circle cx="27" cy="8" r="8"   fill="rgba(0,204,122,0.10)" />
-          <circle cx="27" cy="8" r="5"   fill="rgba(0,204,122,0.72)"
-            style={{ filter: "drop-shadow(0 0 4px #00cc7a)" }} />
-          <circle cx="27" cy="8" r="2.8" fill="#b0ffe0" />
-        </g>
-        <g className="xa-node xa-node-b"
-          style={{ transformBox: "fill-box" as const, transformOrigin: "center" }}>
-          <circle cx="51" cy="13" r="7"   fill="rgba(0,204,122,0.08)" />
-          <circle cx="51" cy="13" r="4.5" fill="rgba(0,204,122,0.65)"
-            style={{ filter: "drop-shadow(0 0 3px #00cc7a)" }} />
-          <circle cx="51" cy="13" r="2.2" fill="#b0ffe0" />
-        </g>
-        <g className="xa-vert xa-vert-l"
-          style={{ transformBox: "fill-box" as const, transformOrigin: "center" }}>
-          <circle cx="17" cy="52" r="1.8" fill="rgba(0,204,122,0.22)" />
-        </g>
-        <g className="xa-vert xa-vert-r"
-          style={{ transformBox: "fill-box" as const, transformOrigin: "center" }}>
-          <circle cx="63" cy="52" r="3.2" fill="none" stroke="rgba(0,180,255,0.45)" strokeWidth="1" />
-          <circle cx="63" cy="52" r="1.8" fill="#00b4ff" opacity="0.7" />
-        </g>
-        <g className="xa-vert xa-vert-b"
-          style={{ transformBox: "fill-box" as const, transformOrigin: "center" }}>
-          <circle cx="40" cy="74" r="3" fill="none" stroke="rgba(0,204,122,0.22)" strokeWidth="1" />
-        </g>
-      </svg>
-
-      {/* ── Phase 4: XTNL word ──── */}
       <p
-        className="xa-word"
+        className="xi-word"
         style={{
           margin: 0,
           fontFamily: "var(--font-mono, monospace)",
-          fontSize: 37,
-          fontWeight: 800,
-          letterSpacing: "0.20em",
-          paddingRight: "0.20em",
-          color: "var(--ink-0, #eef2f8)",
+          fontSize: 34, fontWeight: 800,
+          letterSpacing: "0.22em", paddingRight: "0.22em",
+          background: "linear-gradient(180deg, #ffffff 10%, #8ff2b8 155%)",
+          WebkitBackgroundClip: "text", backgroundClip: "text",
+          WebkitTextFillColor: "transparent", color: "transparent",
         }}
       >
         XTNL

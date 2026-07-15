@@ -238,8 +238,8 @@ export default function NavBar() {
         >
           {/* ── Logo ──────────────────────────────────── */}
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 11, textDecoration: "none", flexShrink: 0 }}>
-            <span style={{ display: "inline-flex", filter: "drop-shadow(0 0 9px rgba(0,204,122,0.5))" }}>
-              <XtnlLogo width="24" height="24" />
+            <span style={{ display: "inline-flex", filter: "drop-shadow(0 0 6px rgba(0,204,122,0.65)) drop-shadow(0 0 16px rgba(0,204,122,0.4))" }}>
+              <XtnlLogo width="27" height="27" />
             </span>
             <span className="mono" style={{
               fontSize: 17, fontWeight: 800, letterSpacing: "0.13em",
