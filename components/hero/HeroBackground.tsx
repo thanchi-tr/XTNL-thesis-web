@@ -29,6 +29,17 @@ const X_MAX = 4.7;
 const MILE_X = [0.5, 1.4, 2.3, 3.2, 4.05];
 const screenPct = (x: number) => ((x - X_MIN) / (X_MAX - X_MIN)) * 100;
 
+/* Illustrative projection read-outs per milestone (compounding horizon).
+   These are DECORATIVE outputs of the on-screen simulation — escalating growth
+   multiples across the P5→P95 envelope — NOT real performance or edge data. */
+const MILE_DATA = [
+  { horizon: "T+1", p5: 1.1, p50: 1.4, p95: 1.9,  prof: 61 },
+  { horizon: "T+2", p5: 1.3, p50: 2.0, p95: 3.1,  prof: 66 },
+  { horizon: "T+3", p5: 1.6, p50: 2.9, p95: 5.2,  prof: 72 },
+  { horizon: "T+4", p5: 2.0, p50: 4.1, p95: 8.8,  prof: 77 },
+  { horizon: "T+5", p5: 2.4, p50: 5.8, p95: 14.6, prof: 81 },
+];
+
 export default function HeroBackground() {
   const hostRef = useRef<HTMLDivElement>(null);
   const focusRef = useRef<number | null>(null);
@@ -38,7 +49,7 @@ export default function HeroBackground() {
   const [active, setActive] = useState(true);     // in-view
   const [hovered, setHovered] = useState<number | null>(null);
   const [locked, setLocked] = useState(false);
-  const [wide, setWide] = useState(false);        // room for the annotation caption
+  const [vw, setVw] = useState(0);                // viewport width (0 until measured)
 
   const quality: Quality = useMemo(() => {
     if (typeof window === "undefined") return "high";
@@ -53,11 +64,10 @@ export default function HeroBackground() {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) return;               // leave the static gradient in place
     setEnabled(true);
-    const mq = window.matchMedia("(min-width: 1024px)");
-    const sync = () => setWide(mq.matches);
+    const sync = () => setVw(window.innerWidth);
     sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
   }, []);
 
   /* Pause the loop when the hero scrolls out of view. */
@@ -112,8 +122,16 @@ export default function HeroBackground() {
     focusRef.current = i === null ? null : MILE_X[i];
     setHovered(i);
   }
+  // tap-to-inspect for touch: toggle the tapped node
+  function tap(i: number) {
+    focus(hovered === i ? null : i);
+  }
 
   if (!enabled) return null;
+
+  // Interactive inspector + nodes on tablet/desktop; on phones the plume stays a
+  // clean decorative background (no overlay to overflow or fight the touch UI).
+  const showInspector = vw >= 700;
 
   return (
     <div ref={hostRef} aria-hidden style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
@@ -143,38 +161,78 @@ export default function HeroBackground() {
         }}
       />
 
-      {/* "What am I looking at?" annotation — three lines */}
-      {wide && (
-        <div style={{
-          position: "absolute", top: "14%", right: "clamp(20px, 6vw, 96px)",
-          textAlign: "right", pointerEvents: "none", whiteSpace: "nowrap",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 7 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 8px var(--green)" }} />
-            <span className="mono" style={{ fontSize: 10, letterSpacing: "0.18em", color: "var(--green)", fontWeight: 600 }}>
-              MONTE CARLO PROJECTION
-            </span>
-          </div>
-          <div style={{ fontSize: 12, color: "var(--ink-2, #9ab0c8)", marginTop: 6 }}>
-            1,000 simulated capital paths
-          </div>
-          <div className="mono" style={{ fontSize: 9.5, color: "var(--ink-3, #64788c)", marginTop: 4, letterSpacing: "0.04em" }}>
-            hover a node to inspect →
-          </div>
-        </div>
-      )}
+      {/* Inspector — header by default, projected outcome distribution on hover */}
+      {showInspector && (() => {
+        const d = hovered === null ? null : MILE_DATA[hovered];
+        return (
+          <div style={{
+            position: "absolute", top: "13%", right: "clamp(16px, 5vw, 80px)",
+            width: 202, pointerEvents: "none",
+            /* near-opaque backing so text stays legible where the plume shines through */
+            background: "rgba(6,11,18,0.9)",
+            border: `1px solid ${d ? "rgba(0,204,122,0.45)" : "rgba(150,180,220,0.22)"}`,
+            borderRadius: 11,
+            backdropFilter: "blur(16px) saturate(140%)", WebkitBackdropFilter: "blur(16px) saturate(140%)",
+            padding: "10px 12px",
+            boxShadow: d
+              ? "0 8px 26px rgba(0,0,0,0.55), 0 0 24px rgba(0,204,122,0.12)"
+              : "0 8px 22px rgba(0,0,0,0.5)",
+            transition: "border-color 0.2s, box-shadow 0.2s",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 8px var(--green)", flexShrink: 0 }} />
+              <span className="mono" style={{ fontSize: 9, letterSpacing: "0.15em", color: "var(--green)", fontWeight: 600 }}>
+                MONTE CARLO PROJECTION
+              </span>
+            </div>
+            <div style={{ fontSize: 10, color: "var(--ink-3, #64788c)", marginTop: 4 }}>
+              1,000 simulated capital paths
+            </div>
 
-      {/* P95 / P5 envelope labels */}
-      <span style={envLabel("top")}>
-        <i style={envDot("#7df0b0")} /> P95 · optimistic
-      </span>
-      <span style={envLabel("bottom")}>
-        <i style={envDot("#3f78d8")} /> P5 · baseline
-      </span>
+            <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "9px 0" }} />
 
-      {/* Milestone nodes — positioned over the visible plume; hover compresses
-          the particles into a bright singularity right at the node. */}
-      {MILE_X.map((x, i) => {
+            {!d ? (
+              <div className="mono" style={{ fontSize: 9.5, color: "var(--ink-3, #64788c)", letterSpacing: "0.03em", lineHeight: 1.55 }}>
+                hover a node to inspect<br />the outcome distribution →
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+                  <span className="mono" style={{ fontSize: 9.5, letterSpacing: "0.12em", color: "var(--ink-1, #9ab0c8)", fontWeight: 700 }}>
+                    MILESTONE {hovered! + 1}
+                  </span>
+                  <span className="mono" style={{ fontSize: 9, color: "var(--ink-3, #64788c)" }}>
+                    {d.horizon}
+                  </span>
+                </div>
+                {([
+                  ["P95", d.p95, "#7df0b0", "optimistic"],
+                  ["P50", d.p50, "var(--ink-0, #eef2f8)", "median"],
+                  ["P5",  d.p5,  "#4d9cf5", "baseline"],
+                ] as [string, number, string, string][]).map(([lbl, val, col, sub]) => (
+                  <div key={lbl} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "2px 0" }}>
+                    <span className="mono" style={{ fontSize: 9.5, color: col, fontWeight: 700, width: 30 }}>{lbl}</span>
+                    <span style={{ fontSize: 8.5, color: "var(--ink-3, #64788c)", flex: 1, marginLeft: 6 }}>{sub}</span>
+                    <span className="mono" style={{ fontSize: 12.5, color: col, fontWeight: 700 }}>×{val.toFixed(1)}</span>
+                  </div>
+                ))}
+                <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "8px 0 7px" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 9.5, color: "var(--ink-2, #9ab0c8)" }}>paths in profit</span>
+                  <span className="mono" style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 700 }}>{d.prof}%</span>
+                </div>
+                <div className="mono" style={{ fontSize: 7.5, color: "var(--ink-4, #4a5a6a)", marginTop: 8, letterSpacing: "0.05em" }}>
+                  illustrative · not a forecast
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Milestone nodes — positioned over the visible plume; hover (or tap on
+          touch) compresses the particles into a bright singularity at the node. */}
+      {showInspector && MILE_X.map((x, i) => {
         const on = hovered === i;
         return (
           <button
@@ -182,6 +240,7 @@ export default function HeroBackground() {
             type="button"
             onMouseEnter={() => focus(i)}
             onMouseLeave={() => focus(null)}
+            onTouchStart={(e) => { e.preventDefault(); tap(i); }}
             onFocus={() => focus(i)}
             onBlur={() => focus(null)}
             aria-label={`Milestone ${i + 1}`}
@@ -249,23 +308,4 @@ export default function HeroBackground() {
       )}
     </div>
   );
-}
-
-/* ── inline style helpers ─────────────────────────────────────── */
-function envLabel(edge: "top" | "bottom"): React.CSSProperties {
-  return {
-    position: "absolute",
-    right: "clamp(16px, 6vw, 96px)",
-    [edge]: edge === "top" ? "26%" : "30%",
-    display: "flex", alignItems: "center", gap: 7,
-    fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em",
-    color: "var(--ink-3, #64788c)", pointerEvents: "none",
-    textTransform: "uppercase",
-  };
-}
-function envDot(color: string): React.CSSProperties {
-  return {
-    width: 6, height: 6, borderRadius: "50%", background: color,
-    boxShadow: `0 0 8px ${color}`, display: "inline-block",
-  };
 }
