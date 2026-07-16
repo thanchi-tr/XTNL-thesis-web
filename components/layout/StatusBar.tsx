@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 
 /* Melbourne AEST session hours: 18:00 – 01:00 */
 function getAEST() {
@@ -29,6 +29,55 @@ const STATS = [
   { label: "Health",      value: "[ELITE]",   accent: "#00cc7a" },
   { label: "N (Core)",    value: "106",       accent: "#9ab0c8" },
 ];
+
+/* Ticker is memoized (no props) so the once-per-second clock re-render in
+   StatusBar never re-renders — and never hitches — the running animation.
+   The loop is seamless because each item carries its own right margin (a
+   trailing gap on every item, including the last), so translateX(-50%) lands
+   copy 2 exactly where copy 1 began. A shared container gap + side padding —
+   the previous approach — offset the wrap by ~16px and jumped every cycle. */
+const GAP = 34;
+const Ticker = memo(function Ticker() {
+  return (
+    <div
+      style={{
+        flex: 1,
+        overflow: "hidden",
+        maskImage: "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
+        WebkitMaskImage: "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
+      }}
+    >
+      <div
+        className="ticker-track"
+        style={{
+          display: "flex",
+          width: "max-content",
+          animation: "ticker 52s linear infinite",
+          willChange: "transform",
+          backfaceVisibility: "hidden" as const,
+        }}
+      >
+        {[...STATS, ...STATS].map(({ label, value, accent }, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0, marginRight: GAP }}>
+            <span style={{ fontSize: 9, color: "var(--ink-3)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase", fontFamily: "var(--font-inter), sans-serif" }}>
+              {label}
+            </span>
+            <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: accent }}>
+              {value}
+            </span>
+          </div>
+        ))}
+      </div>
+      <style>{`
+        @keyframes ticker {
+          from { transform: translate3d(0, 0, 0); }
+          to   { transform: translate3d(-50%, 0, 0); }
+        }
+        .ticker-track:hover { animation-play-state: paused; }
+      `}</style>
+    </div>
+  );
+});
 
 export default function StatusBar() {
   const [time,    setTime]    = useState("--:--:--");
@@ -99,40 +148,8 @@ export default function StatusBar() {
           </span>
         </div>
 
-        {/* Scrolling stats ticker */}
-        <div
-          style={{
-            flex: 1,
-            overflow: "hidden",
-            maskImage: "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
-            WebkitMaskImage: "linear-gradient(to right, transparent 0, black 60px, black calc(100% - 60px), transparent 100%)",
-          }}
-        >
-          <div
-            className="ticker-track"
-            style={{
-              display: "flex",
-              gap: 32,
-              padding: "0 32px",
-              animation: "ticker 52s linear infinite",
-              width: "max-content",
-              willChange: "transform",
-              backfaceVisibility: "hidden" as const,
-            }}
-          >
-            {/* Duplicate for seamless loop */}
-            {[...STATS, ...STATS].map(({ label, value, accent }, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-                <span style={{ fontSize: 9, color: "var(--ink-3)", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase", fontFamily: "var(--font-inter), sans-serif" }}>
-                  {label}
-                </span>
-                <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: accent }}>
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Scrolling stats ticker (memoized — isolated from the clock re-render) */}
+        <Ticker />
 
         {/* Right: system version — hidden on mobile */}
         <div className="nav-desktop" style={{ flexShrink: 0, alignItems: "center", gap: 10 }}>
@@ -145,16 +162,6 @@ export default function StatusBar() {
           </span>
         </div>
       </div>
-
-      <style>{`
-        @keyframes ticker {
-          0%         { transform: translate3d(0, 0, 0); }
-          99.9999%   { transform: translate3d(-50%, 0, 0); }
-          100%       { transform: translate3d(-50%, 0, 0); }
-        }
-        /* Pause on hover so user can read a stat */
-        .ticker-track:hover { animation-play-state: paused; }
-      `}</style>
     </div>
   );
 }

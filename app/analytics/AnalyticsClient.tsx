@@ -1911,7 +1911,7 @@ function SessionBuilder({
   const maxCum = Math.max(0.01, ...cums);
   const minCum = Math.min(-0.01, ...cums);
 
-  const W = 720, H = compact ? 130 : 260, PL = 8, PR = 52, PT = compact ? 8 : 16, PB = compact ? 20 : 32;
+  const W = 720, H = compact ? 168 : 260, PL = 10, PR = compact ? 44 : 52, PT = compact ? 12 : 16, PB = compact ? 28 : 32;
   const iW = W - PL - PR, iH = H - PT - PB;
   const bW = iW / 24;
   const BAR_FRAC = 0.58, DIV = 10;
@@ -1936,38 +1936,39 @@ function SessionBuilder({
 
       {/* Row 1: Dataset tabs + quick-select filters */}
       {compact ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {keys.length > 1 && (
-            <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+            <div style={{ display: "inline-flex", gap: 3, background: "var(--sub)", border: "1px solid var(--line)", borderRadius: 8, padding: 3, alignSelf: "flex-start", flexWrap: "wrap" }}>
               {keys.map(k => (
                 <button key={k} onClick={() => setDataset(k)} className="mono"
-                  style={{ padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-                    fontSize: 8, letterSpacing: "0.05em",
-                    background: dataset === k ? "rgba(77,156,245,0.14)" : "transparent",
-                    border: `1px solid ${dataset === k ? "rgba(77,156,245,0.4)" : "var(--line)"}`,
-                    color: dataset === k ? "#4d9cf5" : "var(--ink-3)",
+                  style={{ padding: "4px 11px", borderRadius: 6, cursor: "pointer",
+                    fontSize: 9.5, letterSpacing: "0.03em", fontWeight: 600, border: "none",
+                    background: dataset === k ? "rgba(77,156,245,0.16)" : "transparent",
+                    color: dataset === k ? "#6fb2ff" : "var(--ink-3)",
+                    transition: "background 0.12s, color 0.12s",
                   }}>
                   {k.replace(/_/g, " ").replace("full optimal sample", "").trim() || k}
                 </button>
               ))}
             </div>
           )}
-          <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-            <span className="mono" style={{ fontSize: 7.5, color: "var(--ink-3)", letterSpacing: "0.08em", flexShrink: 0 }}>FILTER</span>
+          <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="mono" style={{ fontSize: 8.5, color: "var(--ink-3)", letterSpacing: "0.1em", flexShrink: 0 }}>FILTER</span>
             {([
               ["+ Exp",   () => setSelected(new Set(rows.filter(r => r.expectancy > 0).map(r => r.hour)))],
               ["|t|≥1.5", () => setSelected(new Set(rows.filter(r => Math.abs(r.tStat ?? 0) >= 1.5).map(r => r.hour)))],
               ["All",     () => setSelected(new Set(rows.map(r => r.hour)))],
               ["Clear",   () => setSelected(new Set<number>())],
             ] as [string, () => void][]).map(([label, fn]) => (
-              <button key={label} onClick={fn}
-                style={{ padding: "2px 7px", borderRadius: 3, background: "var(--sub)",
-                  border: "1px solid var(--line)", color: "var(--ink-2)", fontSize: 9, cursor: "pointer",
+              <button key={label} onClick={fn} className="mono"
+                style={{ padding: "3px 9px", borderRadius: 6, background: "var(--raised)",
+                  border: "1px solid var(--line-hi)", color: "var(--ink-2)", fontSize: 9.5, cursor: "pointer",
+                  transition: "border-color 0.12s, color 0.12s",
                 }}>
                 {label}
               </button>
             ))}
-            <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", marginLeft: "auto" }}>
+            <span className="mono" style={{ fontSize: 9, color: "var(--ink-3)", marginLeft: "auto" }}>
               {selected.size}/{rows.length} hrs
             </span>
           </div>
@@ -2013,16 +2014,23 @@ function SessionBuilder({
 
       {/* Row 2: Session stat summary */}
       {compact ? (
-        <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "4px 0 2px" }}>
-          <span className="mono" style={{ fontSize: 8.5, color: "var(--ink-3)" }}>{selected.size}h · {sessionCount} trades</span>
-          <span className="mono" style={{ fontSize: 9, fontWeight: 700, color: sessionExpect >= 0 ? "var(--green)" : "var(--red)" }}>
-            {sessionExpect >= 0 ? "+" : ""}{sessionExpect.toFixed(3)} R
+        <div style={{
+          display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 14px",
+          padding: "9px 13px", borderRadius: 9,
+          background: "var(--raised)", border: "1px solid var(--line-hi)",
+        }}>
+          <span className="mono" style={{ fontSize: 15, fontWeight: 700, color: sessionExpect >= 0 ? "var(--green)" : "var(--red)", lineHeight: 1 }}>
+            {sessionExpect >= 0 ? "+" : ""}{sessionExpect.toFixed(3)}<span style={{ fontSize: 9, color: "var(--ink-3)", fontWeight: 500 }}> R exp</span>
           </span>
-          <span className="mono" style={{ fontSize: 8.5, color: sessionWinRate > 50 ? "var(--green)" : "var(--amber)" }}>
-            {sessionWinRate.toFixed(1)}% WR
+          <span style={{ width: 1, height: 14, background: "var(--line)" }} />
+          <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: sessionWinRate > 50 ? "var(--green)" : "var(--amber)" }}>
+            {sessionWinRate.toFixed(1)}<span style={{ fontSize: 8.5, color: "var(--ink-3)", fontWeight: 500 }}> % WR</span>
           </span>
-          <span className="mono" style={{ fontSize: 8.5, color: sessionTotalR >= 0 ? "var(--green)" : "var(--red)" }}>
-            ∑{sessionTotalR >= 0 ? "+" : ""}{sessionTotalR.toFixed(2)}R
+          <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)" }}>
+            {sessionCount}<span style={{ fontSize: 8.5, color: "var(--ink-3)" }}> trades</span>
+          </span>
+          <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: sessionTotalR >= 0 ? "var(--green)" : "var(--red)", marginLeft: "auto" }}>
+            ∑{sessionTotalR >= 0 ? "+" : ""}{sessionTotalR.toFixed(2)}<span style={{ fontSize: 8.5, color: "var(--ink-3)", fontWeight: 500 }}> R</span>
           </span>
         </div>
       ) : (
@@ -2043,16 +2051,19 @@ function SessionBuilder({
       )}
 
       {/* Row 3: Artifact — Expectancy bars + cumulative R trajectory */}
-      <div style={{ background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ background: "rgba(0,0,0,0.28)", border: "1px solid var(--line-hi)", borderRadius: 11, overflow: "hidden" }}>
         {/* Chart legend header */}
         {compact ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px 4px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <div style={{ width: 8, height: 8, borderRadius: 2, background: "#00cc7a88", flexShrink: 0 }} />
-              <svg width="14" height="3" viewBox="0 0 14 3" style={{ flexShrink: 0 }}><line x1="0" y1="1.5" x2="14" y2="1.5" stroke="#4d9cf5" strokeWidth="2"/></svg>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 13px 7px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 9, height: 9, borderRadius: 2, background: "#00cc7a", opacity: 0.8, flexShrink: 0 }} />
+              <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.06em" }}>EXP / HR</span>
             </div>
-            <span className="mono" style={{ fontSize: 7.5, color: "var(--ink-3)", letterSpacing: "0.06em" }}>EXP · CUM</span>
-            <span className="mono" style={{ marginLeft: "auto", fontSize: 8.5, fontWeight: 700, color: finalCum >= 0 ? "var(--green)" : "var(--red)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <svg width="16" height="4" viewBox="0 0 16 4" style={{ flexShrink: 0 }}><line x1="0" y1="2" x2="16" y2="2" stroke="#4d9cf5" strokeWidth="2"/><circle cx="8" cy="2" r="2" fill="#4d9cf5"/></svg>
+              <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.06em" }}>CUM R</span>
+            </div>
+            <span className="mono" style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: finalCum >= 0 ? "var(--green)" : "var(--red)" }}>
               ∑R {finalCum >= 0 ? "+" : ""}{finalCum.toFixed(2)}
             </span>
           </div>
@@ -2095,10 +2106,10 @@ function SessionBuilder({
             return (
               <rect key={h}
                 x={PL + h * bW + 1.5} y={Math.min(y0, y1)}
-                width={Math.max(1, bW - 3)} height={Math.abs(y1 - y0)}
-                fill={`${col}${inSel ? "cc" : "1a"}`}
-                stroke={inSel ? `${col}55` : "none"} strokeWidth={0.5}
-                rx={1}
+                width={Math.max(1.5, bW - 2.5)} height={Math.max(0.8, Math.abs(y1 - y0))}
+                fill={`${col}${inSel ? "e6" : "38"}`}
+                stroke={inSel ? `${col}77` : "none"} strokeWidth={0.6}
+                rx={1.6}
               />
             );
           })}
@@ -2130,19 +2141,19 @@ function SessionBuilder({
 
           {/* X-axis labels */}
           {[0, 4, 8, 12, 16, 20, 23].map(h => (
-            <text key={h} x={PL + h * bW + bW / 2} y={H - PB + 13}
-              textAnchor="middle" fontSize={8.5} fill="rgba(255,255,255,0.3)" fontFamily="monospace">
+            <text key={h} x={PL + h * bW + bW / 2} y={H - PB + 15}
+              textAnchor="middle" fontSize={9.5} fill="rgba(255,255,255,0.42)" fontFamily="monospace">
               {String(h).padStart(2, "0")}
             </text>
           ))}
 
           {/* Y-axis labels */}
-          <text x={W - PR + 6} y={PT + 9} textAnchor="start" fontSize={7.5}
-            fill="rgba(255,255,255,0.25)" fontFamily="monospace">{maxExp.toFixed(2)}</text>
-          <text x={W - PR + 6} y={barZeroY + 3.5} textAnchor="start" fontSize={7.5}
-            fill="rgba(255,255,255,0.18)" fontFamily="monospace">0.00</text>
-          <text x={W - PR + 6} y={Math.max(cumTop + 12, Math.min(H - PB - 4, cumToY(finalCum) + 4))} textAnchor="start" fontSize={8}
-            fill={finalCum >= 0 ? "rgba(0,204,122,0.85)" : "rgba(240,58,87,0.85)"} fontFamily="monospace" fontWeight="bold">
+          <text x={W - PR + 6} y={PT + 9} textAnchor="start" fontSize={8.5}
+            fill="rgba(255,255,255,0.32)" fontFamily="monospace">{maxExp.toFixed(2)}</text>
+          <text x={W - PR + 6} y={barZeroY + 3.5} textAnchor="start" fontSize={8.5}
+            fill="rgba(255,255,255,0.24)" fontFamily="monospace">0.00</text>
+          <text x={W - PR + 6} y={Math.max(cumTop + 12, Math.min(H - PB - 4, cumToY(finalCum) + 4))} textAnchor="start" fontSize={9}
+            fill={finalCum >= 0 ? "rgba(0,204,122,0.9)" : "rgba(240,58,87,0.9)"} fontFamily="monospace" fontWeight="bold">
             {finalCum >= 0 ? "+" : ""}{finalCum.toFixed(2)}R
           </text>
         </svg>
@@ -2152,10 +2163,10 @@ function SessionBuilder({
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {/* AM row label */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em", minWidth: 28 }}>AM</span>
+          <span className="mono" style={{ fontSize: 9, color: "var(--ink-2)", letterSpacing: "0.14em", minWidth: 28, fontWeight: 600 }}>AM</span>
           <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: compact ? 2 : 5 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: compact ? 3 : 5 }}>
           {Array.from({ length: 12 }, (_, h) => {
             const row   = hourMap.get(h);
             const inSel = selected.has(h);
@@ -2165,23 +2176,23 @@ function SessionBuilder({
             return (
               <button key={h} onClick={() => row && toggle(h)}
                 style={{
-                  background: inSel && row ? `${col}18` : "rgba(255,255,255,0.025)",
-                  border: `1px solid ${inSel && row ? col + "50" : "rgba(255,255,255,0.07)"}`,
+                  background: inSel && row ? `${col}22` : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${inSel && row ? col + "5a" : "rgba(255,255,255,0.09)"}`,
                   borderTop: inSel && row ? `2px solid ${col}` : "2px solid transparent",
-                  borderRadius: compact ? 4 : 6,
-                  padding: compact ? "4px 3px 3px" : "10px 6px 8px",
+                  borderRadius: compact ? 6 : 6,
+                  padding: compact ? "7px 3px 6px" : "10px 6px 8px",
                   cursor: row ? "pointer" : "default",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: compact ? 1 : 3,
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: compact ? 2 : 3,
                   opacity: row ? 1 : 0.3,
                   boxShadow: !compact && sig && inSel ? `0 0 0 1px ${col}50` : "none",
                   transition: "background 0.15s, border-color 0.15s",
                 }}>
-                <span className="mono" style={{ fontSize: compact ? 7 : 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
+                <span className="mono" style={{ fontSize: compact ? 8.5 : 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 500, letterSpacing: "0.04em" }}>
                   {String(h).padStart(2, "0")}h
                 </span>
                 {row ? (
                   <>
-                    <span className="mono" style={{ fontSize: compact ? 10 : 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
+                    <span className="mono" style={{ fontSize: compact ? 12 : 13, fontWeight: 700, color: inSel ? col : `${col}66`, lineHeight: 1 }}>
                       {row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(2)}
                     </span>
                     {!compact && <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>}
@@ -2190,7 +2201,7 @@ function SessionBuilder({
                     ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>)}
                   </>
                 ) : (
-                  <span style={{ fontSize: compact ? 7 : 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
+                  <span style={{ fontSize: compact ? 10 : 9, color: "var(--ink-4, #4a5a6a)", fontFamily: "var(--font-mono)" }}>·</span>
                 )}
               </button>
             );
@@ -2198,10 +2209,10 @@ function SessionBuilder({
         </div>
         {/* PM row label */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-          <span className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: "0.10em", minWidth: 28 }}>PM</span>
+          <span className="mono" style={{ fontSize: 9, color: "var(--ink-2)", letterSpacing: "0.14em", minWidth: 28, fontWeight: 600 }}>PM</span>
           <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: compact ? 2 : 5 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: compact ? 3 : 5 }}>
           {Array.from({ length: 12 }, (_, i) => {
             const h   = i + 12;
             const row   = hourMap.get(h);
@@ -2212,23 +2223,23 @@ function SessionBuilder({
             return (
               <button key={h} onClick={() => row && toggle(h)}
                 style={{
-                  background: inSel && row ? `${col}18` : "rgba(255,255,255,0.025)",
-                  border: `1px solid ${inSel && row ? col + "50" : "rgba(255,255,255,0.07)"}`,
+                  background: inSel && row ? `${col}22` : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${inSel && row ? col + "5a" : "rgba(255,255,255,0.09)"}`,
                   borderTop: inSel && row ? `2px solid ${col}` : "2px solid transparent",
-                  borderRadius: compact ? 4 : 6,
-                  padding: compact ? "4px 3px 3px" : "10px 6px 8px",
+                  borderRadius: compact ? 6 : 6,
+                  padding: compact ? "7px 3px 6px" : "10px 6px 8px",
                   cursor: row ? "pointer" : "default",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: compact ? 1 : 3,
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: compact ? 2 : 3,
                   opacity: row ? 1 : 0.3,
                   boxShadow: !compact && sig && inSel ? `0 0 0 1px ${col}50` : "none",
                   transition: "background 0.15s, border-color 0.15s",
                 }}>
-                <span className="mono" style={{ fontSize: compact ? 7 : 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 400, letterSpacing: "0.04em" }}>
+                <span className="mono" style={{ fontSize: compact ? 8.5 : 9, color: inSel ? "var(--ink-1)" : "var(--ink-3)", fontWeight: inSel ? 700 : 500, letterSpacing: "0.04em" }}>
                   {String(h).padStart(2, "0")}h
                 </span>
                 {row ? (
                   <>
-                    <span className="mono" style={{ fontSize: compact ? 10 : 13, fontWeight: 700, color: inSel ? col : `${col}50`, lineHeight: 1 }}>
+                    <span className="mono" style={{ fontSize: compact ? 12 : 13, fontWeight: 700, color: inSel ? col : `${col}66`, lineHeight: 1 }}>
                       {row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(2)}
                     </span>
                     {!compact && <span style={{ fontSize: 8, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>n={row.count}</span>}
@@ -2237,7 +2248,7 @@ function SessionBuilder({
                     ) : <span style={{ fontSize: 7.5, opacity: 0 }}>·</span>)}
                   </>
                 ) : (
-                  <span style={{ fontSize: compact ? 7 : 9, color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>—</span>
+                  <span style={{ fontSize: compact ? 10 : 9, color: "var(--ink-4, #4a5a6a)", fontFamily: "var(--font-mono)" }}>·</span>
                 )}
               </button>
             );
@@ -2781,37 +2792,40 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
   const timeInp: React.CSSProperties = {
     background: "var(--base,#07101c)",
     border: "1px solid var(--line-hi,rgba(255,255,255,0.13))",
-    borderRadius: 6, color: "var(--ink-0,#eef2f8)",
-    fontSize: 13, padding: "5px 10px",
+    borderRadius: 8, color: "var(--ink-0,#eef2f8)",
+    fontSize: 14, padding: "7px 12px",
     fontFamily: "var(--font-mono)",
-    width: 72, textAlign: "center",
+    width: 76, textAlign: "center",
     outline: "none", letterSpacing: "0.03em",
   };
 
   return (
     <div style={{
       marginTop: 24,
-      background: "var(--raised)",
-      border: "1px solid var(--line)",
-      borderRadius: 8,
+      background: "linear-gradient(180deg, var(--raised) 0%, var(--card) 100%)",
+      border: "1px solid var(--line-hi)",
+      borderRadius: 14,
       overflow: "hidden",
+      boxShadow: "0 8px 30px rgba(0,0,0,0.28)",
     }}>
       {/* Header — matches other CARD section headers */}
       <div style={{
-        padding: "10px 20px",
+        padding: "13px 22px",
         borderBottom: "1px solid var(--line)",
-        display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap",
+        background: "rgba(255,255,255,0.015)",
       }}>
-        <span className="mono" style={{ fontSize: 9, letterSpacing: "0.16em", color: "var(--ink-2)" }}>
+        <span className="mono" style={{ fontSize: 10.5, letterSpacing: "0.18em", color: "var(--ink-1)", fontWeight: 600 }}>
           SESSION SCHEDULE
         </span>
         <span style={{
-          fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 4,
-          background: "rgba(77,156,245,0.12)", color: "var(--blue)", letterSpacing: "0.4px",
+          fontSize: 8.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5,
+          background: "rgba(77,156,245,0.14)", color: "var(--blue)", letterSpacing: "0.12em",
+          border: "1px solid rgba(77,156,245,0.25)",
         }}>
           STRATEGIST
         </span>
-        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--ink-3)" }}>
+        <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--ink-3)" }}>
           Melbourne time · alarm pauses outside active windows
         </span>
       </div>
@@ -2819,18 +2833,18 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
       {/* Two-column body: left = compact edge chart, right = schedule (primary) */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: hourlyKeys.length > 0 && !isNarrow ? "minmax(0,1fr) minmax(0,1.45fr)" : "1fr",
+        gridTemplateColumns: hourlyKeys.length > 0 && !isNarrow ? "minmax(0,1.05fr) minmax(0,1.3fr)" : "1fr",
         alignItems: "start",
       }}>
 
         {/* Left — compact hourly edge chart */}
         {hourlyKeys.length > 0 && (
           <div style={{
-            padding: "14px 16px",
+            padding: "18px 20px",
             borderRight: isNarrow ? "none" : "1px solid var(--line)",
             borderBottom: isNarrow ? "1px solid var(--line)" : "none",
           }}>
-            <div className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)", marginBottom: 10 }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: "0.16em", color: "var(--ink-2)", marginBottom: 14, fontWeight: 600 }}>
               HOURLY EDGE ANALYSIS
             </div>
             <SessionBuilder
@@ -2879,9 +2893,9 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
                 return (
                   <div key={i} style={{
                     position: "relative",
-                    padding: "12px 36px 10px 16px",
-                    borderRadius: 6,
-                    border: "1px solid var(--line)",
+                    padding: "14px 38px 12px 18px",
+                    borderRadius: 10,
+                    border: "1px solid var(--line-hi)",
                     borderLeft: `3px solid ${edgeColor}`,
                     background: s && s.expect >= 0
                       ? "rgba(0,204,122,0.04)"
@@ -2954,10 +2968,10 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
 
           {/* Composer */}
           <div style={{
-            padding: "12px 14px", borderRadius: 6,
-            border: "1px solid var(--line)",
+            padding: "15px 16px", borderRadius: 11,
+            border: "1px solid var(--line-hi)",
             background: "var(--sub)",
-            display: "flex", flexDirection: "column", gap: 10,
+            display: "flex", flexDirection: "column", gap: 11,
           }}>
             <span className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)" }}>NEW WINDOW</span>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

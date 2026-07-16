@@ -5,6 +5,7 @@ import MathBlock from "@/components/ui/MathBlock";
 import RDistributionChart from "@/components/RDistributionChart";
 import HourlyHeatmap from "@/components/HourlyHeatmap";
 import ProspectusSidebar from "@/components/prospectus/ProspectusSidebar";
+import ProspectusMeta from "@/components/prospectus/ProspectusMeta";
 import Link from "next/link";
 import { auth } from "@/auth";
 
@@ -194,18 +195,6 @@ const CODE_CBB = `<span style="color:#c792ea">def</span> <span style="color:#82b
     blocks   = [circular[i : i + block_size] <span style="color:#f87171">for</span> i <span style="color:#f87171">in</span> starts]
     <span style="color:#f87171">return</span> np.concatenate(blocks)[:sample_size]`;
 
-const META = [
-  { label: "Entity",                value: "XTNL Solutions" },
-  { label: "ABN",                   value: "96 412 697 885" },
-  { label: "Execution System",      value: "v5.2.5 — Deterministic Firmware" },
-  { label: "Market",                value: "Spot Foreign Exchange (EUR/USD)" },
-  { label: "Primary Dataset",       value: "N = 106 · SESSION_FILTERED_OPTIMAL" },
-  { label: "Full Dataset",          value: "N = 308 · FULL_OPTIMAL_SAMPLE" },
-  { label: "Live Execution",        value: "N = 29 · Current deployment phase" },
-  { label: "System Determinism",    value: "96.5% — Automated execution" },
-  { label: "Operational Locus",     value: "Clayton South, VIC, Australia" },
-];
-
 export default async function ProspectusPage() {
   const session = await auth();
   const authed  = Boolean(session?.twoFactorVerified);
@@ -241,26 +230,8 @@ export default async function ProspectusPage() {
           system architecture, risk management, capital projection, and governance design.
         </p>
 
-        {/* Meta grid */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-            gap: 1,
-            background: "var(--line)",
-            border: "1px solid var(--line)",
-            borderRadius: 6,
-            overflow: "hidden",
-            marginBottom: 0,
-          }}
-        >
-          {META.map(({ label, value }) => (
-            <div key={label} style={{ background: "var(--card)", padding: "13px 16px" }}>
-              <span className="label-xs" style={{ display: "block", marginBottom: 5 }}>{label}</span>
-              <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: "var(--green)" }}>{value}</span>
-            </div>
-          ))}
-        </div>
+        {/* Identity / system fact grid — generalised, scroll-reactive */}
+        <ProspectusMeta />
       </div>
 
       {/* ── Two-column layout ───────────────────────────────── */}
