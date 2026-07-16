@@ -346,6 +346,10 @@ export default function MonteCarloPlume({
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       camera={{ position: [0, 0.35, 6.4], fov: 42 }}
       style={{ pointerEvents: "none" }}
+      onCreated={({ gl }) => {
+        // Let the browser recover a lost GPU context instead of dropping it permanently.
+        gl.domElement.addEventListener("webglcontextlost", (e) => e.preventDefault(), false);
+      }}
     >
       <Plume quality={quality} focusRef={focusRef} progressRef={progressRef} lockRef={lockRef} />
     </Canvas>

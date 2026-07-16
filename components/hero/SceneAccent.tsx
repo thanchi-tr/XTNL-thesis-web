@@ -33,7 +33,9 @@ export default function SceneAccent({
   useEffect(() => {
     const el = ref.current;
     if (!el || !enabled) return;
-    const io = new IntersectionObserver(([e]) => setActive(e.isIntersecting), { threshold: 0.05 });
+    // Generous margin so the context mounts just before it scrolls into view and
+    // is released once well clear — keeps at most one accent context alive at a time.
+    const io = new IntersectionObserver(([e]) => setActive(e.isIntersecting), { rootMargin: "300px 0px" });
     io.observe(el);
     return () => io.disconnect();
   }, [enabled]);
@@ -51,7 +53,8 @@ export default function SceneAccent({
         ...style,
       }}
     >
-      <AccentCanvas variant={variant} active={active} />
+      {/* Mount the WebGL context only while near view; release it otherwise. */}
+      {active && <AccentCanvas variant={variant} active={active} />}
     </div>
   );
 }

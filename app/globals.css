@@ -53,8 +53,8 @@ html {
 body {
   background-color: var(--base);
   background-image:
-    radial-gradient(ellipse 120% 46% at 50% -4%, rgba(0,204,122,0.042) 0%, transparent 64%),
-    radial-gradient(ellipse 44% 32% at 90% 92%, rgba(0,130,255,0.016) 0%, transparent 50%);
+    radial-gradient(ellipse 130% 50% at 50% -6%, rgba(0,204,122,0.034) 0%, transparent 62%),
+    radial-gradient(ellipse 46% 34% at 92% 94%, rgba(0,130,255,0.014) 0%, transparent 50%);
   color: var(--ink-0);
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   font-size: 15px;
@@ -107,15 +107,15 @@ code, pre, .mono {
   font-family: var(--font-inter), ui-sans-serif, sans-serif;  /* was mono */
 }
 
-/* Branded eyebrow — green, intentional */
+/* Branded eyebrow — green, intentional. Restrained glow reads more institutional. */
 .section-eyebrow {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--green);
   font-family: var(--font-mono), monospace;
-  text-shadow: 0 0 22px rgba(0,204,122,0.38);
+  text-shadow: 0 0 14px rgba(0,204,122,0.14);
 }
 
 /* Chart / panel title — title case, not all-caps */
@@ -151,9 +151,9 @@ code, pre, .mono {
   will-change: transform;
 }
 .card-hover:hover {
-  border-color: rgba(0,204,122,0.18) !important;
+  border-color: rgba(0,204,122,0.22) !important;
   transform: translateY(-2px);
-  box-shadow: 0 14px 44px rgba(0,0,0,0.48), 0 0 0 1px rgba(0,204,122,0.07);
+  box-shadow: 0 12px 34px rgba(0,0,0,0.42), 0 0 0 1px rgba(0,204,122,0.08);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -165,8 +165,8 @@ code, pre, .mono {
   font-weight: 600; font-size: 12px; letter-spacing: 0.04em;
   transition: all 0.15s ease; white-space: nowrap;
 }
-.btn-primary  { background: linear-gradient(135deg, #00d880 0%, #00b86c 100%); color: #000; padding: 11px 22px; }
-.btn-primary:hover:not(:disabled)  { background: linear-gradient(135deg, #00f090 0%, #00cc7a 100%); box-shadow: 0 0 36px rgba(0,204,122,0.46), 0 4px 18px rgba(0,0,0,0.28); }
+.btn-primary  { background: linear-gradient(135deg, #00d880 0%, #00b86c 100%); color: #04140c; padding: 11px 22px; }
+.btn-primary:hover:not(:disabled)  { background: linear-gradient(135deg, #00e688 0%, #00c574 100%); box-shadow: 0 6px 22px rgba(0,0,0,0.3), 0 0 20px rgba(0,204,122,0.26); }
 .btn-secondary{ background: transparent; color: var(--ink-1); border: 1px solid var(--line-hi); padding: 10px 22px; }
 .btn-secondary:hover:not(:disabled){ border-color: var(--line-act); color: var(--ink-0); }
 .btn-ghost    { background: var(--sub); color: var(--ink-1); padding: 8px 16px; border: 1px solid var(--line); }
@@ -179,8 +179,8 @@ code, pre, .mono {
    ═══════════════════════════════════════════════════════════ */
 .chip {
   display: inline-flex; align-items: center;
-  padding: 2px 8px; border-radius: 3px;
-  font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 3px 9px; border-radius: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase; white-space: nowrap;
   font-family: var(--font-inter), sans-serif;  /* readable, not mono */
 }
@@ -401,11 +401,11 @@ input[type="range"]::-moz-range-thumb {
 a { transition: color 0.15s, opacity 0.15s; }
 
 :focus-visible {
-  outline: 2px solid var(--green);
-  outline-offset: 3px;
-  border-radius: 3px;
+  outline: 2px solid rgba(0,204,122,0.75);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
-::selection { background: rgba(0,204,122,0.18); color: var(--ink-0); }
+::selection { background: rgba(0,204,122,0.20); color: var(--ink-0); }
 
 .footer-email { transition: opacity 0.15s ease; }
 .footer-email:hover { opacity: 0.70; }

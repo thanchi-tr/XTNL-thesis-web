@@ -126,10 +126,13 @@ export default function AccentCanvas({
   return (
     <Canvas
       frameloop={active ? "always" : "never"}
-      dpr={[1, 1.75]}
-      gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
+      dpr={[1, 1.5]}
+      gl={{ antialias: true, alpha: true, powerPreference: "low-power" }}
       camera={{ position: [0, 2.4, 5.4], fov: 38 }}
       style={{ pointerEvents: "none" }}
+      onCreated={({ gl }) => {
+        gl.domElement.addEventListener("webglcontextlost", (e) => e.preventDefault(), false);
+      }}
     >
       <Surface variant={variant} />
     </Canvas>

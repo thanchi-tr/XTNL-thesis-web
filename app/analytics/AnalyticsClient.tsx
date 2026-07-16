@@ -2122,9 +2122,11 @@ function SessionBuilder({
             </linearGradient>
           </defs>
           {(() => {
-            const pts = chartData.map((d, i) => `${(PL + i * bW + bW / 2).toFixed(1)},${cumToY(d.cum).toFixed(1)}`).join(" ");
-            const lastX = (PL + 23 * bW + bW / 2).toFixed(1);
-            const fillPath = `M ${PL + bW / 2} ${cumToY(0)} L ${pts.split(" ").map((p, i) => (i === 0 ? "L " : "") + p).join(" L ")} L ${lastX} ${cumToY(0)} Z`;
+            const baseY  = cumToY(0).toFixed(1);
+            const firstX = (PL + bW / 2).toFixed(1);
+            const lastX  = (PL + 23 * bW + bW / 2).toFixed(1);
+            const line   = chartData.map(d => `L ${(PL + d.h * bW + bW / 2).toFixed(1)} ${cumToY(d.cum).toFixed(1)}`).join(" ");
+            const fillPath = `M ${firstX} ${baseY} ${line} L ${lastX} ${baseY} Z`;
             return <path d={fillPath} fill="url(#cumFill)" />;
           })()}
 
