@@ -1,0 +1,45 @@
+<svg width="20" height="20" viewBox="0 0 80 80" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="xtnl-g" x1="24" y1="6" x2="58" y2="74" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3dffb0" />
+      <stop offset="55%" stop-color="#00cc7a" />
+      <stop offset="100%" stop-color="#009e60" />
+    </linearGradient>
+    <radialGradient id="xtnl-f" cx="40" cy="42" r="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00cc7a" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#00cc7a" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- upper-triangle ambient fill -->
+  <polygon points="40,29 63,52 17,52" fill="url(#xtnl-f)" />
+
+  <!-- diamond structure — present but secondary -->
+  <path d="M40 29 L63 52 M40 29 L17 52" stroke="url(#xtnl-g)" stroke-width="2.2" stroke-opacity="0.55" stroke-linecap="round" />
+  <path d="M63 52 L40 74 M17 52 L40 74" stroke="#00cc7a" stroke-width="2" stroke-opacity="0.24" stroke-linecap="round" />
+
+  <!-- threshold midline -->
+  <line x1="18" y1="52" x2="62" y2="52" stroke="#00cc7a" stroke-opacity="0.34" stroke-width="1.3" stroke-dasharray="4 3" />
+
+  <!-- crossing X — the hero of the mark -->
+  <line x1="27" y1="8" x2="63" y2="52" stroke="url(#xtnl-g)" stroke-width="3.4" stroke-linecap="round" />
+  <line x1="51" y1="13" x2="17" y2="52" stroke="url(#xtnl-g)" stroke-width="2.6" stroke-opacity="0.72" stroke-linecap="round" />
+
+  <!-- vertices -->
+  <circle cx="40" cy="74" r="3.4" fill="none" stroke="#00cc7a" stroke-opacity="0.45" stroke-width="1.3" />
+  <circle cx="17" cy="52" r="2.3" fill="#00cc7a" fill-opacity="0.55" />
+  
+  <!-- right vertex — blue accent (secondary brand colour) -->
+  <circle cx="63" cy="52" r="3.6" fill="none" stroke="#2fd0ff" stroke-opacity="0.55" stroke-width="1.3" />
+  <circle cx="63" cy="52" r="2" fill="#2fd0ff" />
+
+  <!-- signature nodes — bright, glowing -->
+  <g style="filter: drop-shadow(0 0 3px rgba(0,240,144,0.9));">
+    <circle cx="27" cy="8" r="6.4" fill="#00cc7a" fill-opacity="0.30" />
+    <circle cx="27" cy="8" r="4.4" fill="#00f090" />
+    <circle cx="27" cy="8" r="2.4" fill="#e6fff4" />
+    <circle cx="51" cy="13" r="5.4" fill="#00cc7a" fill-opacity="0.24" />
+    <circle cx="51" cy="13" r="3.7" fill="#00e688" />
+    <circle cx="51" cy="13" r="2" fill="#e6fff4" />
+  </g>
+</svg>
