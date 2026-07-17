@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { TAXONOMY, toKmsStatus, type KmsStatus } from "@/lib/kms";
 
-const SLATE = "#5a7490", SLATE_HI = "#8ba0b8";
+const SLATE = "#7f95ad", SLATE_HI = "#b3c2d4";
 const CYAN = "#00b4ff", EMERALD = "#00cc7a", AMBER = "#f0a030", ROSE = "#f03a57";
 const BASE = "var(--base,#04080f)", LINE = "var(--line,rgba(255,255,255,0.06))";
 const LINE_HI = "var(--line-hi,rgba(255,255,255,0.11))";
@@ -79,7 +79,7 @@ function Hud({ label, value, sub, color, pulse }: {
       flex: 1, minWidth: 0, padding: "9px 11px", background: BASE, border: `1px solid ${LINE}`,
       display: "flex", flexDirection: "column", gap: 3,
     }}>
-      <span style={{ fontFamily: MONO, fontSize: 7.5, letterSpacing: "0.14em", color: SLATE, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: "0.12em", color: SLATE_HI, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {label}
       </span>
       <span
@@ -88,7 +88,7 @@ function Hud({ label, value, sub, color, pulse }: {
       >
         {value}
       </span>
-      {sub && <span style={{ fontFamily: MONO, fontSize: 8, color: SLATE, letterSpacing: "0.04em" }}>{sub}</span>}
+      {sub && <span style={{ fontFamily: MONO, fontSize: 8.5, color: SLATE, letterSpacing: "0.04em" }}>{sub}</span>}
     </div>
   );
 }
@@ -294,7 +294,7 @@ export default function InsightCommandCenter({ issues }: { issues: InsightIssue[
 /* ── primitives ─────────────────────────────────────────────── */
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontFamily: MONO, fontSize: 8, fontWeight: 700, letterSpacing: "0.16em", color: SLATE, marginBottom: 8 }}>
+    <div style={{ fontFamily: MONO, fontSize: 8.5, fontWeight: 700, letterSpacing: "0.16em", color: SLATE_HI, marginBottom: 8 }}>
       {children}
     </div>
   );
