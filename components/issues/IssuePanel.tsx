@@ -7,10 +7,14 @@ import {
   PieChart, Pie, Cell,
   ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
+import { KMS_STATUS_META, toKmsStatus, taxonomyLabels } from "@/lib/kms";
+import TriageReportForm from "@/components/issues/kms/TriageReportForm";
+import KmsDashboard     from "@/components/issues/kms/KmsDashboard";
+import ToolRegistry     from "@/components/issues/kms/ToolRegistry";
 
 /* ── Types ───────────────────────────────────────────────────── */
 type IssueStatus = "open" | "in_progress" | "staging" | "archived";
-type TabFilter   = "open" | "staging" | "archived" | "insight";
+type TabFilter   = "open" | "staging" | "archived" | "tools" | "insight";
 type Category    = "execution" | "risk" | "technical" | "compliance" | "process" | "market" | "other";
 
 interface SubIssue {
@@ -64,6 +68,26 @@ interface Issue {
   all_observed_at:        string | null;
   scratched_solutions:    ScratchedSolution[];
   sub_issues:             SubIssue[];
+  /* KMS survivability pipeline */
+  kms_status?:            string | null;
+  domain?:                string | null;
+  subsystem?:             string | null;
+  leaf_node?:             string | null;
+  oos_started_at?:        string | null;
+  oos_sessions?:          number;
+  oos_sessions_required?: number;
+  baseline_at?:           string | null;
+  deployments?: {
+    deployment_id: number;
+    tool_id:       string;
+    tool_name:     string;
+    tool_version:  string;
+    tool_category: string;
+    deployed_at:   string;
+    deployed_by:   string;
+    active:        boolean;
+    relapses:      number;
+  }[];
 }
 
 /* ── Constants ───────────────────────────────────────────────── */
@@ -1297,6 +1321,10 @@ function IssueCard({
 }) {
   const p = issue.priority;
   const c = CAT[issue.category] ?? CAT.other;
+  const kms = toKmsStatus(issue.kms_status, issue.status);
+  const kmsMeta = KMS_STATUS_META[kms];
+  const tax = taxonomyLabels(issue.domain, issue.subsystem, issue.leaf_node);
+  const activeTool = (issue.deployments ?? []).find(d => d.active) ?? null;
 
   async function handleRaise() {
     const err = await callApi(`/api/session/issues/${issue.issue_id}/raise`, { method: "POST" });
@@ -1346,13 +1374,19 @@ function IssueCard({
           </span>
         )}
         <span
+          className="mono"
           style={{
-            fontSize: "9px", padding: "1px 6px", borderRadius: "3px", flexShrink: 0, fontWeight: 700,
-            background: `${ST_COLOR[issue.status]}18`, color: ST_COLOR[issue.status],
+            fontSize: "8px", padding: "2px 6px", borderRadius: "4px", flexShrink: 0, fontWeight: 700,
+            background: kmsMeta.bg, color: kmsMeta.color, letterSpacing: "0.04em",
           }}
         >
-          {ST_LABEL[issue.status]}
+          {kmsMeta.label}
         </span>
+        {issue.reopen_count > 0 && (
+          <span className="mono" style={{ fontSize: "9px", color: "#f03a57", flexShrink: 0, fontWeight: 700 }}>
+            ↻{issue.reopen_count}
+          </span>
+        )}
         {issue.raise_count > 0 && (
           <span style={{ fontSize: "10px", color: "#f0a030", flexShrink: 0 }}>↑{issue.raise_count}</span>
         )}
@@ -1362,6 +1396,37 @@ function IssueCard({
       {/* Expanded body */}
       {expanded && (
         <div style={{ padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {/* KMS telemetry — taxonomy path, active tool, OOS survivability */}
+          <div style={{
+            padding: "7px 10px", borderRadius: 6,
+            background: "var(--card,#0b1622)", border: "1px solid var(--line,rgba(255,255,255,0.06))",
+            display: "flex", flexDirection: "column", gap: 4,
+          }}>
+            <div className="mono" style={{ fontSize: 9, color: "var(--ink-1,#9ab0c8)" }}>
+              {tax.leaf
+                ? <>{tax.domain} <span style={{ color: "var(--ink-2,#5a7490)" }}>→</span> {tax.subsystem} <span style={{ color: "var(--ink-2,#5a7490)" }}>→</span> <span style={{ color: kmsMeta.color, fontWeight: 700 }}>{tax.leaf}</span></>
+                : <span style={{ color: "var(--ink-2,#5a7490)" }}>unclassified — legacy record (pre-ontology)</span>}
+            </div>
+            {activeTool && (
+              <div className="mono" style={{ fontSize: 9, color: "#00b4ff" }}>
+                tool: {activeTool.tool_name} {activeTool.tool_version}
+                {activeTool.relapses > 0 && <span style={{ color: "#f03a57" }}> · failed OOS ×{activeTool.relapses}</span>}
+              </div>
+            )}
+            {kms === "OOS_VALIDATION" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <div style={{ flex: 1, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                  <div style={{
+                    width: `${Math.min(100, ((issue.oos_sessions ?? 0) / Math.max(1, issue.oos_sessions_required ?? 15)) * 100)}%`,
+                    height: "100%", background: "#00b4ff", borderRadius: 2,
+                  }} />
+                </div>
+                <span className="mono" style={{ fontSize: 8.5, color: "#00b4ff", flexShrink: 0 }}>
+                  {issue.oos_sessions ?? 0}/{issue.oos_sessions_required ?? 15} sessions
+                </span>
+              </div>
+            )}
+          </div>
           <RecordSection
             issue={issue}
             canRecord={canRecord}
@@ -1384,164 +1449,6 @@ function IssueCard({
           />
         </div>
       )}
-    </div>
-  );
-}
-
-/* ── Create-issue form ───────────────────────────────────────── */
-function CreateIssueForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
-  const [form, setForm] = useState({
-    title:        "",
-    description:  "",
-    priority:     3,
-    category:     "other" as Category,
-    impact_score: 5,
-    tags:         "",
-  });
-  const [busy,  setBusy]  = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    if (!form.title.trim()) { setError("Title is required"); return; }
-    setBusy(true);
-    const tags = form.tags.split(",").map(t => t.trim()).filter(Boolean).slice(0, 10);
-    const err  = await callApi("/api/session/issues", {
-      method: "POST",
-      body:   JSON.stringify({ ...form, tags }),
-    });
-    setBusy(false);
-    if (err) { setError(err); return; }
-    onDone();
-  }
-
-  const LBL: React.CSSProperties = {
-    fontSize: "10px", fontWeight: 700, color: "var(--ink-2,#5a7490)",
-    letterSpacing: "0.5px", marginBottom: "4px", display: "block",
-  };
-  const FIELD: React.CSSProperties = { ...INPUT, fontSize: "13px", padding: "8px 10px" };
-
-  return (
-    <div
-      style={{
-        padding:       "16px",
-        display:       "flex",
-        flexDirection: "column",
-        gap:           "12px",
-        borderBottom:  "1px solid var(--line,rgba(255,255,255,0.06))",
-        background:    "rgba(0,204,122,0.03)",
-      }}
-    >
-      <div style={{ fontSize: "13px", fontWeight: 700 }}>Report Issue</div>
-
-      {error && (
-        <div
-          style={{
-            padding: "7px 10px", borderRadius: "5px",
-            background: "rgba(240,58,87,0.12)", border: "1px solid rgba(240,58,87,0.25)",
-            fontSize: "12px", color: "#f03a57", display: "flex", justifyContent: "space-between",
-          }}
-        >
-          {error}
-          <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: "#f03a57", cursor: "pointer" }}>✕</button>
-        </div>
-      )}
-
-      <div>
-        <label style={LBL}>TITLE *</label>
-        <input
-          style={FIELD}
-          placeholder="Brief description of the issue"
-          value={form.title}
-          onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-          maxLength={200}
-        />
-      </div>
-
-      <div style={{ display: "flex", gap: "10px" }}>
-        <div style={{ flex: 1 }}>
-          <label style={LBL}>CATEGORY</label>
-          <select
-            style={{ ...SELECT, fontSize: "13px", padding: "8px 26px 8px 10px" }}
-            value={form.category}
-            onChange={e => setForm(f => ({ ...f, category: e.target.value as Category }))}
-          >
-            {(Object.entries(CAT) as [Category, (typeof CAT)[Category]][]).map(([k, v]) => (
-              <option key={k} value={k} style={OPT}>{v.icon} {v.label}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={LBL}>PRIORITY</label>
-          <select
-            style={{ ...SELECT, fontSize: "13px", padding: "8px 26px 8px 10px" }}
-            value={form.priority}
-            onChange={e => setForm(f => ({ ...f, priority: Number(e.target.value) }))}
-          >
-            {P_LABEL.map((l, i) => <option key={i} value={i} style={OPT}>{l}</option>)}
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <label style={LBL}>IMPACT SCORE: {form.impact_score}/10</label>
-        <input
-          type="range"
-          min={1}
-          max={10}
-          value={form.impact_score}
-          onChange={e => setForm(f => ({ ...f, impact_score: Number(e.target.value) }))}
-          style={{ width: "100%", accentColor: "#f03a57" }}
-        />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: "var(--ink-2,#5a7490)", marginTop: "2px" }}>
-          <span>Negligible</span><span>Critical</span>
-        </div>
-      </div>
-
-      <div>
-        <label style={LBL}>DESCRIPTION</label>
-        <textarea
-          style={{ ...FIELD, resize: "vertical" }}
-          placeholder="Detailed description of the problem…"
-          rows={3}
-          value={form.description}
-          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-          maxLength={2000}
-        />
-      </div>
-
-      <div>
-        <label style={LBL}>TAGS (comma-separated)</label>
-        <input
-          style={FIELD}
-          placeholder="e.g. latency, position-sizing, memory"
-          value={form.tags}
-          onChange={e => setForm(f => ({ ...f, tags: e.target.value }))}
-        />
-      </div>
-
-      <div style={{ display: "flex", gap: "8px" }}>
-        <button
-          onClick={submit}
-          disabled={busy}
-          style={{
-            flex: 1, padding: "9px", borderRadius: "6px",
-            border: "1px solid rgba(0,204,122,0.4)",
-            background: "rgba(0,204,122,0.14)",
-            color: "#00cc7a", fontWeight: 700, fontSize: "13px", cursor: "pointer",
-          }}
-        >
-          {busy ? "Reporting…" : "Report Issue"}
-        </button>
-        <button
-          onClick={onCancel}
-          style={{
-            padding: "9px 14px", borderRadius: "6px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
-            background: "none", color: "var(--ink-2,#5a7490)", fontSize: "13px", cursor: "pointer",
-          }}
-        >
-          Cancel
-        </button>
-      </div>
     </div>
   );
 }
@@ -1626,14 +1533,15 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
   }, [open, tab]);
 
   const filtered = useMemo(() => {
-    if (tab === "open")     return issues.filter(i => i.status === "open" || i.status === "in_progress");
-    if (tab === "staging")  return issues.filter(i => i.status === "staging");
-    if (tab === "archived") return issues.filter(i => i.status === "archived");
+    const k = (i: Issue) => toKmsStatus(i.kms_status, i.status);
+    if (tab === "open")     return issues.filter(i => ["TRIAGE_PENDING", "RELAPSED", "TOOL_QUEUED"].includes(k(i)));
+    if (tab === "staging")  return issues.filter(i => k(i) === "OOS_VALIDATION");
+    if (tab === "archived") return issues.filter(i => k(i) === "BASELINE_RESTORED");
     return issues;
   }, [issues, tab]);
 
-  const openCnt    = issues.filter(i => i.status === "open" || i.status === "in_progress").length;
-  const stagingCnt = issues.filter(i => i.status === "staging").length;
+  const openCnt    = issues.filter(i => ["TRIAGE_PENDING", "RELAPSED", "TOOL_QUEUED"].includes(toKmsStatus(i.kms_status, i.status))).length;
+  const stagingCnt = issues.filter(i => toKmsStatus(i.kms_status, i.status) === "OOS_VALIDATION").length;
 
   function TabBtn({ k, label, badge }: { k: TabFilter; label: string; badge?: number }) {
     const active = tab === k;
@@ -1931,14 +1839,17 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
               </div>
             </div>
 
-            {/* Tabs */}
+            {/* Tabs — survivability pipeline groupings */}
             <div style={{ display: "flex", gap: "2px", paddingBottom: "8px", overflowX: "auto" }}>
-              <TabBtn k="open" label="Active" badge={openCnt} />
+              <TabBtn k="open" label="Triage" badge={openCnt} />
               {(showInsight || canResolve) && (
-                <TabBtn k="staging" label="Staging" badge={stagingCnt} />
+                <TabBtn k="staging" label="OOS" badge={stagingCnt} />
               )}
               {(showInsight || canResolve) && (
-                <TabBtn k="archived" label="Archived" />
+                <TabBtn k="archived" label="Baseline" />
+              )}
+              {canResolve && (
+                <TabBtn k="tools" label="Tools" />
               )}
               {showInsight && canResolve && (
                 <TabBtn k="insight" label="Insight ↗" />
@@ -1973,14 +1884,21 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
 
           {/* Scrollable body */}
           <div className="iss-scroll" style={{ flex: 1, overflowY: "auto" }}>
+            {tab !== "insight" && tab !== "tools" && !creating && (
+              <KmsDashboard issues={issues} />
+            )}
+
             {creating && (
-              <CreateIssueForm
+              <TriageReportForm
+                issues={issues}
                 onDone={() => { setCreating(false); loadIssues(); }}
                 onCancel={() => setCreating(false)}
               />
             )}
 
-            {tab === "insight" && showInsight && canResolve ? (
+            {tab === "tools" && canResolve ? (
+              <ToolRegistry issues={issues} canManage={canResolve} onRefresh={loadIssues} />
+            ) : tab === "insight" && showInsight && canResolve ? (
               isMobile
                 ? <InsightTab issues={issues} />
                 : <div style={{ textAlign: "center", padding: "52px 20px", color: "var(--ink-2,#5a7490)", fontSize: "12px", lineHeight: 1.7 }}>
@@ -1993,9 +1911,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
               </div>
             ) : filtered.length === 0 ? (
               <div style={{ textAlign: "center", padding: "48px 0", color: "var(--ink-2,#5a7490)", fontSize: "13px" }}>
-                {tab === "open"     ? "No active issues"
-                : tab === "staging" ? "No issues in staging"
-                :                    "No archived issues"}
+                {tab === "open"     ? "Triage queue clear — no active anomalies"
+                : tab === "staging" ? "No issues in OOS validation"
+                :                    "No baseline-restored issues"}
               </div>
             ) : (
               <div style={{ padding: "12px 11px", display: "flex", flexDirection: "column", gap: "8px" }}>

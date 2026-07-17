@@ -1,10 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth }      from "@/auth";
 import { supabase }  from "@/lib/supabase";
-
-const VALID_CATEGORIES = [
-  "execution", "risk", "technical", "compliance", "process", "market", "other",
-] as const;
+import {
+  isValidTaxonomyPath, toKmsStatus, tradingSessionsSince, OOS_SESSIONS_REQUIRED,
+} from "@/lib/kms";
 
 type CurrentSolution = {
   id:              string;
@@ -25,27 +24,34 @@ export async function GET() {
   if (!session?.twoFactorVerified)
     return NextResponse.json({ error: "Auth required" }, { status: 401 });
 
-  // Single query for issues (current_solution is already denormalized as JSONB)
-  // One additional query for scratched solution history from the event log
-  const [{ data: issues, error: issErr }, { data: scratchedEvents, error: evtErr }] =
-    await Promise.all([
-      supabase
-        .from("issues")
-        .select("*")
-        .order("priority",    { ascending: true  })
-        .order("raise_count", { ascending: false })
-        .order("created_at",  { ascending: false }),
-      supabase
-        .from("issue_events")
-        .select("issue_id, payload, created_at")
-        .eq("event_type", "SOLUTION_SCRATCHED")
-        .order("created_at", { ascending: false }),
-    ]);
+  const [
+    { data: issues, error: issErr },
+    { data: scratchedEvents, error: evtErr },
+    { data: deployments, error: depErr },
+    { data: tools, error: toolErr },
+  ] = await Promise.all([
+    supabase
+      .from("issues")
+      .select("*")
+      .order("priority",    { ascending: true  })
+      .order("raise_count", { ascending: false })
+      .order("created_at",  { ascending: false }),
+    supabase
+      .from("issue_events")
+      .select("issue_id, payload, created_at")
+      .eq("event_type", "SOLUTION_SCRATCHED")
+      .order("created_at", { ascending: false }),
+    supabase.from("tool_deployments").select("*").order("deployed_at", { ascending: false }),
+    supabase.from("digital_tools").select("tool_id, name, category, version, deprecated"),
+  ]);
 
   if (issErr) return NextResponse.json({ error: issErr.message }, { status: 500 });
   if (evtErr) return NextResponse.json({ error: evtErr.message }, { status: 500 });
+  // Tool tables may not exist until the KMS migration runs — degrade gracefully.
+  const deps     = depErr  ? [] : (deployments ?? []);
+  const toolRows = toolErr ? [] : (tools ?? []);
+  const toolMap  = new Map(toolRows.map(t => [t.tool_id, t]));
 
-  // Group scratched events by issue_id for O(1) lookup
   const scratchedMap = new Map<string, any[]>();
   for (const e of scratchedEvents ?? []) {
     const arr = scratchedMap.get(e.issue_id) ?? [];
@@ -60,7 +66,24 @@ export async function GET() {
     scratchedMap.set(e.issue_id, arr);
   }
 
-  // Partition sub-issues from top-level issues
+  const depMap = new Map<string, any[]>();
+  for (const d of deps) {
+    const t = toolMap.get(d.tool_id);
+    const arr = depMap.get(d.issue_id) ?? [];
+    arr.push({
+      deployment_id: d.id,
+      tool_id:       d.tool_id,
+      tool_name:     t?.name ?? "unknown tool",
+      tool_version:  t?.version ?? "",
+      tool_category: t?.category ?? "",
+      deployed_at:   d.deployed_at,
+      deployed_by:   d.deployed_by,
+      active:        d.active,
+      relapses:      d.relapses ?? 0,
+    });
+    depMap.set(d.issue_id, arr);
+  }
+
   const subMap    = new Map<string, any[]>();
   const topLevel: any[] = [];
   for (const i of issues ?? []) {
@@ -81,19 +104,27 @@ export async function GET() {
     }
   }
 
-  const now = Date.now();
+  /* OOS auto-promotion — time-decay on surviving trading sessions. No manual
+     closing exists: the system itself promotes OOS_VALIDATION issues that have
+     survived the required session count without a relapse. */
+  const now = new Date();
+  const promote: string[] = [];
+
   const merged = topLevel.map((i: any) => {
     const sol: CurrentSolution | null = i.current_solution ?? null;
-
+    let kms = toKmsStatus(i.kms_status, i.status);
+    const oosStart = i.oos_started_at ?? i.staging_at ?? null;
+    const oosSessions = kms === "OOS_VALIDATION" && oosStart ? tradingSessionsSince(oosStart, now) : 0;
     const stagingMs = i.staging_at ? new Date(i.staging_at).getTime() : null;
-    const effectiveStatus =
-      i.status === "staging" && stagingMs && stagingMs + 21 * 86_400_000 <= now
-        ? "archived"
-        : i.status;
     const stagingDaysRemaining =
       i.status === "staging" && stagingMs
-        ? Math.max(0, Math.ceil((stagingMs + 21 * 86_400_000 - now) / 86_400_000))
+        ? Math.max(0, Math.ceil((stagingMs + 21 * 86_400_000 - now.getTime()) / 86_400_000))
         : null;
+
+    if (kms === "OOS_VALIDATION" && oosSessions >= OOS_SESSIONS_REQUIRED) {
+      kms = "BASELINE_RESTORED";
+      promote.push(i.issue_id);
+    }
 
     return {
       issue_id:               i.issue_id,
@@ -106,15 +137,22 @@ export async function GET() {
       impact_score:           i.impact_score         ?? 5,
       tags:                   i.tags                 ?? [],
       parent_issue_id:        i.parent_issue_id      ?? null,
-      status:                 effectiveStatus,
+      status:                 i.status,
+      staging_at:             i.staging_at           ?? null,
+      staging_days_remaining: stagingDaysRemaining,
+      kms_status:             kms,
+      domain:                 i.domain               ?? null,
+      subsystem:              i.subsystem            ?? null,
+      leaf_node:              i.leaf_node            ?? null,
+      oos_started_at:         oosStart,
+      oos_sessions:           oosSessions,
+      oos_sessions_required:  OOS_SESSIONS_REQUIRED,
+      baseline_at:            i.baseline_at          ?? null,
       raise_count:            i.raise_count          ?? 0,
       reopen_count:           i.reopen_count         ?? 0,
       created_at:             i.created_at,
-      staging_at:             i.staging_at           ?? null,
-      staging_days_remaining: stagingDaysRemaining,
       closed_at:              i.closed_at            ?? null,
       resolution_note:        i.resolution_note      ?? null,
-      // flatten current_solution JSONB → same shape the frontend already expects
       solution_id:            sol?.id                ?? null,
       solution_description:   sol?.description       ?? null,
       solution_proposed_by:   sol?.proposed_by       ?? null,
@@ -127,9 +165,18 @@ export async function GET() {
       observed_week_3:        sol?.observed_week_3   ?? null,
       all_observed_at:        sol?.all_observed_at   ?? null,
       scratched_solutions:    scratchedMap.get(i.issue_id) ?? [],
+      deployments:            depMap.get(i.issue_id) ?? [],
       sub_issues:             subMap.get(i.issue_id) ?? [],
     };
   });
+
+  // Persist promotions (best-effort; the response already reflects them)
+  if (promote.length > 0) {
+    await supabase
+      .from("issues")
+      .update({ kms_status: "BASELINE_RESTORED", status: "archived", baseline_at: now.toISOString() })
+      .in("issue_id", promote);
+  }
 
   return NextResponse.json(merged);
 }
@@ -144,22 +191,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Insufficient role" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const title       = typeof body.title       === "string" ? body.title.trim().slice(0, 200)       : "";
+  const title       = typeof body.title       === "string" ? body.title.trim().slice(0, 200)        : "";
   const description = typeof body.description === "string" ? body.description.trim().slice(0, 2000) : null;
   const priority    = typeof body.priority    === "number"
     ? Math.max(0, Math.min(5, Math.round(body.priority))) : 3;
-  const category    = VALID_CATEGORIES.includes(body.category) ? body.category : "other";
   const impact_score = typeof body.impact_score === "number"
     ? Math.max(1, Math.min(10, Math.round(body.impact_score))) : 5;
-  const tags = Array.isArray(body.tags)
-    ? (body.tags as unknown[])
-        .filter((t): t is string => typeof t === "string")
-        .map(t => t.trim().slice(0, 50))
-        .filter(Boolean)
-        .slice(0, 10)
-    : [];
   const parent_issue_id =
     typeof body.parent_issue_id === "string" && body.parent_issue_id ? body.parent_issue_id : null;
+
+  /* ── Absolute Taxonomic Lockout ────────────────────────────────────────────
+     No free-text categorisation exists. The submission is rejected unless the
+     Domain → Sub-System → Leaf path is an exact node of the ontology tree.  */
+  const domain    = typeof body.domain    === "string" ? body.domain    : "";
+  const subsystem = typeof body.subsystem === "string" ? body.subsystem : "";
+  const leaf_node = typeof body.leaf_node === "string" ? body.leaf_node : "";
+  if (!isValidTaxonomyPath(domain, subsystem, leaf_node))
+    return NextResponse.json(
+      { error: "Taxonomic lockout: a verified Leaf Node from the ontology is required." },
+      { status: 422 },
+    );
+  if (Array.isArray(body.tags) && body.tags.length > 0)
+    return NextResponse.json(
+      { error: "Zero-trust metadata: free-text tags are not accepted." },
+      { status: 422 },
+    );
 
   if (!title) return NextResponse.json({ error: "Title required" }, { status: 400 });
 
@@ -168,7 +224,15 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("issues")
-    .insert({ title, description, reported_by, reporter_role, priority, category, impact_score, tags, parent_issue_id })
+    .insert({
+      title, description, reported_by, reporter_role, priority, impact_score,
+      parent_issue_id,
+      category:   domain,             // legacy column mirrors the Tier-1 domain
+      tags:       [],
+      domain, subsystem, leaf_node,
+      kms_status: "TRIAGE_PENDING",
+      status:     "open",
+    })
     .select("issue_id")
     .single();
 
