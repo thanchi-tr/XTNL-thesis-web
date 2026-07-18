@@ -7,6 +7,7 @@ import TriageReportForm from "@/components/issues/kms/TriageReportForm";
 import KmsDashboard     from "@/components/issues/kms/KmsDashboard";
 import ToolRegistry     from "@/components/issues/kms/ToolRegistry";
 import InsightTab       from "@/components/issues/kms/InsightCommandCenter";
+import KmsHelpPopover   from "@/components/issues/kms/KmsHelpPopover";
 
 /* ── Types ───────────────────────────────────────────────────── */
 type IssueStatus = "open" | "in_progress" | "staging" | "archived";
@@ -240,6 +241,7 @@ function ObsBox({ done, label, onClick }: { done: boolean; label: string; onClic
     <button
       onClick={onClick}
       disabled={done || !onClick}
+      title={done ? `${label} already confirmed clean` : onClick ? `Mark ${label} as observed clean (no relapse)` : `${label} unlocks once the prior week is confirmed`}
       style={{
         display:      "inline-flex",
         alignItems:   "center",
@@ -381,6 +383,7 @@ function RecordSection({
         <div>
           <button
             onClick={() => setSubOpen(v => !v)}
+            title={subOpen ? "Collapse the sub-issue list" : "Expand to view linked sub-issues"}
             style={{
               background: "none", border: "none", color: "#4d9cf5",
               fontSize: "11px", cursor: "pointer", padding: "0", fontWeight: 600,
@@ -441,6 +444,7 @@ function RecordSection({
             <button
               onClick={addSubIssue}
               disabled={subBusy}
+              title="Create a child issue linked to this one"
               style={{
                 flex: 1, padding: "5px", borderRadius: "4px", border: "none",
                 background: "#4d9cf5", color: "#fff", fontWeight: 700, fontSize: "11px", cursor: "pointer",
@@ -450,6 +454,7 @@ function RecordSection({
             </button>
             <button
               onClick={() => { setFormOpen(false); setSubErr(null); }}
+              title="Discard this sub-issue draft"
               style={{
                 padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
                 background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
@@ -466,6 +471,7 @@ function RecordSection({
         <button
           onClick={onRaise}
           disabled={!canRecord}
+          title={canRecord ? "Log another occurrence of this same anomaly — bumps its raise count and priority weight" : "Recorder role required to raise"}
           style={{
             display:      "inline-flex",
             alignItems:   "center",
@@ -485,6 +491,7 @@ function RecordSection({
         {canRecord && (
           <button
             onClick={() => { setFormOpen(v => !v); setSubErr(null); }}
+            title="Attach a related sub-anomaly to this issue"
             style={{
               padding:      "4px 10px",
               borderRadius: "4px",
@@ -613,6 +620,7 @@ function ResolveSection({
                 () => { setSolText(""); setSolvingId(null); }
               )}
               disabled={busy || !solText.trim()}
+              title="Legacy free-text mitigation note — for durable containment, deploy a Digital Tool from the Tools tab instead"
               style={{
                 flex: 1, padding: "5px", borderRadius: "4px", border: "none",
                 background: "#00cc7a", color: "#000", fontWeight: 700, fontSize: "11px", cursor: "pointer",
@@ -622,6 +630,7 @@ function ResolveSection({
             </button>
             <button
               onClick={() => { setSolvingId(null); setSolText(""); }}
+              title="Discard this solution draft"
               style={{
                 padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
                 background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
@@ -696,6 +705,7 @@ function ResolveSection({
                 <button
                   onClick={() => run(() => callApi(`/api/session/issues/${issue.issue_id}/solution`, { method: "DELETE" }))}
                   disabled={busy}
+                  title="Discard this solution permanently — it moves to scratched history below"
                   style={{
                     padding: "2px 8px", borderRadius: "4px",
                     border: "1px solid rgba(240,58,87,0.3)", background: "rgba(240,58,87,0.08)",
@@ -756,6 +766,7 @@ function ResolveSection({
         <div>
           <button
             onClick={() => setScratchedOpen(v => !v)}
+            title="View previously discarded solution attempts for this issue"
             style={{
               background: "none", border: "none", color: "var(--ink-2,#5a7490)",
               fontSize: "11px", cursor: "pointer", padding: "0",
@@ -792,6 +803,7 @@ function ResolveSection({
         {canManage && !isArchived && !isSolving && (
           <button
             onClick={() => setSolvingId(issue.issue_id)}
+            title={issue.solution_id ? "Replace the current solution text" : "Write a free-text mitigation note for this issue"}
             style={{
               padding: "4px 10px", borderRadius: "4px",
               border: "1px solid rgba(0,204,122,0.3)", background: "rgba(0,204,122,0.08)",
@@ -805,6 +817,7 @@ function ResolveSection({
         {canManage && !isArchived && !isStaging && !closeForm && (
           <button
             onClick={() => setCloseForm(true)}
+            title="Legacy manual close — bypasses OOS validation. Prefer deploying a Digital Tool and letting the pipeline auto-promote to BASELINE_RESTORED"
             style={{
               padding: "4px 10px", borderRadius: "4px",
               border: "1px solid rgba(52,211,153,0.25)", background: "rgba(52,211,153,0.06)",
@@ -818,6 +831,7 @@ function ResolveSection({
         {canManage && (isStaging || isArchived) && !reopenForm && (
           <button
             onClick={() => setReopenForm(true)}
+            title="Confirm a relapse — reverts to an active threat, increments the reopen counter, and degrades the deployed tool's OOS score"
             style={{
               padding: "4px 10px", borderRadius: "4px",
               border: "1px solid rgba(240,160,48,0.3)", background: "rgba(240,160,48,0.08)",
@@ -847,6 +861,7 @@ function ResolveSection({
                   () => setCloseForm(false)
                 )}
                 disabled={busy}
+                title="Manually archive this issue without deploying a tool through the OOS pipeline"
                 style={{
                   flex: 1, padding: "5px", borderRadius: "4px", border: "none",
                   background: "#34d399", color: "#000", fontWeight: 700, fontSize: "11px", cursor: "pointer",
@@ -856,6 +871,7 @@ function ResolveSection({
               </button>
               <button
                 onClick={() => { setCloseForm(false); setCloseNote(""); }}
+                title="Discard this close note"
                 style={{
                   padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
                   background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
@@ -886,6 +902,7 @@ function ResolveSection({
                   () => { setReopenForm(false); setReopenReason(""); }
                 )}
                 disabled={busy}
+                title="Confirm this reason and revert the issue to an active, unresolved threat"
                 style={{
                   flex: 1, padding: "5px", borderRadius: "4px", border: "none",
                   background: "#f0a030", color: "#000", fontWeight: 700, fontSize: "11px", cursor: "pointer",
@@ -895,6 +912,7 @@ function ResolveSection({
               </button>
               <button
                 onClick={() => { setReopenForm(false); setReopenReason(""); }}
+                title="Discard this reopen reason"
                 style={{
                   padding: "5px 10px", borderRadius: "4px", border: "1px solid var(--line-hi,rgba(255,255,255,0.11))",
                   background: "none", color: "var(--ink-2,#5a7490)", fontSize: "11px", cursor: "pointer",
@@ -1001,6 +1019,9 @@ function IssueCard({
       {/* Expanded body */}
       {expanded && (
         <div style={{ padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+            <KmsHelpPopover />
+          </div>
           {/* KMS telemetry — taxonomy path, active tool, OOS survivability */}
           <div style={{
             padding: "7px 10px", borderRadius: 6,
@@ -1148,11 +1169,20 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
   const openCnt    = issues.filter(i => ["TRIAGE_PENDING", "RELAPSED", "TOOL_QUEUED"].includes(toKmsStatus(i.kms_status, i.status))).length;
   const stagingCnt = issues.filter(i => toKmsStatus(i.kms_status, i.status) === "OOS_VALIDATION").length;
 
+  const TAB_HINT: Record<TabFilter, string> = {
+    open:     "Novel, queued, and relapsed anomalies awaiting action",
+    staging:  "Digital tools currently live and surviving out-of-sample",
+    archived: "Issues holding at BASELINE_RESTORED — contained, not deleted",
+    tools:    "The Digital Tool Registry — register and deploy mitigation assets",
+    insight:  "Operational Risk Command Center — systemic entropy, containment, decay heatmap",
+  };
+
   function TabBtn({ k, label, badge }: { k: TabFilter; label: string; badge?: number }) {
     const active = tab === k;
     return (
       <button
         onClick={() => setTab(k)}
+        title={TAB_HINT[k]}
         style={{
           padding:       "5px 11px",
           borderRadius:  "5px",
@@ -1200,6 +1230,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
       <button
         onClick={() => setOpen(v => !v)}
         aria-label="Toggle issue panel"
+        title={open ? "Close the Issues panel" : "Open the Issues panel"}
         style={{
           position:       "fixed",
           bottom:         isMobile ? 20 : 28,
@@ -1412,6 +1443,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                 {canRecord && !creating && (
                   <button
                     onClick={() => setCreating(true)}
+                    title="Open the Zero-Knowledge Triage intercept to log a new symptom"
                     style={{
                       padding:      "4px 10px",
                       borderRadius: "5px",
@@ -1429,6 +1461,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                 <button
                   onClick={loadIssues}
                   disabled={loading}
+                  title="Reload the issue ledger"
                   style={{
                     padding:      "4px 10px",
                     borderRadius: "5px",

@@ -214,7 +214,7 @@ export default function InsightCommandCenter({ issues }: { issues: InsightIssue[
                     eff === null ? "—" : `${eff.toFixed(1)}%`,
                     state,
                   ]}
-                  colColors={[t.deprecated ? SLATE : SLATE_HI, SLATE, SLATE_HI, col, col]}
+                  colColors={[t.deprecated ? SLATE : SLATE_HI, SLATE_HI, SLATE_HI, col, col]}
                   strike={t.deprecated}
                   accent={col}
                 />
@@ -237,23 +237,23 @@ export default function InsightCommandCenter({ issues }: { issues: InsightIssue[
             return (
               <div key={d.id}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                  <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, letterSpacing: "0.16em", color: domCol }}>
+                  <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", color: domCol }}>
                     {d.label.toUpperCase()}
                   </span>
                   <div style={{ flex: 1, height: 1, background: LINE }} />
-                  <span style={{ fontFamily: MONO, fontSize: 8.5, color: domainCount > 0 ? domCol : SLATE, fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontFamily: MONO, fontSize: 9, color: domainCount > 0 ? domCol : SLATE_HI, fontVariantNumeric: "tabular-nums" }}>
                     {domainCount} anom{domainRelapse > 0 ? ` · ${domainRelapse} relapsed` : ""}
                   </span>
                 </div>
                 {d.subs.map(sub => (
                   <div key={sub.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
-                    <span style={{ fontFamily: MONO, fontSize: 8, letterSpacing: "0.1em", color: SLATE, width: 118, flexShrink: 0, textAlign: "right", textTransform: "uppercase" }}>
+                    <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.08em", color: SLATE_HI, width: 118, flexShrink: 0, textAlign: "right", textTransform: "uppercase" }}>
                       {sub.label}
                     </span>
                     <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                       {sub.leaves.map(l => {
                         const c = m.leaf.get(l.id);
-                        let col = "rgba(255,255,255,0.045)", glow = "none";
+                        let col = "rgba(255,255,255,0.08)", glow = "none";
                         if (c) {
                           if (c.relapsed > 0)      { col = ROSE;    glow = `0 0 6px ${ROSE}88`; }
                           else if (c.pending > 0)  { col = AMBER; }
@@ -282,7 +282,7 @@ export default function InsightCommandCenter({ issues }: { issues: InsightIssue[
         <SectionLabel>ANOMALY INGESTION · 12W CADENCE</SectionLabel>
         <div style={{ padding: "10px 12px", background: BASE, border: `1px solid ${LINE}`, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
           <Sparkbars values={m.buckets} color={m.relapsedN > 0 ? ROSE : CYAN} />
-          <span style={{ fontFamily: MONO, fontSize: 8, color: SLATE, letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
+          <span style={{ fontFamily: MONO, fontSize: 9, color: SLATE_HI, letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
             {m.buckets.reduce((a, b) => a + b, 0)} logged / 12w
           </span>
         </div>
@@ -302,7 +302,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ padding: "16px 12px", background: BASE, border: `1px solid ${LINE}`, fontFamily: MONO, fontSize: 10, color: SLATE, letterSpacing: "0.04em" }}>
+    <div style={{ padding: "16px 12px", background: BASE, border: `1px solid ${LINE}`, fontFamily: MONO, fontSize: 11, color: SLATE_HI, letterSpacing: "0.04em" }}>
       {children}
     </div>
   );
@@ -315,15 +315,15 @@ function LedgerRow({ cols, colColors, header, strike, accent }: {
   return (
     <div style={{
       display: "grid", gridTemplateColumns: widths.join(" "), gap: 8, alignItems: "center",
-      padding: "6px 10px", borderBottom: header ? `1px solid ${LINE_HI}` : `1px solid ${LINE}`,
+      padding: "7px 10px", borderBottom: header ? `1px solid ${LINE_HI}` : `1px solid ${LINE}`,
       borderLeft: !header && accent ? `2px solid ${accent}` : "2px solid transparent",
     }}>
       {cols.map((c, i) => (
         <span key={i} style={{
           fontFamily: MONO, fontVariantNumeric: "tabular-nums",
-          fontSize: header ? 7.5 : 10, fontWeight: header ? 700 : (i === 0 ? 600 : 500),
+          fontSize: header ? 8.5 : 11, fontWeight: header ? 700 : (i === 0 ? 600 : 500),
           letterSpacing: header ? "0.1em" : "0.02em",
-          color: header ? SLATE : (colColors?.[i] ?? SLATE_HI),
+          color: header ? SLATE_HI : (colColors?.[i] ?? SLATE_HI),
           textAlign: i >= 2 && i <= 3 ? "right" : "left",
           textDecoration: strike && i === 0 ? "line-through" : "none",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
