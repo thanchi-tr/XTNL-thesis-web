@@ -628,8 +628,8 @@ export default function PipelineBanner() {
             <>
               <style>{`
                 @keyframes _ingestGlow {
-                  0%, 100% { box-shadow: 0 0 0 0 rgba(240,160,48,0.0); }
-                  50%      { box-shadow: 0 0 10px 2px rgba(240,160,48,0.45); }
+                  0%, 100% { box-shadow: 0 0 0 0 rgba(240,160,48,0.10); border-color: rgba(240,160,48,0.30); }
+                  50%      { box-shadow: 0 0 12px 0 rgba(240,160,48,0.22); border-color: rgba(240,160,48,0.50); }
                 }
               `}</style>
               <button
@@ -639,11 +639,11 @@ export default function PipelineBanner() {
                 style={{
                   display: "flex", flexDirection: "column", gap: 3,
                   padding: "3px 8px", borderRadius: 4,
-                  border: `1px solid ${ingestTriggering ? "var(--line)" : "rgba(240,160,48,0.35)"}`,
+                  border: `1px solid ${ingestTriggering ? "var(--line)" : "rgba(240,160,48,0.30)"}`,
                   background: ingestTriggering ? "rgba(255,255,255,0.03)" : "rgba(240,160,48,0.05)",
                   cursor: ingestTriggering ? "not-allowed" : "pointer",
                   flexShrink: 0,
-                  animation: ingestTriggering ? "none" : "_ingestGlow 2.2s ease-in-out infinite",
+                  animation: ingestTriggering ? "none" : "_ingestGlow 3.2s ease-in-out infinite",
                 }}
               >
                 <span style={{
