@@ -3100,12 +3100,18 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   useEffect(() => { void fetchState(); }, [fetchState]);
 
   // Pause polling when the tab is hidden to avoid server hammering from background tabs.
-  // Intervals: 2 s while alarm running (needs accurate countdown + focus alerts),
-  //            15 s while idle (config rarely changes, badge lag acceptable).
+  // No alarm running or scheduled → no polling at all: nothing server-side
+  // can change without a user-initiated action, and those already update
+  // `srv` directly via callAPI's response, so there's nothing to catch by
+  // polling an idle state. Intervals while there IS something to track:
+  // 2 s while running (needs accurate countdown + focus alerts), 5 s while
+  // scheduled (waiting for start time).
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
 
-    const interval = srv.running ? 2_000 : (srv.scheduled_start ? 5_000 : 15_000);
+    if (!srv.running && !srv.scheduled_start) return;
+
+    const interval = srv.running ? 2_000 : 5_000;
     pollRef.current = setInterval(() => {
       if (document.visibilityState !== "hidden") void fetchState();
     }, interval);
