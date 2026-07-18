@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * KmsHelpPopover — the "?" reference card inside the expanded issue popup.
- * Explains the taxonomy path, the survivability pipeline, priority weights,
- * and what every action button in the Record/Resolve sections actually does.
- * Toggled inline (no modal) so it doesn't fight the panel's own scroll.
+ * KmsHelpPopover — the "?" reference button in the Issues panel toolbar
+ * (between + Report and the refresh button). Explains the taxonomy path,
+ * the survivability pipeline, priority weights, and what every action
+ * button in the Record/Resolve sections does. Closes on outside click.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KMS_STATUS_META } from "@/lib/kms";
 
 const ROW: React.CSSProperties = { display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0" };
@@ -16,19 +16,36 @@ const VAL: React.CSSProperties = { fontSize: 11, color: "var(--ink-1,#9ab0c8)", 
 
 export default function KmsHelpPopover() {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={rootRef} style={{ position: "relative", display: "inline-flex" }}>
       <button
         onClick={() => setOpen(v => !v)}
         title="Explain this panel"
         aria-label="Explain this panel"
         style={{
-          width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+          width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
           border: `1px solid ${open ? "rgba(0,204,122,0.6)" : "var(--line-hi,rgba(255,255,255,0.11))"}`,
-          background: open ? "rgba(0,204,122,0.15)" : "var(--raised,#0f1e2e)",
+          background: open ? "rgba(0,204,122,0.15)" : "var(--sub,#07101c)",
           color: open ? "#00cc7a" : "var(--ink-2,#5a7490)",
-          fontSize: 10, fontWeight: 700, cursor: "pointer",
+          fontSize: 12, fontWeight: 700, cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
           lineHeight: 1, padding: 0,
         }}
@@ -39,8 +56,8 @@ export default function KmsHelpPopover() {
       {open && (
         <div
           style={{
-            position: "absolute", top: 22, right: 0, zIndex: 20,
-            width: 296, maxHeight: 360, overflowY: "auto",
+            position: "absolute", top: 32, right: 0, zIndex: 1000,
+            width: "min(296px, 90vw)", maxHeight: 360, overflowY: "auto",
             padding: "12px 13px", borderRadius: 8,
             background: "var(--card,#0b1622)", border: "1px solid rgba(0,204,122,0.28)",
             boxShadow: "0 12px 36px rgba(0,0,0,0.6)",

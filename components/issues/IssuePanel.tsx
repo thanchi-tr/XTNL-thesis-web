@@ -1019,9 +1019,6 @@ function IssueCard({
       {/* Expanded body */}
       {expanded && (
         <div style={{ padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
-            <KmsHelpPopover />
-          </div>
           {/* KMS telemetry — taxonomy path, active tool, OOS survivability */}
           <div style={{
             padding: "7px 10px", borderRadius: 6,
@@ -1458,6 +1455,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                     + Report
                   </button>
                 )}
+                <KmsHelpPopover />
                 <button
                   onClick={loadIssues}
                   disabled={loading}
