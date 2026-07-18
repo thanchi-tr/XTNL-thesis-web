@@ -264,17 +264,53 @@ function Arrow() {
   );
 }
 
-function Step({ done, active, label }: { done: boolean; active: boolean; label: string }) {
+/* Hover hints — shown on whichever step is the current phase of the pipeline. */
+const STEP_HINTS = {
+  ingestion: "Pulls live trades from the broker API into the live trades table.",
+  process:   "Processes all live trades and constructs this week's optimal trade set before continuing.",
+  analysis:  "Computes system-wide performance statistics for the week.",
+} as const;
+
+/* One shared keyframe, parameterized by CSS custom properties, instead of a
+   separate <style> block per step — a soft "breathing" border/shadow that
+   never fully turns off, marking whichever step is the current phase. */
+const STEP_GLOW_STYLE_TAG = (
+  <style>{`
+    @keyframes _stepGlow {
+      0%, 100% { box-shadow: 0 0 0 0 var(--glow-lo); border-color: var(--glow-border-lo); }
+      50%      { box-shadow: 0 0 12px 0 var(--glow-hi); border-color: var(--glow-border-hi); }
+    }
+  `}</style>
+);
+
+function glowVars(rgb: string): React.CSSProperties {
+  return {
+    ["--glow-lo" as string]:     `rgba(${rgb},0.10)`,
+    ["--glow-hi" as string]:     `rgba(${rgb},0.22)`,
+    ["--glow-border-lo" as string]: `rgba(${rgb},0.30)`,
+    ["--glow-border-hi" as string]: `rgba(${rgb},0.55)`,
+    animation: "_stepGlow 3.2s ease-in-out infinite",
+  } as React.CSSProperties;
+}
+
+const AMBER_RGB = "240,160,48";
+const BLUE_RGB  = "77,156,245";
+
+function Step({ done, active, label, title, glow }: { done: boolean; active: boolean; label: string; title?: string; glow?: boolean }) {
   const color  = done ? "var(--green)" : active ? "var(--amber)" : "var(--ink-3)";
   const border = done ? "rgba(0,204,122,0.25)" : active ? "rgba(240,160,48,0.25)" : "var(--line)";
   const bg     = done ? "rgba(0,204,122,0.07)" : active ? "rgba(240,160,48,0.05)" : "transparent";
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 4,
-      padding: "3px 8px", borderRadius: 4,
-      border: `1px solid ${border}`, background: bg,
-      fontSize: 11, fontWeight: 600, color, whiteSpace: "nowrap",
-    }}>
+    <div
+      title={title}
+      style={{
+        display: "flex", alignItems: "center", gap: 4,
+        padding: "3px 8px", borderRadius: 4,
+        border: `1px solid ${border}`, background: bg,
+        fontSize: 11, fontWeight: 600, color, whiteSpace: "nowrap",
+        ...(glow ? glowVars(AMBER_RGB) : {}),
+      }}
+    >
       {done && <Check />}
       {label}
     </div>
@@ -480,6 +516,10 @@ export default function PipelineBanner() {
   const barColor        = procDone ? "var(--green)" : "var(--amber)";
   const dotColor        = sessionActive ? "var(--green)" : "var(--ink-3)";
 
+  /* Exactly one step glows at a time — whichever is the current phase. */
+  const activeStage: "ingestion" | "process" | "analysis" | "done" =
+    !ingDone ? "ingestion" : !procDone ? "process" : !analysisDone ? "analysis" : "done";
+
   /* ── Collapsed pill — matches nav user-dropdown button style ── */
   if (collapsed) {
     return (
@@ -619,46 +659,46 @@ export default function PipelineBanner() {
 
         {/* Steps */}
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 4 : 6, flex: 1, overflow: "hidden" }}>
+          {STEP_GLOW_STYLE_TAG}
+
           {/* Ingestion step — clickable (analyst/strategist/fund_manager only)
               while not done. Only actionable on /session; elsewhere it
               navigates there first (see handleIngestClick). */}
           {ingDone || !canTriggerIngest ? (
-            <Step done={ingDone} active={!ingDone} label={isMobile ? "Ingest" : "Ingestion"} />
+            <Step
+              done={ingDone}
+              active={!ingDone}
+              label={isMobile ? "Ingest" : "Ingestion"}
+              title={STEP_HINTS.ingestion}
+              glow={activeStage === "ingestion"}
+            />
           ) : (
-            <>
-              <style>{`
-                @keyframes _ingestGlow {
-                  0%, 100% { box-shadow: 0 0 0 0 rgba(240,160,48,0.10); border-color: rgba(240,160,48,0.30); }
-                  50%      { box-shadow: 0 0 12px 0 rgba(240,160,48,0.22); border-color: rgba(240,160,48,0.50); }
-                }
-              `}</style>
-              <button
-                onClick={handleIngestClick}
-                disabled={ingestTriggering}
-                title={ingestError ?? (ingestTriggering ? "Triggering ingest…" : "Trigger ingestion")}
-                style={{
-                  display: "flex", flexDirection: "column", gap: 3,
-                  padding: "3px 8px", borderRadius: 4,
-                  border: `1px solid ${ingestTriggering ? "var(--line)" : "rgba(240,160,48,0.30)"}`,
-                  background: ingestTriggering ? "rgba(255,255,255,0.03)" : "rgba(240,160,48,0.05)",
-                  cursor: ingestTriggering ? "not-allowed" : "pointer",
-                  flexShrink: 0,
-                  animation: ingestTriggering ? "none" : "_ingestGlow 3.2s ease-in-out infinite",
-                }}
-              >
-                <span style={{
-                  fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
-                  color: ingestTriggering ? "var(--ink-3)" : "var(--amber)",
-                }}>
-                  {ingestTriggering ? (isMobile ? "…" : "Triggering…") : (isMobile ? "Ingest" : "Ingestion")}
-                </span>
-                {ingestTriggering && (
-                  <div style={{ width: "100%", minWidth: 40, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${ingestCooldownPct}%`, background: "var(--amber)", transition: "width 0.1s linear" }} />
-                  </div>
-                )}
-              </button>
-            </>
+            <button
+              onClick={handleIngestClick}
+              disabled={ingestTriggering}
+              title={ingestError ?? (ingestTriggering ? "Triggering ingest…" : STEP_HINTS.ingestion)}
+              style={{
+                display: "flex", flexDirection: "column", gap: 3,
+                padding: "3px 8px", borderRadius: 4,
+                border: `1px solid ${ingestTriggering ? "var(--line)" : "rgba(240,160,48,0.30)"}`,
+                background: ingestTriggering ? "rgba(255,255,255,0.03)" : "rgba(240,160,48,0.05)",
+                cursor: ingestTriggering ? "not-allowed" : "pointer",
+                flexShrink: 0,
+                ...(ingestTriggering ? {} : glowVars(AMBER_RGB)),
+              }}
+            >
+              <span style={{
+                fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                color: ingestTriggering ? "var(--ink-3)" : "var(--amber)",
+              }}>
+                {ingestTriggering ? (isMobile ? "…" : "Triggering…") : (isMobile ? "Ingest" : "Ingestion")}
+              </span>
+              {ingestTriggering && (
+                <div style={{ width: "100%", minWidth: 40, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${ingestCooldownPct}%`, background: "var(--amber)", transition: "width 0.1s linear" }} />
+                </div>
+              )}
+            </button>
           )}
           {ingestError && !isMobile && (
             <span
@@ -672,13 +712,17 @@ export default function PipelineBanner() {
           <Arrow />
 
           {/* Process step */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: isMobile ? 4 : 8,
-            padding: "3px 8px", borderRadius: 4,
-            border: `1px solid ${procDone ? "rgba(0,204,122,0.25)" : ingDone ? "rgba(240,160,48,0.25)" : "rgba(255,255,255,0.07)"}`,
-            background: procDone ? "rgba(0,204,122,0.07)" : ingDone ? "rgba(240,160,48,0.05)" : "transparent",
-            flexShrink: 0,
-          }}>
+          <div
+            title={STEP_HINTS.process}
+            style={{
+              display: "flex", alignItems: "center", gap: isMobile ? 4 : 8,
+              padding: "3px 8px", borderRadius: 4,
+              border: `1px solid ${procDone ? "rgba(0,204,122,0.25)" : ingDone ? "rgba(240,160,48,0.25)" : "rgba(255,255,255,0.07)"}`,
+              background: procDone ? "rgba(0,204,122,0.07)" : ingDone ? "rgba(240,160,48,0.05)" : "transparent",
+              flexShrink: 0,
+              ...(activeStage === "process" ? glowVars(AMBER_RGB) : {}),
+            }}
+          >
             <span style={{
               display: "flex", alignItems: "center", gap: 4,
               fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
@@ -710,6 +754,7 @@ export default function PipelineBanner() {
           <button
             onClick={procDone && !analysisDone ? handleAnalysisSession : undefined}
             disabled={analysisChecking || !procDone || analysisDone}
+            title={STEP_HINTS.analysis}
             style={{
               display: "flex", alignItems: "center", gap: 4,
               padding: "3px 8px", borderRadius: 4,
@@ -719,6 +764,7 @@ export default function PipelineBanner() {
               fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
               cursor: procDone && !analysisDone ? "pointer" : "default",
               flexShrink: 0,
+              ...(activeStage === "analysis" ? glowVars(BLUE_RGB) : {}),
             }}
           >
             {analysisDone && <Check />}

@@ -43,9 +43,18 @@ export async function POST() {
     } catch (e) {
       // Network-level failure (DNS, bad URL, connection reset) — the request
       // never reached API Gateway at all. Usually a malformed
-      // PIPELINE_API_BASE_URL, not a pipeline problem.
+      // PIPELINE_API_BASE_URL (a stray quote or trailing whitespace pasted
+      // into the env var is the most common cause). Surface the underlying
+      // fetch error text directly — it's about our own infra config, not
+      // sensitive data, and only privileged roles ever see this route's
+      // response, so it's worth exposing rather than making them dig through
+      // Vercel function logs.
+      const detail = e instanceof Error ? e.message : String(e);
       console.error("[trigger-ingest POST] fetch failed — check PIPELINE_API_BASE_URL", e);
-      return NextResponse.json({ error: "Could not reach the pipeline API — check PIPELINE_API_BASE_URL." }, { status: 502 });
+      return NextResponse.json(
+        { error: `Could not reach the pipeline API (${detail}). Check PIPELINE_API_BASE_URL for stray quotes/whitespace.` },
+        { status: 502 },
+      );
     }
 
     // API Gateway's REST integration has a 29s hard timeout, well under the
