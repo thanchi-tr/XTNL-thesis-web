@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { useSession } from "next-auth/react";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import IssuePanel from "@/components/issues/IssuePanel";
+import FirmwareCopyButton from "@/components/session/FirmwareCopyButton";
 
 /* ─── Types ─────────────────────────────────────────────── */
 
@@ -2403,6 +2404,10 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
             <span className="mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--ink-3)" }}>
               SYSTEM REPORT VISUALISER
             </span>
+            {/* Read-only here — sign-off itself happens in the session (analyst view) */}
+            <div style={{ marginLeft: "auto" }}>
+              <FirmwareCopyButton />
+            </div>
           </div>
           <div style={{ height: 1, background: "var(--line)" }} />
         </div>

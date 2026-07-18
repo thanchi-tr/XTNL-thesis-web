@@ -1,0 +1,91 @@
+import { NextResponse }    from "next/server";
+import { auth }             from "@/auth";
+import { unstable_cache }   from "next/cache";
+import { getMondayAESTKey } from "@/lib/weekKey";
+
+const TENANT_ID     = process.env.AZURE_TENANT_ID!;
+const CLIENT_ID     = process.env.AZURE_CLIENT_ID!;
+const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET!;
+const USER_ID       = process.env.ONEDRIVE_USER_ID!;
+const REPORT_BASE   = (process.env.REPORT_BASE_URL ?? "XTNLSolutions/Operations/Reports")
+  .replace(/^["']|["']$/g, "")
+  .replace(/\/$/, "");
+const FIRMWARE_FILE = "XTNLS_Firmware.pinescript";
+
+/* Roles allowed to read the firmware — the union of who can reach the
+   session page (analyst) and the analytics page (strategist/fund_manager),
+   since the copy button lives on both. */
+const ALLOWED_ROLES = ["analyst", "strategist", "fund_manager"];
+
+async function getGraphToken(): Promise<string> {
+  const res = await fetch(
+    `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
+    {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body:    new URLSearchParams({
+        grant_type:    "client_credentials",
+        client_id:     CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        scope:         "https://graph.microsoft.com/.default",
+      }),
+    }
+  );
+  const j = await res.json() as { access_token?: string; error?: string; error_description?: string };
+  if (!j.access_token) throw new Error(`Auth: ${j.error} — ${j.error_description}`);
+  return j.access_token;
+}
+
+interface FirmwareReport { content: string; fetchedAt: string; weekKey: string }
+
+/* Cached for 2 minutes — same rationale as the audit-report route: short
+   enough that a freshly-generated firmware is visible within one click,
+   without hammering the Graph API on every button press. */
+const getCachedFirmware = unstable_cache(
+  async (weekKey: string): Promise<FirmwareReport> => {
+    const token = await getGraphToken();
+
+    /* List folder to find file by name (avoids Graph path/tilde bugs) */
+    const listUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(USER_ID)}/drive/root:/${REPORT_BASE}:/children?$top=100&$select=id,name`;
+    const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (!listRes.ok) throw new Error(`Graph list ${listRes.status}`);
+    const { value = [] } = await listRes.json() as { value?: { id: string; name: string }[] };
+
+    const item = value.find(f => f.name === FIRMWARE_FILE);
+    if (!item) throw new Error(`"${FIRMWARE_FILE}" not found in Reports folder`);
+
+    /* Download by item ID */
+    const dlUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(USER_ID)}/drive/items/${item.id}/content`;
+    const dlRes = await fetch(dlUrl, { headers: { Authorization: `Bearer ${token}` }, redirect: "follow" });
+    if (!dlRes.ok) throw new Error(`Graph download ${dlRes.status}`);
+
+    return { content: await dlRes.text(), fetchedAt: new Date().toISOString(), weekKey };
+  },
+  ["xtnl-firmware"],
+  { revalidate: 120 }
+);
+
+export async function GET() {
+  const session = await auth();
+  if (!(session as { twoFactorVerified?: boolean } | null)?.twoFactorVerified)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const roles = session?.roles ?? [];
+  if (!roles.some(r => ALLOWED_ROLES.includes(r)))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  try {
+    const report = await getCachedFirmware(getMondayAESTKey());
+    return new NextResponse(report.content, {
+      status:  200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Fetched-At": report.fetchedAt,
+        "X-Week-Key":   report.weekKey,
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

@@ -9,6 +9,7 @@ import { getSessionStatus } from "@/lib/sessionStatus";
 import { playAlarmBeeps, unlockAudio } from "@/lib/alarmAudio";
 import IssuePanel from "@/components/issues/IssuePanel";
 import OngoingStrategy from "@/components/issues/OngoingStrategy";
+import FirmwareCopyButton from "@/components/session/FirmwareCopyButton";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -4577,6 +4578,10 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
   const [analysisDone,      setAnalysisDone]      = useState(false);
   const [analysisChecking,  setAnalysisChecking]  = useState(false);
 
+  /* ── Weekly review sign-off (gates FirmwareCopyButton) ── */
+  const [signoffMarking,  setSignoffMarking]  = useState(false);
+  const [signoffRefresh,  setSignoffRefresh]  = useState(0);
+
   /* Derived pipeline progress — computed from already-loaded liveRows, always in sync */
   const pipeTotalLive     = liveRows.length;
   const pipeProcessedLive = liveRows.filter(isTradeProcessed).length;
@@ -4656,6 +4661,23 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
       showToast("error", "Could not reach OneDrive — try again");
     }
     setAnalysisChecking(false);
+  }, [showToast]);
+
+  const handleMarkReviewed = useCallback(async () => {
+    setSignoffMarking(true);
+    try {
+      const r = await fetch("/api/session/weekly-signoff", { method: "POST" });
+      if (r.ok) {
+        showToast("success", "Week marked as reviewed — firmware copy unlocked");
+        setSignoffRefresh(n => n + 1);
+      } else {
+        const j = await r.json().catch(() => ({}));
+        showToast("error", j.error ?? "Could not record sign-off");
+      }
+    } catch {
+      showToast("error", "Could not reach the server — try again");
+    }
+    setSignoffMarking(false);
   }, [showToast]);
 
   useEffect(() => {
@@ -4806,6 +4828,19 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
             </div>
             <div className="session-sidebar session-sidebar-340">
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
+
+              <div className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <span className="label-xs" style={{ color: "var(--ink-3)" }}>WEEKLY REVIEW</span>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleMarkReviewed}
+                  disabled={signoffMarking}
+                  style={{ opacity: signoffMarking ? 0.6 : 1, cursor: signoffMarking ? "not-allowed" : "pointer" }}
+                >
+                  {signoffMarking ? "Marking…" : "Mark Week Reviewed"}
+                </button>
+                <FirmwareCopyButton showToast={showToast} refreshSignal={signoffRefresh} />
+              </div>
 
               <EntryChecklistToggle showToast={showToast} locked={isDriftAlert} refreshSignal={driftRefreshSignal} />
               <AttentionChallengeToggle showToast={showToast} refreshSignal={driftRefreshSignal} />

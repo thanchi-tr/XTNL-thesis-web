@@ -2,7 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession }                               from "next-auth/react";
+import { usePathname, useRouter }                   from "next/navigation";
 import { getSessionStatus }                         from "@/lib/sessionStatus";
+
+/* Real, non-free action (hits StoneX, writes to the DB via the Lambda) —
+   only these roles get the clickable treatment; matches
+   app/api/session/trigger-ingest/route.ts's server-side check. */
+const ALLOWED_INGEST_ROLES = ["analyst", "strategist", "fund_manager"];
+const INGEST_COOLDOWN_MS   = 8000;
+const PENDING_INGEST_KEY   = "xtnl_pending_ingest_trigger";
 
 /* ─── Performance state helpers ───────────────────────────────────── */
 type CelebrationMetrics = { capture: number; rating: number };
@@ -277,6 +285,12 @@ export default function PipelineBanner() {
   const { data: session } = useSession();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const authed = !!(session as any)?.twoFactorVerified;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const roles: string[] = (session as any)?.roles ?? [];
+  const canTriggerIngest = roles.some(r => ALLOWED_INGEST_ROLES.includes(r));
+
+  const pathname = usePathname();
+  const router   = useRouter();
 
   const [analystDay,       setAnalystDay]       = useState(false);
   const [sessionActive,    setSessionActive]    = useState(false);
@@ -289,6 +303,9 @@ export default function PipelineBanner() {
   const [celebrationMetrics, setCelebrationMetrics] = useState<CelebrationMetrics | null>(null);
   const [collapsed,        setCollapsed]        = useState(false);
   const [isMobile,         setIsMobile]         = useState(false);
+  const [ingestTriggering, setIngestTriggering] = useState(false);
+  const [ingestCooldownPct, setIngestCooldownPct] = useState(0);
+  const ingestRafRef = useRef<number>(0);
 
   /* Responsive breakpoint */
   useEffect(() => {
@@ -329,6 +346,57 @@ export default function PipelineBanner() {
       if (r.ok) setPipe(await r.json());
     } catch { /* silent */ }
   }, [authed]);
+
+  /* ── Trigger ingest (session page only — see handleIngestClick) ──
+     Fires the Lambda, then runs an 8s cooldown (same rAF-driven pattern
+     as CelebrationOverlay's countdown bar) before re-checking pipeline
+     status, since the Lambda run itself outlasts the cooldown. */
+  const triggerIngest = useCallback(async () => {
+    if (ingestTriggering) return;
+    setIngestTriggering(true);
+    setIngestCooldownPct(100);
+    try {
+      await fetch("/api/session/trigger-ingest", { method: "POST" });
+    } catch { /* silent — cooldown still runs, refresh will show the real state */ }
+
+    const start = Date.now();
+    const tick = () => {
+      const elapsed   = Date.now() - start;
+      const remaining = Math.max(0, 1 - elapsed / INGEST_COOLDOWN_MS);
+      setIngestCooldownPct(remaining * 100);
+      if (remaining > 0) {
+        ingestRafRef.current = requestAnimationFrame(tick);
+      } else {
+        setIngestTriggering(false);
+        fetchPipeline();
+      }
+    };
+    ingestRafRef.current = requestAnimationFrame(tick);
+  }, [ingestTriggering, fetchPipeline]);
+
+  useEffect(() => () => cancelAnimationFrame(ingestRafRef.current), []);
+
+  /* Only actionable on the session (analyst view) page. Clicked from
+     anywhere else: stash intent in sessionStorage and navigate there —
+     the effect below picks it up once pathname becomes "/session". */
+  const handleIngestClick = useCallback(() => {
+    if (!canTriggerIngest || ingestTriggering) return;
+    if (pathname !== "/session") {
+      sessionStorage.setItem(PENDING_INGEST_KEY, "1");
+      router.push("/session");
+      return;
+    }
+    triggerIngest();
+  }, [canTriggerIngest, ingestTriggering, pathname, router, triggerIngest]);
+
+  useEffect(() => {
+    if (pathname !== "/session" || !canTriggerIngest) return;
+    if (sessionStorage.getItem(PENDING_INGEST_KEY) === "1") {
+      sessionStorage.removeItem(PENDING_INGEST_KEY);
+      triggerIngest();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, canTriggerIngest]);
 
   useEffect(() => {
     if (!authed || !analystDay) return;
@@ -536,7 +604,38 @@ export default function PipelineBanner() {
 
         {/* Steps */}
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 4 : 6, flex: 1, overflow: "hidden" }}>
-          <Step done={ingDone} active={!ingDone} label={isMobile ? "Ingest" : "Ingestion"} />
+          {/* Ingestion step — clickable (analyst/strategist/fund_manager only)
+              while not done. Only actionable on /session; elsewhere it
+              navigates there first (see handleIngestClick). */}
+          {ingDone || !canTriggerIngest ? (
+            <Step done={ingDone} active={!ingDone} label={isMobile ? "Ingest" : "Ingestion"} />
+          ) : (
+            <button
+              onClick={handleIngestClick}
+              disabled={ingestTriggering}
+              title={ingestTriggering ? "Triggering ingest…" : "Trigger ingestion"}
+              style={{
+                display: "flex", flexDirection: "column", gap: 3,
+                padding: "3px 8px", borderRadius: 4,
+                border: `1px solid ${ingestTriggering ? "var(--line)" : "rgba(240,160,48,0.25)"}`,
+                background: ingestTriggering ? "rgba(255,255,255,0.03)" : "rgba(240,160,48,0.05)",
+                cursor: ingestTriggering ? "not-allowed" : "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <span style={{
+                fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                color: ingestTriggering ? "var(--ink-3)" : "var(--amber)",
+              }}>
+                {ingestTriggering ? (isMobile ? "…" : "Triggering…") : (isMobile ? "Ingest" : "Ingestion")}
+              </span>
+              {ingestTriggering && (
+                <div style={{ width: "100%", minWidth: 40, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${ingestCooldownPct}%`, background: "var(--amber)", transition: "width 0.1s linear" }} />
+                </div>
+              )}
+            </button>
+          )}
           <Arrow />
 
           {/* Process step */}
