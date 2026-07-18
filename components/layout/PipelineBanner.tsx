@@ -305,6 +305,7 @@ export default function PipelineBanner() {
   const [isMobile,         setIsMobile]         = useState(false);
   const [ingestTriggering, setIngestTriggering] = useState(false);
   const [ingestCooldownPct, setIngestCooldownPct] = useState(0);
+  const [ingestError, setIngestError] = useState<string | null>(null);
   const ingestRafRef = useRef<number>(0);
 
   /* Responsive breakpoint */
@@ -355,9 +356,16 @@ export default function PipelineBanner() {
     if (ingestTriggering) return;
     setIngestTriggering(true);
     setIngestCooldownPct(100);
+    setIngestError(null);
     try {
-      await fetch("/api/session/trigger-ingest", { method: "POST" });
-    } catch { /* silent — cooldown still runs, refresh will show the real state */ }
+      const r = await fetch("/api/session/trigger-ingest", { method: "POST" });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setIngestError(j.error ?? `Trigger failed (${r.status})`);
+      }
+    } catch {
+      setIngestError("Network error — could not reach the server.");
+    }
 
     const start = Date.now();
     const tick = () => {
@@ -375,6 +383,13 @@ export default function PipelineBanner() {
   }, [ingestTriggering, fetchPipeline]);
 
   useEffect(() => () => cancelAnimationFrame(ingestRafRef.current), []);
+
+  /* Auto-dismiss the error message so it doesn't linger forever */
+  useEffect(() => {
+    if (!ingestError) return;
+    const id = setTimeout(() => setIngestError(null), 10_000);
+    return () => clearTimeout(id);
+  }, [ingestError]);
 
   /* Only actionable on the session (analyst view) page. Clicked from
      anywhere else: stash intent in sessionStorage and navigate there —
@@ -610,31 +625,49 @@ export default function PipelineBanner() {
           {ingDone || !canTriggerIngest ? (
             <Step done={ingDone} active={!ingDone} label={isMobile ? "Ingest" : "Ingestion"} />
           ) : (
-            <button
-              onClick={handleIngestClick}
-              disabled={ingestTriggering}
-              title={ingestTriggering ? "Triggering ingest…" : "Trigger ingestion"}
-              style={{
-                display: "flex", flexDirection: "column", gap: 3,
-                padding: "3px 8px", borderRadius: 4,
-                border: `1px solid ${ingestTriggering ? "var(--line)" : "rgba(240,160,48,0.25)"}`,
-                background: ingestTriggering ? "rgba(255,255,255,0.03)" : "rgba(240,160,48,0.05)",
-                cursor: ingestTriggering ? "not-allowed" : "pointer",
-                flexShrink: 0,
-              }}
+            <>
+              <style>{`
+                @keyframes _ingestGlow {
+                  0%, 100% { box-shadow: 0 0 0 0 rgba(240,160,48,0.0); }
+                  50%      { box-shadow: 0 0 10px 2px rgba(240,160,48,0.45); }
+                }
+              `}</style>
+              <button
+                onClick={handleIngestClick}
+                disabled={ingestTriggering}
+                title={ingestError ?? (ingestTriggering ? "Triggering ingest…" : "Trigger ingestion")}
+                style={{
+                  display: "flex", flexDirection: "column", gap: 3,
+                  padding: "3px 8px", borderRadius: 4,
+                  border: `1px solid ${ingestTriggering ? "var(--line)" : "rgba(240,160,48,0.35)"}`,
+                  background: ingestTriggering ? "rgba(255,255,255,0.03)" : "rgba(240,160,48,0.05)",
+                  cursor: ingestTriggering ? "not-allowed" : "pointer",
+                  flexShrink: 0,
+                  animation: ingestTriggering ? "none" : "_ingestGlow 2.2s ease-in-out infinite",
+                }}
+              >
+                <span style={{
+                  fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                  color: ingestTriggering ? "var(--ink-3)" : "var(--amber)",
+                }}>
+                  {ingestTriggering ? (isMobile ? "…" : "Triggering…") : (isMobile ? "Ingest" : "Ingestion")}
+                </span>
+                {ingestTriggering && (
+                  <div style={{ width: "100%", minWidth: 40, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${ingestCooldownPct}%`, background: "var(--amber)", transition: "width 0.1s linear" }} />
+                  </div>
+                )}
+              </button>
+            </>
+          )}
+          {ingestError && !isMobile && (
+            <span
+              className="mono"
+              title={ingestError}
+              style={{ fontSize: 9.5, color: "var(--red)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 220 }}
             >
-              <span style={{
-                fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
-                color: ingestTriggering ? "var(--ink-3)" : "var(--amber)",
-              }}>
-                {ingestTriggering ? (isMobile ? "…" : "Triggering…") : (isMobile ? "Ingest" : "Ingestion")}
-              </span>
-              {ingestTriggering && (
-                <div style={{ width: "100%", minWidth: 40, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${ingestCooldownPct}%`, background: "var(--amber)", transition: "width 0.1s linear" }} />
-                </div>
-              )}
-            </button>
+              ⚠ {ingestError}
+            </span>
           )}
           <Arrow />
 

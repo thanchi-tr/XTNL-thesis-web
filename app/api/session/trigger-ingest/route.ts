@@ -41,10 +41,11 @@ export async function POST() {
         body:    JSON.stringify({ trigger_source: "api" }),
       });
     } catch (e) {
-      // Network-level failure (DNS, connection reset) — not a Gateway Timeout,
-      // genuinely didn't reach the Lambda.
-      console.error("[trigger-ingest POST] fetch failed", e);
-      return NextResponse.json({ error: "Could not reach the pipeline API." }, { status: 502 });
+      // Network-level failure (DNS, bad URL, connection reset) — the request
+      // never reached API Gateway at all. Usually a malformed
+      // PIPELINE_API_BASE_URL, not a pipeline problem.
+      console.error("[trigger-ingest POST] fetch failed — check PIPELINE_API_BASE_URL", e);
+      return NextResponse.json({ error: "Could not reach the pipeline API — check PIPELINE_API_BASE_URL." }, { status: 502 });
     }
 
     // API Gateway's REST integration has a 29s hard timeout, well under the
@@ -60,7 +61,17 @@ export async function POST() {
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       console.error("[trigger-ingest POST] Lambda returned", res.status, text);
-      return NextResponse.json({ error: `Ingest trigger failed (${res.status})` }, { status: 502 });
+      // Forward the real upstream status instead of collapsing everything to
+      // 502 — a 403 here almost always means PIPELINE_API_KEY is wrong or
+      // missing (API Gateway rejects it before the Lambda is ever invoked,
+      // so CloudWatch shows nothing), which looks identical to a genuine
+      // pipeline failure unless the actual status makes it through.
+      const message =
+        res.status === 403 ? "Rejected by API Gateway — check PIPELINE_API_KEY." :
+        res.status === 404 ? "Endpoint not found — check PIPELINE_API_BASE_URL." :
+        res.status === 429 ? "Rate limit exceeded — try again shortly." :
+        `Ingest trigger failed (upstream status ${res.status}).`;
+      return NextResponse.json({ error: message }, { status: res.status >= 400 && res.status < 600 ? res.status : 502 });
     }
 
     return NextResponse.json({ ok: true }, { status: 202 });
