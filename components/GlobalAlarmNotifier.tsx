@@ -59,6 +59,11 @@ export default function GlobalAlarmNotifier() {
     window.addEventListener("click", unlockAudio, { passive: true });
 
     const poll = async () => {
+      // AlarmConfig (inside SessionClient, on /session) already polls this
+      // same endpoint for its own UI and keeps srv state current — skip our
+      // own redundant fetch whenever that page owns it, same flag this
+      // component already checks before firing sound.
+      if (sessionStorage.getItem("xtnl_alarm_tab") === "1") return;
       try {
         const r = await fetch("/api/session/alarm");
         if (r.ok) srvRef.current = await r.json() as SrvState;
