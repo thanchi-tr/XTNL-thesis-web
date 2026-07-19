@@ -451,10 +451,17 @@ export default function PipelineBanner() {
 
   useEffect(() => {
     if (!authed || !analystDay) return;
+    // All three pipeline steps are already done for the week — nothing left
+    // that a poll could catch, so stop entirely instead of hitting the API
+    // every 30s regardless. (On first mount `pipe` is still null, so this
+    // is falsy and the initial fetch always happens — only a LATER, fully
+    // "done" state actually short-circuits future polling.)
+    const allDone = pipe?.ingestionDone && pipe?.processDone && analysisDone;
+    if (allDone) return;
     fetchPipeline();
     const id = setInterval(fetchPipeline, 30_000);
     return () => clearInterval(id);
-  }, [authed, analystDay, fetchPipeline]);
+  }, [authed, analystDay, fetchPipeline, pipe?.ingestionDone, pipe?.processDone, analysisDone]);
 
   useEffect(() => {
     const handler = () => fetchPipeline();
