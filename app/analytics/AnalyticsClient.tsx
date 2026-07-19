@@ -2412,6 +2412,8 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
           <div style={{ height: 1, background: "var(--line)" }} />
         </div>
 
+        <RetroSignoffPanel />
+
         {/* Data source panel */}
         <div style={{ ...CARD, marginBottom: 24 }}>
           <button
@@ -2719,6 +2721,106 @@ function windowStats(start: string, end: string, rows: HourlyRow[]) {
     count:   n,
     totalR:  rel.reduce((s, r) => s + r.expectancy * r.count, 0),
   };
+}
+
+/* ─── Retro Sign-off Panel — strategist escape hatch ────────────────────
+   Shown only when: viewer is strategist/fund_manager AND there's at least
+   one past week (within a small bounded lookback — see
+   RETRO_SIGNOFF_LOOKBACK_WEEKS in the API route) with no
+   analyst_weekly_signoff row. Invisible otherwise: this is a rare-case
+   panel for "the analyst forgot," not permanent UI. Signing off here also
+   logs a visible [Strategist Sign-off] comment server-side — see
+   app/api/session/weekly-signoff/retro/route.ts. */
+function RetroSignoffPanel() {
+  const { data: session } = useSession();
+  const roles: string[] = (session as any)?.roles ?? [];
+  const canSignoff = roles.some(r => ["strategist", "fund_manager"].includes(r));
+
+  const [missingWeeks, setMissingWeeks] = useState<{ weekKey: string }[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const [rowState, setRowState] = useState<Record<string, "success" | "error">>({});
+
+  const fetchMissing = useCallback(async () => {
+    try {
+      const r = await fetch("/api/session/weekly-signoff/retro");
+      if (r.ok) {
+        const j = await r.json();
+        setMissingWeeks(j.missingWeeks ?? []);
+      }
+    } catch {
+      /* silent — non-critical UI, panel just stays empty on failure */
+    }
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (canSignoff) fetchMissing();
+  }, [canSignoff, fetchMissing]);
+
+  if (!canSignoff || !loaded || missingWeeks.length === 0) return null;
+
+  async function signOff(weekKey: string) {
+    setPending(weekKey);
+    try {
+      const r = await fetch("/api/session/weekly-signoff/retro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekKey }),
+      });
+      if (r.ok) {
+        setRowState(prev => ({ ...prev, [weekKey]: "success" }));
+        await fetchMissing();
+      } else {
+        setRowState(prev => ({ ...prev, [weekKey]: "error" }));
+      }
+    } catch {
+      setRowState(prev => ({ ...prev, [weekKey]: "error" }));
+    }
+    setPending(null);
+  }
+
+  return (
+    <div style={{ background: "rgba(240,160,48,0.07)", border: "1px solid rgba(240,160,48,0.22)", borderRadius: 10, padding: "16px 20px", marginBottom: 24 }}>
+      <div className="mono" style={{ fontSize: 8, letterSpacing: "0.16em", color: "var(--amber)", marginBottom: 10, opacity: 0.85 }}>
+        MISSING ANALYST SIGN-OFF
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {missingWeeks.map(({ weekKey }) => {
+          const state = rowState[weekKey];
+          return (
+            <div key={weekKey} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <span className="mono" style={{ fontSize: 12, color: "var(--ink-1)" }}>
+                Week of {weekKey} was not signed off by the analyst.
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {state === "error" && (
+                  <span className="mono" style={{ fontSize: 10.5, color: "var(--red)" }}>Failed — try again</span>
+                )}
+                {state === "success" ? (
+                  <span className="mono" style={{ fontSize: 11, fontWeight: 700, color: "var(--green)" }}>Signed off ✓</span>
+                ) : (
+                  <button
+                    onClick={() => signOff(weekKey)}
+                    disabled={pending === weekKey}
+                    className="mono"
+                    style={{
+                      fontSize: 11, fontWeight: 700, letterSpacing: "0.03em",
+                      padding: "6px 14px", borderRadius: 6, cursor: pending === weekKey ? "default" : "pointer",
+                      background: "rgba(240,160,48,0.14)", border: "1px solid rgba(240,160,48,0.35)",
+                      color: "var(--amber)", opacity: pending === weekKey ? 0.6 : 1,
+                    }}
+                  >
+                    {pending === weekKey ? "Signing off…" : `Sign off Week of ${weekKey}`}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
