@@ -24,14 +24,55 @@ function toVal(y: number, mo: number, d: number, h: number, mi: number) {
   return `${y}-${pad(mo + 1)}-${pad(d)}T${pad(h)}:${pad(mi)}`;
 }
 
-function fmtDisplay(v: string) {
+function fmtDisplay(v: string): { dateTime: string; ampm: "AM" | "PM" | null } {
   const p = parseVal(v);
-  if (!p) return "Select date & time";
+  if (!p) return { dateTime: "Select date & time", ampm: null };
   const date = new Date(p.year, p.month, p.day);
   const ds   = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   const h12  = p.hour % 12 || 12;
-  const ampm = p.hour < 12 ? "AM" : "PM";
-  return `${ds} · ${pad(h12)}:${pad(p.minute)} ${ampm}`;
+  const ampm: "AM" | "PM" = p.hour < 12 ? "AM" : "PM";
+  return { dateTime: `${ds} · ${pad(h12)}:${pad(p.minute)}`, ampm };
+}
+
+// AM = warm/amber (sun), PM = cool/blue (moon) — a color a period is prone to
+// being misread as plain text alone, especially on a trading form where
+// entry/exit is real recorded data; the icon backs up the color for anyone
+// who can't rely on color alone.
+const AMPM_COLOR: Record<"AM" | "PM", { fg: string; bg: string }> = {
+  AM: { fg: "var(--amber)", bg: "rgba(240,160,48,0.16)" },
+  PM: { fg: "#4d9cf5",      bg: "rgba(77,156,245,0.16)" },
+};
+
+function SunIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M6 0.6v1.6M6 9.8v1.6M11.4 6h-1.6M2.2 6H0.6M9.75 2.25l-1.13 1.13M3.38 8.62l-1.13 1.13M9.75 9.75l-1.13-1.13M3.38 3.38L2.25 2.25" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path d="M10 7.4A4.6 4.6 0 1 1 4.6 1.5 3.7 3.7 0 0 0 10 7.4Z" fill="currentColor"/>
+    </svg>
+  );
+}
+
+function AmPmBadge({ ampm }: { ampm: "AM" | "PM" }) {
+  const c = AMPM_COLOR[ampm];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 3,
+      padding: "1.5px 6px", borderRadius: 4,
+      fontSize: 10, fontWeight: 800, letterSpacing: "0.03em",
+      background: c.bg, color: c.fg, flexShrink: 0,
+    }}>
+      {ampm === "AM" ? <SunIcon /> : <MoonIcon />}
+      {ampm}
+    </span>
+  );
 }
 
 // ── Vertical spinner field ────────────────────────────────────────────────────
@@ -136,6 +177,7 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
   const parsed = parseVal(value);
   const h12    = parsed ? (parsed.hour % 12 || 12) : 12;
   const ampm   = parsed ? (parsed.hour < 12 ? "AM" : "PM") : "AM";
+  const disp   = fmtDisplay(value);
 
   const openPicker = useCallback(() => {
     if (!trigRef.current) return;
@@ -225,8 +267,10 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
           color: !!parsed ? "var(--ink-0)" : "var(--ink-3)",
           fontFamily: "var(--font-mono, monospace)",
           letterSpacing: "0.01em",
+          display: "flex", alignItems: "center", gap: 7, minWidth: 0,
         }}>
-          {fmtDisplay(value)}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{disp.dateTime}</span>
+          {disp.ampm && <AmPmBadge ampm={disp.ampm} />}
         </span>
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--ink-2)", opacity: 0.7 }}>
           <rect x="2" y="4" width="12" height="10" rx="1.8" stroke="currentColor" strokeWidth="1.3"/>
@@ -349,20 +393,18 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
                       }
                     }}
                     style={{
+                      display: "flex", alignItems: "center", gap: 4,
                       padding: "6px 12px",
                       fontSize: 11, fontWeight: 700,
                       letterSpacing: "0.04em",
                       cursor: label === ampm ? "default" : "pointer",
                       border: "none",
-                      background: label === ampm
-                        ? "rgba(0,204,122,0.15)"
-                        : "transparent",
-                      color: label === ampm
-                        ? "var(--green)"
-                        : "rgba(90,116,144,0.6)",
+                      background: label === ampm ? AMPM_COLOR[label].bg : "transparent",
+                      color: label === ampm ? AMPM_COLOR[label].fg : "rgba(90,116,144,0.6)",
                       transition: "background 120ms, color 120ms",
                     }}
                   >
+                    {label === "AM" ? <SunIcon /> : <MoonIcon />}
                     {label}
                   </button>
                 ))}

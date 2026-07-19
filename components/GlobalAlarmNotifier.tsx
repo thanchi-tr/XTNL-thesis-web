@@ -64,6 +64,14 @@ export default function GlobalAlarmNotifier() {
       // own redundant fetch whenever that page owns it, same flag this
       // component already checks before firing sound.
       if (sessionStorage.getItem("xtnl_alarm_tab") === "1") return;
+      // The alarm only exists to notify during the trading session — outside
+      // that window there's no plausible reason one would be running or
+      // about to start, so there's nothing a poll could catch. The interval
+      // below keeps ticking every 20s regardless (cheap, no timers change),
+      // so as soon as the window opens the very next tick resumes fetching
+      // — this only skips the actual network call, never delays detection
+      // by more than one tick.
+      if (!isInTradingSessionMelbourne()) return;
       try {
         const r = await fetch("/api/session/alarm");
         if (r.ok) srvRef.current = await r.json() as SrvState;
