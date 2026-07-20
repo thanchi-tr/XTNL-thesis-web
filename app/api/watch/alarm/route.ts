@@ -336,11 +336,21 @@ export async function PUT(req: Request) {
       let streakCleared            = false;
 
       if (pass) {
-        completions_toward_reset++;
-        if (completions_toward_reset >= resetThreshold(fail_streak)) {
-          fail_streak              = 0;
-          completions_toward_reset = 0;
-          streakCleared            = true;
+        // Only track/clear progress when there's an actual fail streak to
+        // clear. Without this guard, resetThreshold(0) === 1, so a single
+        // ordinary pass with no prior failures (prevStreak === 0) always
+        // satisfied completions_toward_reset >= resetThreshold(0) and fired
+        // a "fail streak cleared ... fail streak of 0 resolved" comment on
+        // every routine pass. It also left completions_toward_reset
+        // incrementing unbounded across passes whenever there was nothing
+        // to reset, since only the (now-gated) clear branch ever zeroed it.
+        if (prevStreak > 0) {
+          completions_toward_reset++;
+          if (completions_toward_reset >= resetThreshold(prevStreak)) {
+            fail_streak              = 0;
+            completions_toward_reset = 0;
+            streakCleared            = true;
+          }
         }
       } else {
         fail_streak++;
