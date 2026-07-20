@@ -4341,6 +4341,17 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
     : 100;
   const decayColor = decayPct < 10 ? "var(--green)" : decayPct < 25 ? "var(--amber)" : "var(--red)";
 
+  // Profit Leakage is R given up to inefficiency — it's reported as 0 or
+  // negative (e.g. "-0.00R", "-0.5R"), never positive. 0 (or effectively 0,
+  // allowing for float noise like -0.00) is the *best* possible outcome and
+  // must read as green, not the hardcoded red this used to always show
+  // regardless of value.
+  const leakageColor = f.exec.leakage >= -0.01
+    ? "var(--green)"
+    : f.exec.leakage >= -0.5
+      ? "var(--amber)"
+      : "var(--red)";
+
   /* section divider with label */
   const Divider = ({ label, color }: { label: string; color: string }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
@@ -4381,7 +4392,7 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
       {/* ── Key stats strip ───────────────────────────── */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <StatPill label="Rating"  value={`${f.exec.rating} · ${f.exec.label}`} accent={ratingColor} />
-        <StatPill label="Leakage" value={`${f.exec.leakage}R`}                 accent="var(--red)" />
+        <StatPill label="Leakage" value={`${f.exec.leakage}R`}                 accent={leakageColor} />
         <StatPill label="Forgiven" value={`+${f.exec.forgiven}R`}              accent="var(--green)" />
         <StatPill label="SQN"     value={`${f.edge.sqn} / ${f.edge.stressSqn} stress`} accent="var(--green)" />
         <StatPill label="Decay"   value={`${decayPct.toFixed(1)}% · ${f.edge.decayLabel}`} accent={decayColor} />
@@ -4484,7 +4495,7 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
           <div className="card" style={{ padding: "12px 14px" }}>
             <span className="chip chip-blue" style={{ marginBottom: 10, display: "inline-block", fontSize: 9 }}>Execution</span>
             <MetricRow label="Rating"      value={String(f.exec.rating)} accent={ratingColor} />
-            <MetricRow label="Leakage"     value={`${f.exec.leakage}R`}  accent="var(--red)" />
+            <MetricRow label="Leakage"     value={`${f.exec.leakage}R`}  accent={leakageColor} />
             <MetricRow label="Forgiven"    value={`+${f.exec.forgiven}R`} accent="var(--green)" />
             <MetricRow label="Lucky R"     value={`${f.exec.luckyR}R`}   accent="var(--ink-2)" />
             <MetricRow label="Capture"     value={`${f.exec.capture}%`}  accent="var(--green)" />
