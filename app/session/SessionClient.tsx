@@ -2979,19 +2979,34 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   const [sessionDayFinished, setSessionDayFinished] = useState(false);
 
   useEffect(() => {
+    // Keyed on date + how many sub-sessions (windows) are configured, not
+    // date alone — a stale flag from a different window count (a window
+    // added/removed intraday) must not silently suppress or wrongly allow
+    // the overlay for the actual current configuration.
+    const windowCount = (srv.session_windows ?? []).length;
+    const shownKey = (dateStr: string) => `xtnl_session_finish_shown_${dateStr}_${windowCount}`;
+
     function check() {
       if (!srv.running) return;
+      // Only show when the trading-session gate toggle is explicitly on.
+      if (!tradingSessionModeRef.current) return;
       const sec = secondsSinceLastSessionEnd(srv.session_windows ?? null);
       if (sec === null) return;
-      const today = new Date().toDateString();
-      if (sessionFinishShownDateRef.current === today) return;
+      const today   = new Date().toDateString();
+      const key     = shownKey(today);
+      const already = sessionFinishShownDateRef.current === key
+        || (typeof window !== "undefined" && localStorage.getItem(key) === "1");
+      if (already) return;
       if (sec >= 30) {
-        sessionFinishShownDateRef.current = today;
+        sessionFinishShownDateRef.current = key;
+        if (typeof window !== "undefined") localStorage.setItem(key, "1");
         setSessionDayFinished(true);
       } else if (sec >= 0) {
         if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
         finishTimerRef.current = setTimeout(() => {
-          sessionFinishShownDateRef.current = new Date().toDateString();
+          const fireKey = shownKey(new Date().toDateString());
+          sessionFinishShownDateRef.current = fireKey;
+          if (typeof window !== "undefined") localStorage.setItem(fireKey, "1");
           setSessionDayFinished(true);
         }, (30 - sec) * 1_000);
       }
@@ -4312,6 +4327,20 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
   const [metricsOpen, setMetricsOpen] = useState(false);
   const ratingColor = ({ ELITE: "var(--green)", "ON-PAR": "var(--amber)", "SUB-PAR": "var(--red)" } as const)[f.exec.label] ?? "var(--ink-1)";
 
+  // Decay as a % of baseline SQN, not a raw decimal — a raw "0.19" reads as
+  // negligible; "5.9%" (of the actual SQN it's measured against) reads as
+  // the real severity. sqn<=0 means there's no edge left to decay *from*,
+  // which is the worst possible state — that must map to maximum severity
+  // (100%), not fall through to "0% decay" just because the division is
+  // undefined. Clamped at 0 on the other end so a negative decay (stress
+  // SQN came back higher than baseline) can't render as a confusing
+  // negative percentage — it's already unambiguously in the healthy bucket
+  // either way.
+  const decayPct = f.edge.sqn > 0
+    ? Math.max(0, (f.edge.decay / f.edge.sqn) * 100)
+    : 100;
+  const decayColor = decayPct < 10 ? "var(--green)" : decayPct < 25 ? "var(--amber)" : "var(--red)";
+
   /* section divider with label */
   const Divider = ({ label, color }: { label: string; color: string }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
@@ -4355,7 +4384,7 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
         <StatPill label="Leakage" value={`${f.exec.leakage}R`}                 accent="var(--red)" />
         <StatPill label="Forgiven" value={`+${f.exec.forgiven}R`}              accent="var(--green)" />
         <StatPill label="SQN"     value={`${f.edge.sqn} / ${f.edge.stressSqn} stress`} accent="var(--green)" />
-        <StatPill label="Decay"   value={`${f.edge.decay} · ${f.edge.decayLabel}`}      accent="var(--red)" />
+        <StatPill label="Decay"   value={`${decayPct.toFixed(1)}% · ${f.edge.decayLabel}`} accent={decayColor} />
         <StatPill label="Capture" value={`${f.exec.capture}%`}                 accent="var(--green)" />
       </div>
 
@@ -4466,8 +4495,8 @@ function FrictionPanel({ f }: { f: FrictionReport }) {
             <span className="chip chip-green" style={{ marginBottom: 10, display: "inline-block", fontSize: 9 }}>Probabilistic Edge</span>
             <MetricRow label="System SQN"  value={String(f.edge.sqn)}       accent="var(--green)" />
             <MetricRow label="Stress SQN"  value={String(f.edge.stressSqn)} accent="var(--green)" />
-            <MetricRow label="Edge Decay"  value={String(f.edge.decay)}      accent="var(--red)" />
-            <MetricRow label="Decay Label" value={f.edge.decayLabel}         accent="var(--red)" />
+            <MetricRow label="Edge Decay"  value={`${decayPct.toFixed(1)}%`} accent={decayColor} />
+            <MetricRow label="Decay Label" value={f.edge.decayLabel}         accent={decayColor} />
             <MetricRow label="Target Risk" value={f.edge.risk}               accent="var(--ink-1)" />
           </div>
         </div>

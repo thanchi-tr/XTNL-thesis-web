@@ -1463,6 +1463,77 @@ function HourlyHeatmap({ rows }: { rows: HourlyRow[] }) {
   );
 }
 
+/* Recent-60/100/200 combined into one hour-aligned view, so a shift in a
+   given hour's edge across sample sizes reads as "progression" — a
+   distinct feature from Session Schedule's own, unrelated recent-60/100/200
+   tabs; this one lives entirely in the sidebar HOURLY R section. */
+const HOURLY_PROGRESSION_SERIES: { key: string; label: string; color: string }[] = [
+  { key: "recent_60_full_optimal_sample",  label: "Recent 60",  color: "#4d9cf5" },
+  { key: "recent_100_full_optimal_sample", label: "Recent 100", color: "var(--amber)" },
+  { key: "recent_200_full_optimal_sample", label: "Recent 200", color: "var(--green)" },
+];
+
+function HourlyProgressionChart({ hourly }: { hourly: Record<string, HourlyRow[]> }) {
+  const series = HOURLY_PROGRESSION_SERIES.map(s => ({
+    ...s,
+    byHour: new Map((hourly[s.key] ?? []).map(r => [r.hour, r] as const)),
+  }));
+
+  const allExp = series.flatMap(s => Array.from(s.byHour.values(), r => r.expectancy));
+  const maxExp = allExp.length ? Math.max(0.01, ...allExp) : 1;
+  const minExp = allExp.length ? Math.min(-0.01, ...allExp) : -1;
+  const range  = Math.max(0.01, maxExp - minExp);
+
+  const W = 720, H = 240, PL = 4, PR = 4, PT = 12, PB = 26;
+  const iW = W - PL - PR, iH = H - PT - PB;
+  const hourW = iW / 24;
+  const yFor = (v: number) => PT + ((maxExp - v) / range) * iH;
+  const zeroY = yFor(0);
+
+  const groupPad = 3, barGap = 1.5;
+  const barW = Math.max(1, (hourW - groupPad * 2 - barGap * (series.length - 1)) / series.length);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 14, marginBottom: 10 }}>
+        {series.map(s => (
+          <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, display: "inline-block", flexShrink: 0 }} />
+            <span className="mono" style={{ fontSize: 9.5, color: "var(--ink-2)" }}>{s.label}</span>
+          </div>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }}>
+        <line x1={PL} y1={zeroY} x2={W - PR} y2={zeroY} stroke="var(--line-hi)" strokeWidth={1} />
+        {Array.from({ length: 24 }, (_, h) => {
+          const gx = PL + h * hourW;
+          return (
+            <g key={h}>
+              {series.map((s, i) => {
+                const row = s.byHour.get(h);
+                if (!row) return null;
+                const bx = gx + groupPad + i * (barW + barGap);
+                const yTop = yFor(Math.max(0, row.expectancy));
+                const yBot = yFor(Math.min(0, row.expectancy));
+                return (
+                  <rect key={s.key} x={bx} y={yTop} width={barW} height={Math.max(1, yBot - yTop)} fill={s.color} opacity={0.85} rx={1}>
+                    <title>{`H${String(h).padStart(2, "0")}:00 ${s.label}: E=${row.expectancy.toFixed(3)}, n=${row.count}`}</title>
+                  </rect>
+                );
+              })}
+              {h % 2 === 0 && (
+                <text x={gx + hourW / 2} y={H - 8} textAnchor="middle" fontSize={8} fill="var(--ink-3)" className="mono">
+                  {String(h).padStart(2, "0")}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function SectionDetail({ s }: { s: Section }) {
   const [wfoOpen, setWfoOpen] = useState(false);
   return (
@@ -1912,7 +1983,7 @@ function SessionBuilder({
   const maxCum = Math.max(0.01, ...cums);
   const minCum = Math.min(-0.01, ...cums);
 
-  const W = 720, H = compact ? 168 : 260, PL = 10, PR = compact ? 44 : 52, PT = compact ? 12 : 16, PB = compact ? 28 : 32;
+  const W = 720, H = compact ? 220 : 260, PL = 10, PR = compact ? 44 : 52, PT = compact ? 12 : 16, PB = compact ? 28 : 32;
   const iW = W - PL - PR, iH = H - PT - PB;
   const bW = iW / 24;
   const BAR_FRAC = 0.58, DIV = 10;
@@ -2644,6 +2715,21 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
                         </span>
                       </button>
                     ))}
+                    {HOURLY_PROGRESSION_SERIES.every(s => hourlyKeys.includes(s.key)) && (
+                      <button
+                        onClick={() => setActiveSection("__hourly_progression__")}
+                        style={{
+                          background: activeSection === "__hourly_progression__" ? "var(--raised)" : "transparent",
+                          border: `1px solid ${activeSection === "__hourly_progression__" ? "var(--line-hi)" : "transparent"}`,
+                          borderRadius: 6, padding: "7px 10px", cursor: "pointer", textAlign: "left",
+                          whiteSpace: "nowrap", flexShrink: 0,
+                        }}
+                      >
+                        <span className="mono" style={{ fontSize: 9, color: activeSection === "__hourly_progression__" ? "var(--blue)" : "var(--ink-2)", letterSpacing: "0.04em" }}>
+                          progression (60→200)
+                        </span>
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -2662,6 +2748,14 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
                     </div>
                     <HourlyHeatmap rows={report.hourly[activeHourly]} />
                     <p style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 12 }}>Hover cells for detail. Green = positive expectancy, red = negative.</p>
+                  </>
+                ) : activeSection === "__hourly_progression__" ? (
+                  <>
+                    <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-2)", marginBottom: 14 }}>
+                      HOURLY R — PROGRESSION ACROSS SAMPLE SIZES
+                    </div>
+                    <HourlyProgressionChart hourly={report.hourly} />
+                    <p style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 12 }}>Hover a bar for detail. Compares the same hour's expectancy as the sample window widens from 60 to 200 trades.</p>
                   </>
                 ) : currentSection ? (
                   <>
