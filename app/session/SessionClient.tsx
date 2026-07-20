@@ -3182,7 +3182,16 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
           playAlarmBeeps(volumeRef.current);
           showToast("success", "Focus window — return your attention to the session");
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-            new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true, silent: volumeRef.current <= 0 });
+            // Chrome for Android / Samsung Internet throw a synchronous
+            // TypeError ("Illegal constructor") on `new Notification(...)` —
+            // those browsers require the Service Worker showNotification()
+            // API instead. Uncaught, this crashes the whole component into
+            // Next's generic error boundary right when a focus window opens,
+            // which is exactly when this line runs. try/catch keeps the rest
+            // of tick() (challenge_start below) running regardless.
+            try {
+              new Notification("Focus Window", { body: `${srv.focus_min} min — stay present.`, requireInteraction: true, silent: volumeRef.current <= 0 });
+            } catch { /* unsupported on this browser — sound/toast above already fired */ }
           }
           // Start enforce_focus challenge: generate number client-side and push to server
           if (srv.enforce_focus && challengeStartedCycle.current < cycleNum) {
@@ -3243,11 +3252,28 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
           } else {
             playAlarmBeeps(volumeRef.current);
             if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-              new Notification("Focus Window", {
-                body:               `${srv.focus_min} min — stay present.`,
-                requireInteraction: true,
-                silent:             volumeRef.current <= 0,
-              });
+              // See the matching try/catch in tick() above — Chrome for
+              // Android / Samsung Internet throw synchronously here.
+              try {
+                new Notification("Focus Window", {
+                  body:               `${srv.focus_min} min — stay present.`,
+                  requireInteraction: true,
+                  silent:             volumeRef.current <= 0,
+                });
+              } catch { /* unsupported on this browser — sound already fired */ }
+            }
+            // Start enforce_focus challenge here too — tick() is the only
+            // other caller, and if the tab was backgrounded when the focus
+            // window opened, this backup path is what actually fires (that's
+            // its whole purpose), while tick() itself may never see this
+            // cycle again once soundFiredCycle is set above. Without this,
+            // the server-side challenge_number/challenge_status are never
+            // created, and the user has to hard-refresh to remount the
+            // component and reset the refs before tick() will try again.
+            if (srv.enforce_focus && challengeStartedCycle.current < cn) {
+              challengeStartedCycle.current = cn;
+              const n = Math.floor(Math.random() * 5) + 3;
+              void callAPI({ action: "challenge_start", cycle: cn, challengeNumber: n });
             }
           }
         }

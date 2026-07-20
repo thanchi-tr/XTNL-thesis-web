@@ -227,7 +227,15 @@ export async function POST(req: NextRequest) {
     .insert({
       title, description, reported_by, reporter_role, priority, impact_score,
       parent_issue_id,
-      category:   domain,             // legacy column mirrors the Tier-1 domain
+      // category intentionally omitted: it's a legacy column left over from
+      // before the Domain/Sub-System/Leaf taxonomy existed, still carrying a
+      // check constraint (issues_category_check) scoped to that old, now-
+      // defunct vocabulary. Writing the new TAXONOMY domain ids (e.g.
+      // "hardware") into it violates that constraint on every insert. The
+      // real classification is domain/subsystem/leaf_node below, validated
+      // server-side by isValidTaxonomyPath() — category isn't needed to
+      // classify anything anymore. See supabase/issues_category_check_migration.sql
+      // to drop the stale constraint at the DB layer too.
       tags:       [],
       domain, subsystem, leaf_node,
       kms_status: "TRIAGE_PENDING",

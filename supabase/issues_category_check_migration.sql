@@ -1,0 +1,26 @@
+-- ── issues.category check-constraint cleanup ───────────────────────────────────
+-- kms_migration.sql added the Domain/Sub-System/Leaf ontology (domain,
+-- subsystem, leaf_node columns) and made isValidTaxonomyPath() the real,
+-- server-side source of truth for issue classification — but it never
+-- touched the older `category` column or its `issues_category_check`
+-- constraint, which was scoped to whatever flat category vocabulary existed
+-- before the taxonomy redesign. Since that redesign, `category` has been a
+-- write-only "legacy mirror" of the Tier-1 domain (see
+-- app/api/session/issues/route.ts) — but the new TAXONOMY domain ids
+-- ("biological" | "hardware" | "execution") were never in the old
+-- constraint's allow-list, so every new issue submission fails with:
+--   new row for relation "issues" violates check constraint "issues_category_check"
+--
+-- The application no longer writes to `category` (see route.ts), so this
+-- constraint has nothing valid left to check against going forward. Drop it
+-- rather than update it to a new allow-list — keeping a DB-level enum in
+-- sync with an application-level TAXONOMY array every time a domain is
+-- added is exactly the kind of drift that caused this bug in the first
+-- place; isValidTaxonomyPath() is the one source of truth now.
+--
+-- HOW TO RUN: execute in the Supabase SQL Editor. Non-destructive — only
+-- drops a constraint, no data is touched, existing `category` values on old
+-- rows are left as-is.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE issues DROP CONSTRAINT IF EXISTS issues_category_check;

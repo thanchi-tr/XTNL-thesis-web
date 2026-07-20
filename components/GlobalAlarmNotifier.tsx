@@ -89,11 +89,18 @@ export default function GlobalAlarmNotifier() {
       const vol = parseFloat(localStorage.getItem("xtnl_alarm_volume") ?? "0.7");
       playAlarmBeeps(vol);
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        new Notification("XTNL — Focus Window", {
-          body:               `${srv.focus_min} min — return your attention now.`,
-          requireInteraction: true,
-          silent:             vol <= 0,
-        });
+        // Chrome for Android / Samsung Internet throw a synchronous
+        // TypeError ("Illegal constructor") on `new Notification(...)` —
+        // those browsers require the Service Worker showNotification() API
+        // instead. Uncaught, this crashes the page into Next's generic
+        // error boundary right when a focus window opens.
+        try {
+          new Notification("XTNL — Focus Window", {
+            body:               `${srv.focus_min} min — return your attention now.`,
+            requireInteraction: true,
+            silent:             vol <= 0,
+          });
+        } catch { /* unsupported on this browser — alarm sound already fired */ }
       } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
         Notification.requestPermission().catch(() => {});
       }
