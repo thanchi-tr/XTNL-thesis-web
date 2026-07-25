@@ -18,9 +18,13 @@ export default function ScrollToTop() {
       onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
       aria-label="Scroll to top"
       style={{
+        /* Stacked above the Calculator launcher (bottom:90) so it isn't
+           hidden behind the issue-resolve FAB, which shares this same
+           bottom-right corner at a higher z-index on /session, /analytics
+           and /model. */
         position: "fixed",
-        bottom: 28,
-        right: 28,
+        bottom: 184,
+        right: 33,
         zIndex: 80,
         width: 40,
         height: 40,

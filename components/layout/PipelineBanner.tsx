@@ -548,7 +548,10 @@ export default function PipelineBanner() {
         title="Expand pipeline status"
         aria-label="Expand pipeline status"
         style={{
-          position: "fixed", bottom: 16, right: 16, zIndex: 200,
+          /* Stacked above the Calculator launcher (bottom:90) and the
+             issue-resolve FAB (bottom:28) — see ScrollToTop.tsx and
+             Calculator.tsx for the rest of this bottom-right stack. */
+          position: "fixed", bottom: 142, right: 28, zIndex: 200,
           display: "flex", alignItems: "center", gap: 6,
           background: "rgba(4,8,15,0.90)",
           backdropFilter: "blur(18px) saturate(180%)",

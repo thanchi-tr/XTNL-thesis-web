@@ -84,9 +84,15 @@ interface SpinnerProps {
   onChange: (v: number) => void;
   onComplete?: () => void;  // called after 2 valid digits → auto-advance
   inputRef?: React.RefObject<HTMLInputElement | null>;
+  /** Hour field only: a 24-hour-style entry (e.g. "17") should resolve to
+      the correct hour + AM/PM instead of being clamped back to the min/max
+      boundary like a genuinely invalid value would be. `n` is passed
+      through as a plain 0-23 hour — the caller (which already tracks
+      AM/PM) decides how to store it. */
+  as24Hour?: (h24: number) => void;
 }
 
-function TimeSpinner({ value, min, max, onChange, onComplete, inputRef }: SpinnerProps) {
+function TimeSpinner({ value, min, max, onChange, onComplete, inputRef, as24Hour }: SpinnerProps) {
   const [draft, setDraft] = useState<string | null>(null);
 
   const clamp = (n: number) => {
@@ -95,7 +101,17 @@ function TimeSpinner({ value, min, max, onChange, onComplete, inputRef }: Spinne
     return n;
   };
 
+  /** Returns true if it fully handled `raw` (normal range or 24-hour entry). */
+  const tryCommit = (raw: string): boolean => {
+    const n = parseInt(raw, 10);
+    if (isNaN(n)) return false;
+    if (n >= min && n <= max) { onChange(n); setDraft(null); return true; }
+    if (as24Hour && n >= 0 && n <= 23) { as24Hour(n); setDraft(null); return true; }
+    return false;
+  };
+
   const commit = (raw: string) => {
+    if (tryCommit(raw)) return;
     const n = parseInt(raw, 10);
     if (!isNaN(n)) onChange(clamp(n));
     setDraft(null);
@@ -128,14 +144,7 @@ function TimeSpinner({ value, min, max, onChange, onComplete, inputRef }: Spinne
         onChange={e => {
           const raw = e.target.value.replace(/\D/g, "").slice(0, 2);
           setDraft(raw);
-          if (raw.length === 2) {
-            const n = parseInt(raw, 10);
-            if (!isNaN(n) && n >= min && n <= max) {
-              onChange(n);
-              setDraft(null);
-              onComplete?.();
-            }
-          }
+          if (raw.length === 2 && tryCommit(raw)) onComplete?.();
         }}
         onBlur={e => commit(e.target.value)}
         onKeyDown={e => {
@@ -365,6 +374,7 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
                 max={12}
                 onChange={setH12}
                 onComplete={() => minRef.current?.focus()}
+                as24Hour={setHour}
               />
 
               {/* Colon separator */}
