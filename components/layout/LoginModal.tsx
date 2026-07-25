@@ -54,7 +54,7 @@ function OtpInput({
   }
 
   return (
-    <div style={{ display: "flex", gap: 7 }}>
+    <div style={{ display: "flex", gap: 8 }}>
       {digits.map((d, i) => (
         <input
           key={i}
@@ -70,27 +70,33 @@ function OtpInput({
           aria-label={`Digit ${i + 1}`}
           style={{
             flex: 1, minWidth: 0,
-            height: 50,
+            height: 52,
             textAlign: "center",
-            background: "var(--sub)",
-            border: `1px solid ${error ? "var(--red)" : "var(--line-hi)"}`,
-            borderRadius: 6,
+            background: d ? "var(--raised)" : "var(--sub)",
+            backgroundImage: d ? "linear-gradient(160deg, rgba(255,255,255,0.04) 0%, transparent 55%)" : "none",
+            border: `1px solid ${error ? "var(--red)" : d ? "var(--line-act)" : "var(--line-hi)"}`,
+            borderRadius: 7,
             color: error ? "var(--red)" : "var(--ink-0)",
             fontSize: 20, fontWeight: 700,
             fontFamily: "var(--font-mono), monospace",
             outline: "none",
-            transition: "border-color 0.15s, box-shadow 0.15s",
+            boxShadow: error
+              ? "0 0 0 3px rgba(240,58,87,0.10)"
+              : d ? "0 1px 0 rgba(255,255,255,0.03) inset, 0 2px 8px rgba(0,0,0,0.25)" : "none",
+            transition: "border-color 0.16s, box-shadow 0.16s, background 0.16s, transform 0.12s",
             opacity: disabled ? 0.5 : 1,
           }}
           onFocus={e => {
             if (!error && !disabled) {
               e.currentTarget.style.borderColor = "var(--green)";
-              e.currentTarget.style.boxShadow  = "0 0 0 2px rgba(0,204,122,0.15)";
+              e.currentTarget.style.boxShadow  = "0 0 0 3px rgba(0,204,122,0.14)";
+              e.currentTarget.style.transform  = "translateY(-1px)";
             }
           }}
           onBlur={e => {
-            e.currentTarget.style.borderColor = error ? "var(--red)" : "var(--line-hi)";
-            e.currentTarget.style.boxShadow  = "none";
+            e.currentTarget.style.borderColor = error ? "var(--red)" : d ? "var(--line-act)" : "var(--line-hi)";
+            e.currentTarget.style.boxShadow  = error ? "0 0 0 3px rgba(240,58,87,0.10)" : d ? "0 1px 0 rgba(255,255,255,0.03) inset, 0 2px 8px rgba(0,0,0,0.25)" : "none";
+            e.currentTarget.style.transform  = "translateY(0)";
           }}
         />
       ))}
@@ -120,10 +126,28 @@ function Spinner({ size = 14 }: { size?: number }) {
 function MsLogo() {
   return (
     <svg width="18" height="18" viewBox="0 0 21 21" fill="none" aria-hidden>
-      <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
-      <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
-      <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
-      <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      <rect x="1"  y="1"  width="9" height="9" rx="0.5" fill="#f25022"/>
+      <rect x="11" y="1"  width="9" height="9" rx="0.5" fill="#7fba00"/>
+      <rect x="1"  y="11" width="9" height="9" rx="0.5" fill="#00a4ef"/>
+      <rect x="11" y="11" width="9" height="9" rx="0.5" fill="#ffb900"/>
+    </svg>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Animated success check — draws the stroke in rather than
+   popping in flat, used for "verified" states throughout.
+   ═══════════════════════════════════════════════════════════ */
+function CheckGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none" aria-hidden>
+      <circle cx="7" cy="7" r="6.3" stroke="var(--green)" strokeWidth="1" opacity="0.28"/>
+      <path
+        d="M2.5 7l3.5 3.5L11.5 3"
+        stroke="var(--green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+        pathLength={1}
+        style={{ strokeDasharray: 1, strokeDashoffset: 1, animation: "auth-check-draw 0.42s 0.05s cubic-bezier(0.65,0,0.35,1) forwards" }}
+      />
     </svg>
   );
 }
@@ -133,16 +157,31 @@ function MsLogo() {
    ═══════════════════════════════════════════════════════════ */
 function LogoBar() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
-      <XtnlLogo width="16" height="16" />
-      <span className="mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", color: "var(--ink-0)" }}>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 9, marginBottom: 26,
+      animation: "auth-rise 0.4s cubic-bezier(0.16,1,0.3,1) both",
+    }}>
+      <span style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        width: 26, height: 26, borderRadius: 6, flexShrink: 0,
+        background: "rgba(0,204,122,0.08)", border: "1px solid rgba(0,204,122,0.22)",
+      }}>
+        <XtnlLogo width="14" height="14" />
+      </span>
+      <span className="mono" style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: "0.18em", color: "var(--ink-0)" }}>
         XTNL
       </span>
       <span className="mono" style={{
-        fontSize: 7.5, letterSpacing: "0.10em", color: "var(--ink-3)",
-        paddingLeft: 8, borderLeft: "1px solid var(--line)",
+        fontSize: 7.5, letterSpacing: "0.12em", color: "var(--ink-3)",
+        paddingLeft: 9, borderLeft: "1px solid var(--line)",
       }}>
         SOLUTIONS
+      </span>
+      <span className="mono" style={{
+        marginLeft: "auto", fontSize: 8.5, letterSpacing: "0.1em", color: "var(--ink-4, var(--ink-3))",
+        padding: "2px 6px", borderRadius: 4, border: "1px solid var(--line)",
+      }}>
+        SECURE
       </span>
     </div>
   );
@@ -158,7 +197,7 @@ function Tabs({ active, onChange }: { active: TotpTab; onChange: (t: TotpTab) =>
     <div style={{
       display: "flex", gap: 4,
       background: "var(--sub)", border: "1px solid var(--line)",
-      borderRadius: 7, padding: 3, marginBottom: 18,
+      borderRadius: 8, padding: 3, marginBottom: 20,
     }}>
       {(["qr", "code"] as TotpTab[]).map(t => (
         <button
@@ -166,13 +205,14 @@ function Tabs({ active, onChange }: { active: TotpTab; onChange: (t: TotpTab) =>
           type="button"
           onClick={() => onChange(t)}
           style={{
-            flex: 1, padding: "7px 0", borderRadius: 5,
+            flex: 1, padding: "8px 0", borderRadius: 6,
             border: active === t ? "1px solid var(--line-hi)" : "1px solid transparent",
             cursor: "pointer", fontSize: 11.5, fontWeight: 600,
-            letterSpacing: "0.04em",
+            letterSpacing: "0.03em",
             background: active === t ? "var(--raised)" : "transparent",
-            color: active === t ? "var(--ink-0)" : "var(--ink-2)",
-            transition: "all 0.15s",
+            boxShadow: active === t ? "0 2px 8px rgba(0,0,0,0.22)" : "none",
+            color: active === t ? "var(--ink-0)" : "var(--ink-3)",
+            transition: "background 0.18s, border-color 0.18s, color 0.18s, box-shadow 0.18s",
           }}
         >
           {t === "qr" ? "Scan QR code" : "Enter code"}
@@ -490,13 +530,37 @@ export default function LoginModal({
      ═══════════════════════════════════════════════════════ */
   return (
     <>
+      <style>{`
+        @keyframes auth-rise      { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes auth-check-draw { to { stroke-dashoffset: 0; } }
+        @keyframes auth-accent-pulse {
+          0%, 100% { opacity: 0.55; }
+          50%      { opacity: 1;    }
+        }
+        @keyframes auth-glow-drift {
+          0%, 100% { transform: translate(-50%, -54%) scale(1);    opacity: 0.55; }
+          50%      { transform: translate(-50%, -54%) scale(1.06); opacity: 0.85; }
+        }
+        .auth-ms-btn { position: relative; overflow: hidden; }
+        .auth-ms-btn::after {
+          content: ""; position: absolute; inset: 0; pointer-events: none;
+          background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,0.05) 38%, rgba(255,255,255,0.08) 44%, transparent 60%);
+          transform: translateX(-120%);
+          transition: transform 0.65s cubic-bezier(0.4,0,0.2,1);
+        }
+        .auth-ms-btn:hover::after { transform: translateX(20%); }
+      `}</style>
+
       {/* ── Backdrop ───────────────────────────────────── */}
       <div
         aria-hidden
         onClick={onClose}
         style={{
           position: "fixed", inset: 0, zIndex: 199,
-          background: "rgba(2,5,8,0.82)",
+          background: [
+            "radial-gradient(ellipse 60% 46% at 50% 30%, rgba(0,204,122,0.05) 0%, transparent 68%)",
+            "rgba(2,5,8,0.86)",
+          ].join(","),
           backdropFilter: "blur(20px) saturate(150%)",
           WebkitBackdropFilter: "blur(20px) saturate(150%)",
           opacity: open ? 1 : 0,
@@ -525,19 +589,31 @@ export default function LoginModal({
             width: "100%", maxWidth: 376,
             maxHeight: "calc(100svh - 48px)",
             background: "var(--card)",
+            backgroundImage: "linear-gradient(165deg, rgba(255,255,255,0.028) 0%, transparent 42%)",
             border: "1px solid var(--line-hi)",
-            borderRadius: 10,
-            padding: "28px 26px 24px",
-            boxShadow: "var(--shadow-lg)",
+            borderRadius: 12,
+            padding: "30px 26px 24px",
+            boxShadow: [
+              "0 0 0 1px rgba(0,204,122,0.05)",
+              "var(--shadow-lg)",
+              "0 0 70px rgba(0,204,122,0.05)",
+            ].join(","),
             overflowY: "auto",
             overflowX: "hidden",
             scrollbarWidth: "none",
             transform: open ? "translateY(0) scale(1)" : "translateY(10px) scale(0.97)",
             opacity: open ? 1 : 0,
-            transition: "transform 0.27s cubic-bezier(0.4,0,0.2,1), opacity 0.22s ease",
+            transition: "transform 0.32s cubic-bezier(0.16,1,0.3,1), opacity 0.24s ease",
             position: "relative",
           }}
         >
+          {/* Top accent line — quiet institutional trust mark, not a light show */}
+          <div style={{
+            position: "absolute", top: 0, left: 14, right: 14, height: 1,
+            background: "linear-gradient(90deg, transparent, var(--green), transparent)",
+            animation: "auth-accent-pulse 3.2s ease-in-out infinite",
+          }} />
+
           {/* ── Close ────────────────────────────────────── */}
           <button
             onClick={onClose}
@@ -546,10 +622,10 @@ export default function LoginModal({
               position: "absolute", top: 14, right: 14,
               background: "none", border: "none", cursor: "pointer",
               color: "var(--ink-3)", padding: 4, lineHeight: 0,
-              borderRadius: 4, transition: "color 0.15s",
+              borderRadius: 4, transition: "color 0.15s, background 0.15s",
             }}
-            onMouseEnter={e => (e.currentTarget.style.color = "var(--ink-1)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--ink-3)")}
+            onMouseEnter={e => { e.currentTarget.style.color = "var(--ink-1)"; e.currentTarget.style.background = "var(--sub)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "var(--ink-3)"; e.currentTarget.style.background = "none"; }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M2 2l12 12M14 2L2 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
@@ -562,24 +638,30 @@ export default function LoginModal({
               STEP 1 — Sign in with Microsoft
           ══════════════════════════════════════════════ */}
           {step === "sign-in" && (
-            <>
-              <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", marginBottom: 4 }}>
+            <div style={{ animation: "auth-rise 0.4s 0.04s cubic-bezier(0.16,1,0.3,1) both" }}>
+              <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 8 }}>
+                Institutional Access
+              </p>
+              <p style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", marginBottom: 5 }}>
                 Sign in
               </p>
-              <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 22 }}>
+              <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6, marginBottom: 24 }}>
                 Restricted to authorised work accounts.
               </p>
 
               {/* Microsoft button */}
               <button
+                className="auth-ms-btn"
                 onClick={handleMicrosoft}
                 disabled={msLoading}
                 style={{
                   display: "flex", alignItems: "center", gap: 12,
-                  width: "100%", padding: "13px 16px",
-                  background: "var(--sub)", border: "1px solid var(--line-hi)",
-                  borderRadius: 7, cursor: msLoading ? "not-allowed" : "pointer",
-                  transition: "border-color 0.15s, background 0.15s",
+                  width: "100%", padding: "14px 16px",
+                  background: "var(--sub)",
+                  backgroundImage: "linear-gradient(160deg, rgba(255,255,255,0.03) 0%, transparent 50%)",
+                  border: "1px solid var(--line-hi)",
+                  borderRadius: 8, cursor: msLoading ? "not-allowed" : "pointer",
+                  transition: "border-color 0.18s, background 0.18s, box-shadow 0.18s, transform 0.12s",
                   opacity: msLoading ? 0.6 : 1,
                   textAlign: "left",
                 }}
@@ -587,21 +669,30 @@ export default function LoginModal({
                   if (!msLoading) {
                     (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--line-act)";
                     (e.currentTarget as HTMLButtonElement).style.background  = "var(--raised)";
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow   = "0 4px 18px rgba(0,0,0,0.28)";
+                    (e.currentTarget as HTMLButtonElement).style.transform  = "translateY(-1px)";
                   }
                 }}
                 onMouseLeave={e => {
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--line-hi)";
                   (e.currentTarget as HTMLButtonElement).style.background  = "var(--sub)";
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow   = "none";
+                  (e.currentTarget as HTMLButtonElement).style.transform  = "translateY(0)";
                 }}
               >
-                <span style={{ lineHeight: 0, flexShrink: 0 }}>
-                  {msLoading ? <Spinner size={18} /> : <MsLogo />}
+                <span style={{
+                  lineHeight: 0, flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 34, height: 34, borderRadius: 6,
+                  background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)",
+                }}>
+                  {msLoading ? <Spinner size={17} /> : <MsLogo />}
                 </span>
                 <span style={{ flex: 1 }}>
-                  <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--ink-0)", lineHeight: 1.3 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: "var(--ink-0)", lineHeight: 1.3 }}>
                     Continue with Microsoft
                   </span>
-                  <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+                  <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 2, letterSpacing: "0.01em" }}>
                     Outlook · Microsoft 365
                   </span>
                 </span>
@@ -617,11 +708,12 @@ export default function LoginModal({
                 <div
                   style={{
                     marginTop: 12,
-                    padding: "10px 12px",
+                    padding: "11px 13px",
                     background: "var(--red-10)",
                     border: "1px solid rgba(240,58,87,0.25)",
-                    borderRadius: 6,
-                    display: "flex", alignItems: "flex-start", gap: 8,
+                    borderRadius: 7,
+                    display: "flex", alignItems: "flex-start", gap: 9,
+                    animation: "auth-rise 0.22s cubic-bezier(0.16,1,0.3,1) both",
                   }}
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden style={{ flexShrink: 0, marginTop: 1 }}>
@@ -632,10 +724,16 @@ export default function LoginModal({
                 </div>
               )}
 
-              <p style={{ marginTop: 20, fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6 }}>
-                Authorised personnel only · XTNL Solutions
-              </p>
-            </>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 24, justifyContent: "center" }}>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden style={{ color: "var(--ink-4, var(--ink-3))", flexShrink: 0 }}>
+                  <rect x="3.5" y="7" width="9" height="6.5" rx="1.3" stroke="currentColor" strokeWidth="1.2"/>
+                  <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+                <p style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6, margin: 0, letterSpacing: "0.01em" }}>
+                  Authorised personnel only · XTNL Solutions
+                </p>
+              </div>
+            </div>
           )}
 
           {/* ══════════════════════════════════════════════
@@ -645,24 +743,33 @@ export default function LoginModal({
             <>
               {/* ── QR mobile-challenge view ── */}
               {showQr && (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                <div style={{ animation: "auth-rise 0.32s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
                     <button
                       type="button"
                       onClick={() => {
                         if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
                         setShowQr(false); setQrStatus("idle"); setQrMobileUrl(null); setQrToken(null);
                       }}
-                      style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2)", padding: 0 }}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        width: 26, height: 26, borderRadius: 6, flexShrink: 0,
+                        background: "var(--sub)", border: "1px solid var(--line)",
+                        cursor: "pointer", color: "var(--ink-2)", transition: "border-color 0.15s, color 0.15s",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--line-act)"; e.currentTarget.style.color = "var(--ink-0)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.color = "var(--ink-2)"; }}
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path d="M8 2L4 6l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
-                      Back
                     </button>
-                    <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0 }}>
-                      Scan to sign in
-                    </p>
+                    <div>
+                      <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 2 }}>Mobile Handoff</p>
+                      <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0, letterSpacing: "-0.01em" }}>
+                        Scan to sign in
+                      </p>
+                    </div>
                   </div>
 
                   {(qrStatus === "loading") && (
@@ -675,10 +782,10 @@ export default function LoginModal({
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
                       {/* QR code */}
                       <div style={{
-                        borderRadius: 10, padding: 10,
+                        borderRadius: 12, padding: 12,
                         background: "#04080f", border: "1px solid rgba(0,204,122,0.25)",
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        boxShadow: "0 0 18px rgba(0,204,122,0.1)",
+                        boxShadow: "0 0 24px rgba(0,204,122,0.12), 0 8px 24px rgba(0,0,0,0.35)",
                       }}>
                         <img
                           src={qrMobileUrl}
@@ -694,7 +801,7 @@ export default function LoginModal({
                             Open your phone&apos;s camera and scan this code.<br/>
                             Tap <strong style={{ color: "var(--ink-1)" }}>Verify with biometric</strong> when prompted.
                           </p>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", borderRadius: 20, background: "var(--sub)", border: "1px solid var(--line)" }}>
                             <Spinner size={12} />
                             <span style={{ fontSize: 11, color: "var(--ink-3)" }}>Waiting for approval…</span>
                           </div>
@@ -703,10 +810,8 @@ export default function LoginModal({
 
                       {qrStatus === "verified" && (
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-                            <path d="M2.5 7l3.5 3.5L11.5 3" stroke="var(--green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                          <span style={{ fontSize: 12, color: "var(--green)" }}>Verified — signing in…</span>
+                          <CheckGlyph />
+                          <span style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>Verified — signing in…</span>
                         </div>
                       )}
                     </div>
@@ -730,36 +835,47 @@ export default function LoginModal({
                   <p style={{ marginTop: 18, fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6 }}>
                     Valid for 5 minutes · scan once
                   </p>
-                </>
+                </div>
               )}
 
               {/* ── Add biometric panel ── */}
               {showAddBiometric && !showQr && (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+                <div style={{ animation: "auth-rise 0.32s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
                     <button
                       type="button"
                       onClick={() => { setShowAddBiometric(false); setPasskeyError(null); }}
-                      style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2)", padding: 0 }}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        width: 26, height: 26, borderRadius: 6, flexShrink: 0,
+                        background: "var(--sub)", border: "1px solid var(--line)",
+                        cursor: "pointer", color: "var(--ink-2)", transition: "border-color 0.15s, color 0.15s",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--line-act)"; e.currentTarget.style.color = "var(--ink-0)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.color = "var(--ink-2)"; }}
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path d="M8 2L4 6l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
-                      Back
                     </button>
-                    <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0 }}>Add biometric device</p>
+                    <div>
+                      <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 2 }}>Enrollment</p>
+                      <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0, letterSpacing: "-0.01em" }}>Add biometric device</p>
+                    </div>
                   </div>
 
                   {/* ── Phone / Microsoft Authenticator ── */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-                    <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", color: "var(--ink-3)", margin: 0 }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", color: "var(--green)", margin: 0 }}>
                       RECOMMENDED
                     </p>
 
                     <div style={{
-                      border: "1px solid rgba(0,204,122,0.25)", borderRadius: 8,
-                      padding: "14px 16px", background: "rgba(0,204,122,0.04)",
+                      border: "1px solid rgba(0,204,122,0.25)", borderRadius: 10,
+                      padding: "15px 16px", background: "rgba(0,204,122,0.045)",
+                      backgroundImage: "linear-gradient(160deg, rgba(0,204,122,0.05) 0%, transparent 55%)",
                       display: "flex", flexDirection: "column", gap: 12,
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
                     }}>
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                         <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--green)", marginTop: 2 }}>
@@ -822,11 +938,11 @@ export default function LoginModal({
                       )}
 
                       {(regQrStatus === "polling" || regQrStatus === "verified") && regQrUrl && (
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, animation: "auth-rise 0.28s cubic-bezier(0.16,1,0.3,1) both" }}>
                           <div style={{
-                            borderRadius: 10, padding: 10,
+                            borderRadius: 11, padding: 11,
                             background: "#04080f", border: "1px solid rgba(0,204,122,0.25)",
-                            boxShadow: "0 0 18px rgba(0,204,122,0.1)",
+                            boxShadow: "0 0 22px rgba(0,204,122,0.12), 0 8px 22px rgba(0,0,0,0.32)",
                           }}>
                             <img src={regQrUrl} width={180} height={180} alt="Scan to register biometric" style={{ display: "block", imageRendering: "pixelated", borderRadius: 4 }} />
                           </div>
@@ -843,10 +959,8 @@ export default function LoginModal({
                           )}
                           {regQrStatus === "verified" && (
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-                                <path d="M2.5 7l3.5 3.5L11.5 3" stroke="var(--green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                              <span style={{ fontSize: 12, color: "var(--green)" }}>Phone registered successfully!</span>
+                              <CheckGlyph />
+                              <span style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>Phone registered successfully!</span>
                             </div>
                           )}
                         </div>
@@ -882,16 +996,19 @@ export default function LoginModal({
                       </button>
                     </div>
                   )}
-                </>
+                </div>
               )}
 
               {/* ── Normal 2FA view ── */}
               {!showQr && !showAddBiometric && (
-                <>
-              <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", marginBottom: 4 }}>
+                <div style={{ animation: "auth-rise 0.32s cubic-bezier(0.16,1,0.3,1) both" }}>
+              <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 8 }}>
+                Two-Factor Verification
+              </p>
+              <p style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", marginBottom: 5 }}>
                 Verify your identity
               </p>
-              <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 18 }}>
+              <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6, marginBottom: 20 }}>
                 {passkeyStatus === "enrolled" && !showCodeEntry
                   ? "Approve the sign-in biometrically from Microsoft Authenticator."
                   : enrolled === false
@@ -917,16 +1034,23 @@ export default function LoginModal({
                         disabled={passkeyLoading}
                         style={{
                           display: "flex", alignItems: "center", gap: 12,
-                          width: "100%", padding: "13px 16px",
-                          background: "rgba(0,204,122,0.08)", border: "1px solid rgba(0,204,122,0.30)",
-                          borderRadius: 7, cursor: passkeyLoading ? "not-allowed" : "pointer",
-                          transition: "border-color 0.15s, background 0.15s", textAlign: "left",
+                          width: "100%", padding: "14px 16px",
+                          background: "rgba(0,204,122,0.08)",
+                          backgroundImage: "linear-gradient(160deg, rgba(0,204,122,0.06) 0%, transparent 55%)",
+                          border: "1px solid rgba(0,204,122,0.30)",
+                          borderRadius: 8, cursor: passkeyLoading ? "not-allowed" : "pointer",
+                          transition: "border-color 0.18s, background 0.18s, box-shadow 0.18s, transform 0.12s", textAlign: "left",
                         }}
-                        onMouseEnter={e => { if (!passkeyLoading) { e.currentTarget.style.background = "rgba(0,204,122,0.14)"; e.currentTarget.style.borderColor = "rgba(0,204,122,0.55)"; } }}
-                        onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,204,122,0.08)"; e.currentTarget.style.borderColor = "rgba(0,204,122,0.30)"; }}
+                        onMouseEnter={e => { if (!passkeyLoading) { e.currentTarget.style.background = "rgba(0,204,122,0.14)"; e.currentTarget.style.borderColor = "rgba(0,204,122,0.55)"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,204,122,0.1)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,204,122,0.08)"; e.currentTarget.style.borderColor = "rgba(0,204,122,0.30)"; e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
                       >
-                        <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--green)" }}>
-                          {passkeyLoading ? <Spinner size={18} /> : (
+                        <span style={{
+                          lineHeight: 0, flexShrink: 0, color: "var(--green)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: 34, height: 34, borderRadius: 6,
+                          background: "rgba(0,204,122,0.1)", border: "1px solid rgba(0,204,122,0.22)",
+                        }}>
+                          {passkeyLoading ? <Spinner size={17} /> : (
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
                               <rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" strokeWidth="1.5"/>
                               <circle cx="12" cy="17" r="1.2" fill="currentColor"/>
@@ -936,7 +1060,7 @@ export default function LoginModal({
                           )}
                         </span>
                         <span style={{ flex: 1 }}>
-                          <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--green)", lineHeight: 1.3 }}>
+                          <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: "var(--green)", lineHeight: 1.3 }}>
                             {passkeyLoading ? "Waiting for biometric…" : "Use Biometric Sign-in"}
                           </span>
                           <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
@@ -947,7 +1071,7 @@ export default function LoginModal({
 
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
-                        <span style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.06em" }}>OR</span>
+                        <span className="mono" style={{ fontSize: 9.5, color: "var(--ink-3)", letterSpacing: "0.1em" }}>OR</span>
                         <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
                       </div>
 
@@ -958,8 +1082,10 @@ export default function LoginModal({
                           background: "none", border: "none", cursor: "pointer",
                           fontSize: 12, color: "var(--ink-2)", textAlign: "center",
                           padding: "4px 0", textDecoration: "underline",
-                          textDecorationColor: "var(--line-hi)",
+                          textDecorationColor: "var(--line-hi)", transition: "color 0.15s",
                         }}
+                        onMouseEnter={e => { e.currentTarget.style.color = "var(--ink-0)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "var(--ink-2)"; }}
                       >
                         Use authenticator code instead
                       </button>
@@ -973,7 +1099,10 @@ export default function LoginModal({
                           background: "none", border: "none", cursor: "pointer",
                           fontSize: 11.5, color: "var(--ink-3)", padding: "2px 0",
                           textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.1)",
+                          transition: "color 0.15s",
                         }}
+                        onMouseEnter={e => { e.currentTarget.style.color = "var(--ink-1)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "var(--ink-3)"; }}
                       >
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
                           <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
@@ -996,7 +1125,10 @@ export default function LoginModal({
                           background: "none", border: "none", cursor: "pointer",
                           fontSize: 11.5, color: "var(--ink-3)", padding: "2px 0",
                           textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.1)",
+                          transition: "color 0.15s",
                         }}
+                        onMouseEnter={e => { e.currentTarget.style.color = "var(--ink-1)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "var(--ink-3)"; }}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
                           <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5"/>
@@ -1022,7 +1154,10 @@ export default function LoginModal({
                             display: "flex", alignItems: "center", gap: 5,
                             background: "none", border: "none", cursor: "pointer",
                             fontSize: 11.5, color: "var(--ink-2)", padding: "0 0 14px 0",
+                            transition: "color 0.15s",
                           }}
+                          onMouseEnter={e => { e.currentTarget.style.color = "var(--ink-0)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = "var(--ink-2)"; }}
                         >
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                             <path d="M8 2L4 6l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1039,13 +1174,14 @@ export default function LoginModal({
 
                             {tab === "qr" && (
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-                                <p style={{ fontSize: 12, color: "var(--ink-2)", textAlign: "center", lineHeight: 1.55 }}>
+                                <p style={{ fontSize: 12, color: "var(--ink-2)", textAlign: "center", lineHeight: 1.6 }}>
                                   Open Microsoft Authenticator → Add account → Scan QR code.
                                 </p>
                                 <div style={{
-                                  background: "#fff", borderRadius: 8, padding: 10,
+                                  background: "#fff", borderRadius: 10, padding: 11,
                                   display: "flex", alignItems: "center", justifyContent: "center",
                                   width: 148, height: 148, flexShrink: 0,
+                                  boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
                                 }}>
                                   {qrUrl ? (
                                     <img src={qrUrl} width={128} height={128} alt="Scan with Microsoft Authenticator" style={{ display: "block", imageRendering: "pixelated" }} />
@@ -1055,7 +1191,7 @@ export default function LoginModal({
                                 </div>
                                 <p style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.55 }}>
                                   After scanning, switch to{" "}
-                                  <button type="button" onClick={() => setTab("code")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--green)", fontSize: 11, padding: 0 }}>
+                                  <button type="button" onClick={() => setTab("code")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--green)", fontWeight: 600, fontSize: 11, padding: 0 }}>
                                     Enter code
                                   </button>
                                   {" "}to complete setup.
@@ -1064,13 +1200,13 @@ export default function LoginModal({
                             )}
 
                             {tab === "code" && (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12, animation: "auth-rise 0.24s cubic-bezier(0.16,1,0.3,1) both" }}>
+                                <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6 }}>
                                   Enter the 6-digit code from Microsoft Authenticator to finish setup.
                                 </p>
                                 <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
                                 {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
-                                <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "12px", fontSize: 13, marginTop: 4 }}>
+                                <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "13px", fontSize: 13, marginTop: 4 }}>
                                   {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Complete setup"}
                                 </button>
                               </div>
@@ -1081,12 +1217,12 @@ export default function LoginModal({
                         {/* ── Returning user TOTP ── */}
                         {enrolled === true && (
                           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>
+                            <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6 }}>
                               Enter the 6-digit code shown in Microsoft Authenticator.
                             </p>
                             <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
                             {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
-                            <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "12px", fontSize: 13, marginTop: 4 }}>
+                            <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "13px", fontSize: 13, marginTop: 4 }}>
                               {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Authenticate"}
                             </button>
                           </div>
@@ -1096,9 +1232,9 @@ export default function LoginModal({
                       {/* ── Offer biometric setup for users without a passkey ── */}
                       {passkeyStatus === "none" && (
                         <>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 12px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0 12px" }}>
                             <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
-                            <span style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.06em" }}>
+                            <span className="mono" style={{ fontSize: 9.5, color: "var(--ink-3)", letterSpacing: "0.1em" }}>
                               {enrolled ? "FASTER SIGN-IN" : "OR"}
                             </span>
                             <div style={{ flex: 1, height: 1, background: "var(--line)" }}/>
@@ -1108,18 +1244,23 @@ export default function LoginModal({
                             onClick={() => setShowAddBiometric(true)}
                             disabled={passkeyLoading}
                             style={{
-                              display: "flex", alignItems: "center", gap: 10,
-                              width: "100%", padding: "10px 14px",
-                              background: "none", border: "1px solid var(--line)",
-                              borderRadius: 7, cursor: passkeyLoading ? "not-allowed" : "pointer",
-                              transition: "border-color 0.15s", textAlign: "left",
+                              display: "flex", alignItems: "center", gap: 11,
+                              width: "100%", padding: "11px 14px",
+                              background: "var(--sub)", border: "1px solid var(--line)",
+                              borderRadius: 8, cursor: passkeyLoading ? "not-allowed" : "pointer",
+                              transition: "border-color 0.15s, background 0.15s", textAlign: "left",
                             }}
-                            onMouseEnter={e => { if (!passkeyLoading) e.currentTarget.style.borderColor = "rgba(0,204,122,0.35)"; }}
-                            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; }}
+                            onMouseEnter={e => { if (!passkeyLoading) { e.currentTarget.style.borderColor = "rgba(0,204,122,0.35)"; e.currentTarget.style.background = "var(--raised)"; } }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.background = "var(--sub)"; }}
                           >
-                            <span style={{ lineHeight: 0, flexShrink: 0, color: "var(--ink-2)" }}>
-                              {passkeyLoading ? <Spinner size={15} /> : (
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+                            <span style={{
+                              lineHeight: 0, flexShrink: 0, color: "var(--ink-2)",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              width: 28, height: 28, borderRadius: 6,
+                              background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)",
+                            }}>
+                              {passkeyLoading ? <Spinner size={14} /> : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
                                   <rect x="5" y="2" width="14" height="20" rx="3" stroke="currentColor" strokeWidth="1.5"/>
                                   <path d="M9 10a3 3 0 1 1 6 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                                   <rect x="8" y="11" width="8" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
@@ -1149,7 +1290,7 @@ export default function LoginModal({
                   )}
 
                   {/* Footer */}
-                  <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                  <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 9, alignItems: "center" }}>
                     {/* QR option for TOTP-only users (passkeyStatus === "none") */}
                     {passkeyStatus === "none" && enrolled === true && (
                       <button
@@ -1160,7 +1301,10 @@ export default function LoginModal({
                           background: "none", border: "none", cursor: "pointer",
                           fontSize: 11.5, color: "var(--ink-3)", padding: "2px 0",
                           textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.1)",
+                          transition: "color 0.15s",
                         }}
+                        onMouseEnter={e => { e.currentTarget.style.color = "var(--ink-1)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "var(--ink-3)"; }}
                       >
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
                           <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3"/>
@@ -1174,16 +1318,17 @@ export default function LoginModal({
                         Sign in via QR + fingerprint
                       </button>
                     )}
+                    <div style={{ width: "100%", height: 1, background: "var(--line)" }} />
                     <p style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center", lineHeight: 1.6, margin: 0 }}>
                       Need help?{" "}
-                      <a href="mailto:xt@xtnl-solutions.com" style={{ color: "var(--ink-2)", textDecoration: "none" }}>
+                      <a href="mailto:xt@xtnl-solutions.com" style={{ color: "var(--ink-2)", textDecoration: "underline", textDecorationColor: "var(--line-hi)" }}>
                         Contact administrator
                       </a>
                     </p>
                   </div>
                 </>
               )}
-                </>
+                </div>
               )}
             </>
           )}
