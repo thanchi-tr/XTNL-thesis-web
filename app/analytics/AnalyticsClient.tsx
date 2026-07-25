@@ -2483,7 +2483,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
 
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4, flexWrap: "wrap", rowGap: 10 }}>
             <h1 className="mono" style={{ fontSize: 18, fontWeight: 700, letterSpacing: "0.12em", color: "var(--ink-0)" }}>
               ANALYTICS
             </h1>
@@ -2491,7 +2491,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
               SYSTEM REPORT VISUALISER
             </span>
             {/* Read-only here — sign-off itself happens in the session (analyst view) */}
-            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
               <SOPBuilderButton />
               <AuditReportButton />
               <FirmwareCopyButton />

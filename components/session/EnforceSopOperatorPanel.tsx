@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { SopRow } from "@/lib/sopTypes";
+import { readCache, writeCache } from "@/lib/staleCache";
+
+const CACHE_KEY = "xtnl_enforced_sops_cache_v1";
 
 function Spinner({ size = 14 }: { size?: number }) {
   return (
@@ -20,10 +23,17 @@ function Spinner({ size = 14 }: { size?: number }) {
  * time). Each row is its own checkbox — every row must be ticked before
  * Submit is enabled, so the operator actually confirms each step rather
  * than blanket-submitting. Submit logs a comment recording completion.
+ *
+ * Stale-while-revalidate: this list only changes once or twice a week (a
+ * strategist's Enforce SOP submit), so a loading spinner on every visit is
+ * wasted time. Whatever was last synced renders instantly from
+ * localStorage; the real fetch still runs in the background and silently
+ * reconciles the view when it resolves.
  */
 export default function EnforceSopOperatorPanel({ onSuccess }: { onSuccess?: () => void }) {
-  const [sops,       setSops]       = useState<SopRow[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [sops,       setSops]       = useState<SopRow[]>(() => readCache<SopRow[]>(CACHE_KEY) ?? []);
+  const [loading,    setLoading]    = useState(() => readCache<SopRow[]>(CACHE_KEY) === null);
+  const [syncing,    setSyncing]    = useState(false);
   const [loadError,  setLoadError]  = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -31,17 +41,25 @@ export default function EnforceSopOperatorPanel({ onSuccess }: { onSuccess?: () 
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const hadCache = readCache<SopRow[]>(CACHE_KEY) !== null;
+    if (hadCache) setSyncing(true); else setLoading(true);
     setLoadError(null);
     try {
       const r = await fetch("/api/session/sops/enforcements");
       if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error ?? "Failed to load");
       const j = await r.json();
-      setSops(j.sops ?? []);
+      const fresh: SopRow[] = j.sops ?? [];
+      setSops(fresh);
+      writeCache(CACHE_KEY, fresh);
+      // A SOP that's no longer enforced shouldn't stay "open".
+      setSelectedId(prev => (prev !== null && fresh.some(s => s.id === prev)) ? prev : null);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load enforced SOPs");
+      // Cached data is still useful and was already rendered — only
+      // surface a hard error when there's nothing to fall back on.
+      if (!hadCache) setLoadError(e instanceof Error ? e.message : "Failed to load enforced SOPs");
     }
     setLoading(false);
+    setSyncing(false);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -95,7 +113,7 @@ export default function EnforceSopOperatorPanel({ onSuccess }: { onSuccess?: () 
 
   return (
     <div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
         {sops.map(s => {
           const active = s.id === selectedId;
           const done   = completedIds.has(s.id);
@@ -118,6 +136,11 @@ export default function EnforceSopOperatorPanel({ onSuccess }: { onSuccess?: () 
             </button>
           );
         })}
+        {syncing && (
+          <span title="Syncing latest enforced SOPs…" style={{ display: "inline-flex", color: "var(--ink-4)" }}>
+            <Spinner size={12} />
+          </span>
+        )}
       </div>
 
       {selected && (

@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { SopRow } from "@/lib/sopTypes";
 import { EntryChecklistToggle, AttentionChallengeToggle } from "@/components/session/AnalystToggles";
+import { readCache, writeCache } from "@/lib/staleCache";
+
+const SOPS_CACHE_KEY   = "xtnl_sop_checklists_cache_v1";
+const BASELINE_CACHE_KEY = "xtnl_sop_enforcement_baseline_cache_v1";
+
+interface BaselineCache { ids: number[]; weekKey: string | null }
 
 function Spinner({ size = 14 }: { size?: number }) {
   return (
@@ -28,17 +34,27 @@ type SubView = "active" | "archived";
  * toggles (entry checklist, attention challenge) — moved here from the
  * session page's analyst view so every "enforce X on the operator"
  * control lives in one place.
+ *
+ * Stale-while-revalidate: both the SOP library and the enforcement
+ * baseline change at most a couple of times a week, so this renders
+ * whatever was last synced from localStorage instantly and reconciles
+ * against the server in the background rather than blocking on a
+ * spinner every visit. A successful Submit writes straight through to
+ * the cache too, so the strategist's own next visit is never stale
+ * behind their own action.
  */
 export default function EnforceSopManager() {
-  const [sops,      setSops]      = useState<SopRow[]>([]);
-  const [loading,   setLoading]   = useState(true);
+  const [sops,      setSops]      = useState<SopRow[]>(() => readCache<SopRow[]>(SOPS_CACHE_KEY) ?? []);
+  const [loading,   setLoading]   = useState(() => readCache<SopRow[]>(SOPS_CACHE_KEY) === null);
+  const [syncing,   setSyncing]   = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [subView, setSubView] = useState<SubView>("active");
 
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [baselineIds, setBaselineIds] = useState<Set<number>>(new Set());
-  const [baselineWeekKey, setBaselineWeekKey] = useState<string | null>(null);
+  const cachedBaseline = readCache<BaselineCache>(BASELINE_CACHE_KEY);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(cachedBaseline?.ids ?? []));
+  const [baselineIds, setBaselineIds] = useState<Set<number>>(new Set(cachedBaseline?.ids ?? []));
+  const [baselineWeekKey, setBaselineWeekKey] = useState<string | null>(cachedBaseline?.weekKey ?? null);
 
   const [archivingId, setArchivingId] = useState<number | null>(null);
   const [saving,   setSaving]   = useState(false);
@@ -46,7 +62,8 @@ export default function EnforceSopManager() {
   const [saveErr,  setSaveErr]  = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const hadCache = readCache<SopRow[]>(SOPS_CACHE_KEY) !== null;
+    if (hadCache) setSyncing(true); else setLoading(true);
     setLoadError(null);
     try {
       const [sopsRes, enfRes] = await Promise.all([
@@ -59,15 +76,22 @@ export default function EnforceSopManager() {
       const sopsJson = await sopsRes.json();
       const enfJson  = await enfRes.json();
 
-      setSops(sopsJson.rows ?? []);
+      const freshSops: SopRow[] = sopsJson.rows ?? [];
+      setSops(freshSops);
+      writeCache(SOPS_CACHE_KEY, freshSops);
+
       const ids = new Set<number>((enfJson.sops ?? []).map((s: SopRow) => s.id));
       setSelectedIds(ids);
       setBaselineIds(ids);
       setBaselineWeekKey(enfJson.weekKey ?? null);
+      writeCache<BaselineCache>(BASELINE_CACHE_KEY, { ids: [...ids], weekKey: enfJson.weekKey ?? null });
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load");
+      // Cached data already rendered — only block with an error if we had
+      // nothing to fall back on.
+      if (!hadCache) setLoadError(e instanceof Error ? e.message : "Failed to load");
     }
     setLoading(false);
+    setSyncing(false);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -97,7 +121,9 @@ export default function EnforceSopManager() {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
       if (!r.ok) throw new Error();
-      setSops(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+      const nextSops = sops.map(s => s.id === id ? { ...s, status } : s);
+      setSops(nextSops);
+      writeCache(SOPS_CACHE_KEY, nextSops);
       // Archiving a SOP that's staged for enforcement makes no sense — drop it.
       if (status === "archived") setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     } catch {
@@ -125,8 +151,13 @@ export default function EnforceSopManager() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? "Failed to save");
-      setBaselineIds(new Set(selectedIds));
-      setBaselineWeekKey(j.weekKey ?? baselineWeekKey);
+      const newIds = new Set(selectedIds);
+      const newWeekKey = j.weekKey ?? baselineWeekKey;
+      setBaselineIds(newIds);
+      setBaselineWeekKey(newWeekKey);
+      // Write-through immediately — don't wait for the next background
+      // sync to reflect the strategist's own just-submitted change.
+      writeCache<BaselineCache>(BASELINE_CACHE_KEY, { ids: [...newIds], weekKey: newWeekKey });
       setSaveMsg(
         j.titles?.length
           ? `Enforced ${j.titles.length} SOP${j.titles.length !== 1 ? "s" : ""}: ${j.titles.join(", ")}.`
@@ -155,6 +186,7 @@ export default function EnforceSopManager() {
           Session Controls
         </span>
         <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+        {syncing && <span title="Syncing…" style={{ display: "inline-flex", color: "var(--ink-4)" }}><Spinner size={12} /></span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
         <EntryChecklistToggle />

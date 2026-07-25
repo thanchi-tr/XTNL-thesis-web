@@ -4709,6 +4709,11 @@ export default function SessionClient({ user, viewMode, roles }: { user: User; v
             {/* ── Sidebar: always visible regardless of main tab ── */}
             <div className="session-sidebar session-sidebar-340">
 
+              {/* Focus Alarm first — the operator's most time-critical
+                  control, needs to be reachable without scrolling past the
+                  checklist/comment/SOP block below it. */}
+              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} onChallengeStatusChange={setChallengeStatus} onEntryChecklistEnabledChange={setShowChecklist} />
+
               {/* Entry Checklist / Add Comment / Enforce SOP — only one
                   shown at a time. The Entry Checklist tab itself only
                   appears once a strategist has enabled it (showChecklist);
@@ -4746,8 +4751,6 @@ export default function SessionClient({ user, viewMode, roles }: { user: User; v
               {opSidebarTool === "enforce" && (
                 <EnforceSopOperatorPanel onSuccess={fetchComments} />
               )}
-
-              <AlarmConfig showToast={showToast} onRunningChange={setAlarmRunning} isAnalystMode={isAnalystMode} onChallengeStatusChange={setChallengeStatus} onEntryChecklistEnabledChange={setShowChecklist} />
             </div>
           </div>
         )}
