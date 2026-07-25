@@ -68,6 +68,7 @@ function OtpInput({
           onKeyDown={e => handleKey(i, e)}
           onPaste={handlePaste}
           aria-label={`Digit ${i + 1}`}
+          aria-invalid={error}
           style={{
             flex: 1, minWidth: 0,
             height: 52,
@@ -265,6 +266,21 @@ export default function LoginModal({
   const [qrStatus,     setQrStatus]     = useState<"idle" | "loading" | "polling" | "verified" | "expired" | "error">("idle");
   const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /* ── Focus management (WCAG 2.4.3 / 2.4.7) ──────────────
+     Purely presentational: which element has focus, never what
+     the auth flow decides or does. */
+  const dialogRef        = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  const getFocusable = useCallback((): HTMLElement[] => {
+    if (!dialogRef.current) return [];
+    return Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), a[href], input:not(:disabled), select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter(el => el.offsetParent !== null);
+  }, []);
+
   /* When session exists but 2FA not yet done → jump to totp step */
   useEffect(() => {
     if (session && !session.twoFactorVerified) {
@@ -300,15 +316,47 @@ export default function LoginModal({
     return () => { document.body.style.overflow = ""; };
   }, [open]);
 
-  const handleEsc = useCallback((e: globalThis.KeyboardEvent) => {
-    if (e.key === "Escape") onClose();
-  }, [onClose]);
+  /* Escape closes; Tab/Shift+Tab cycles within the dialog instead of
+     escaping to the page behind it. */
+  const handleDialogKeydown = useCallback((e: globalThis.KeyboardEvent) => {
+    if (e.key === "Escape") { onClose(); return; }
+    if (e.key !== "Tab") return;
+    const focusable = getFocusable();
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last  = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  }, [onClose, getFocusable]);
 
   useEffect(() => {
     if (!open) return;
-    window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
-  }, [open, handleEsc]);
+    window.addEventListener("keydown", handleDialogKeydown);
+    return () => window.removeEventListener("keydown", handleDialogKeydown);
+  }, [open, handleDialogKeydown]);
+
+  /* Capture the trigger element on open and restore it on close, so
+     keyboard users land back where they started. */
+  useEffect(() => {
+    if (open) {
+      previouslyFocused.current = document.activeElement as HTMLElement;
+    } else if (previouslyFocused.current) {
+      previouslyFocused.current.focus();
+      previouslyFocused.current = null;
+    }
+  }, [open]);
+
+  /* Move focus into the dialog on open, and again whenever the step
+     changes (sign-in → totp) — mirrors how OtpInput already autofocuses
+     its own first digit box for finer-grained subview changes. */
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => { getFocusable()[0]?.focus(); }, 60);
+    return () => clearTimeout(t);
+  }, [open, step, getFocusable]);
 
   /* Reset transient state on close */
   useEffect(() => {
@@ -537,10 +585,6 @@ export default function LoginModal({
           0%, 100% { opacity: 0.55; }
           50%      { opacity: 1;    }
         }
-        @keyframes auth-glow-drift {
-          0%, 100% { transform: translate(-50%, -54%) scale(1);    opacity: 0.55; }
-          50%      { transform: translate(-50%, -54%) scale(1.06); opacity: 0.85; }
-        }
         .auth-ms-btn { position: relative; overflow: hidden; }
         .auth-ms-btn::after {
           content: ""; position: absolute; inset: 0; pointer-events: none;
@@ -549,6 +593,29 @@ export default function LoginModal({
           transition: transform 0.65s cubic-bezier(0.4,0,0.2,1);
         }
         .auth-ms-btn:hover::after { transform: translateX(20%); }
+
+        /* Keyboard-only focus ring — invisible-to-mouse, always visible to
+           Tab navigation (WCAG 2.4.7). Inputs keep their own bespoke
+           border/glow focus treatment (inline styles win over this). */
+        [role="dialog"][aria-label="Sign in"] button:focus-visible,
+        [role="dialog"][aria-label="Sign in"] a:focus-visible {
+          outline: 2px solid var(--green);
+          outline-offset: 2px;
+          border-radius: 4px;
+        }
+        /* Tactile press feedback for controls that don't already drive
+           their own transform via JS hover handlers. */
+        [role="dialog"][aria-label="Sign in"] button:not(:disabled):active {
+          transform: scale(0.97);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          [role="dialog"][aria-label="Sign in"] * {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+          }
+        }
       `}</style>
 
       {/* ── Backdrop ───────────────────────────────────── */}
@@ -571,6 +638,7 @@ export default function LoginModal({
 
       {/* ── Scroll-lock wrapper ─────────────────────────── */}
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Sign in"
@@ -642,9 +710,9 @@ export default function LoginModal({
               <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 8 }}>
                 Institutional Access
               </p>
-              <p style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", marginBottom: 5 }}>
+              <h2 style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", margin: "0 0 5px" }}>
                 Sign in
-              </p>
+              </h2>
               <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6, marginBottom: 24 }}>
                 Restricted to authorised work accounts.
               </p>
@@ -706,6 +774,7 @@ export default function LoginModal({
               {/* Inline error (network / pre-redirect failure) */}
               {msError && (
                 <div
+                  role="alert"
                   style={{
                     marginTop: 12,
                     padding: "11px 13px",
@@ -766,9 +835,9 @@ export default function LoginModal({
                     </button>
                     <div>
                       <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 2 }}>Mobile Handoff</p>
-                      <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0, letterSpacing: "-0.01em" }}>
+                      <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0, letterSpacing: "-0.01em" }}>
                         Scan to sign in
-                      </p>
+                      </h2>
                     </div>
                   </div>
 
@@ -827,7 +896,7 @@ export default function LoginModal({
                   )}
 
                   {qrStatus === "error" && (
-                    <p style={{ fontSize: 12, color: "var(--red)", textAlign: "center", padding: "12px 0" }}>
+                    <p role="alert" style={{ fontSize: 12, color: "var(--red)", textAlign: "center", padding: "12px 0" }}>
                       Could not create QR code. Make sure you have a passkey enrolled first.
                     </p>
                   )}
@@ -860,7 +929,7 @@ export default function LoginModal({
                     </button>
                     <div>
                       <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 2 }}>Enrollment</p>
-                      <p style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0, letterSpacing: "-0.01em" }}>Add biometric device</p>
+                      <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--ink-0)", margin: 0, letterSpacing: "-0.01em" }}>Add biometric device</h2>
                     </div>
                   </div>
 
@@ -976,7 +1045,7 @@ export default function LoginModal({
                       )}
 
                       {regQrStatus === "error" && (
-                        <p style={{ fontSize: 12, color: "var(--red)", textAlign: "center" }}>
+                        <p role="alert" style={{ fontSize: 12, color: "var(--red)", textAlign: "center" }}>
                           Could not create registration QR. Please try again.
                         </p>
                       )}
@@ -985,7 +1054,7 @@ export default function LoginModal({
 
                   {passkeyError && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.55, margin: 0 }}>{passkeyError}</p>
+                      <p role="alert" style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.55, margin: 0 }}>{passkeyError}</p>
                       <button
                         type="button"
                         onClick={() => { setPasskeyError(null); handleBiometricSetup("cross-platform"); }}
@@ -1005,9 +1074,9 @@ export default function LoginModal({
               <p className="section-eyebrow" style={{ color: "var(--green)", marginBottom: 8 }}>
                 Two-Factor Verification
               </p>
-              <p style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", marginBottom: 5 }}>
+              <h2 style={{ fontSize: 19, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink-0)", margin: "0 0 5px" }}>
                 Verify your identity
-              </p>
+              </h2>
               <p style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6, marginBottom: 20 }}>
                 {passkeyStatus === "enrolled" && !showCodeEntry
                   ? "Approve the sign-in biometrically from Microsoft Authenticator."
@@ -1137,7 +1206,7 @@ export default function LoginModal({
                         Add another biometric device
                       </button>
                       {passkeyError && (
-                        <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, margin: 0 }}>{passkeyError}</p>
+                        <p role="alert" style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, margin: 0 }}>{passkeyError}</p>
                       )}
                     </div>
                   )}
@@ -1205,7 +1274,7 @@ export default function LoginModal({
                                   Enter the 6-digit code from Microsoft Authenticator to finish setup.
                                 </p>
                                 <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
-                                {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
+                                {otpError && <p role="alert" style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
                                 <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "13px", fontSize: 13, marginTop: 4 }}>
                                   {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Complete setup"}
                                 </button>
@@ -1221,7 +1290,7 @@ export default function LoginModal({
                               Enter the 6-digit code shown in Microsoft Authenticator.
                             </p>
                             <OtpInput value={otp} onChange={v => { setOtp(v); setOtpError(false); }} error={otpError} disabled={otpLoading} />
-                            {otpError && <p style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
+                            {otpError && <p role="alert" style={{ fontSize: 11.5, color: "var(--red)", marginTop: -4 }}>Incorrect code. Try again.</p>}
                             <button type="submit" className="btn btn-primary" disabled={otpLoading || otp.replace(/\D/g, "").length < 6} style={{ width: "100%", padding: "13px", fontSize: 13, marginTop: 4 }}>
                               {otpLoading ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Verifying…</span> : "Authenticate"}
                             </button>
@@ -1282,7 +1351,7 @@ export default function LoginModal({
                             )}
                           </button>
                           {passkeyError && (
-                            <p style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, marginTop: 8 }}>{passkeyError}</p>
+                            <p role="alert" style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5, marginTop: 8 }}>{passkeyError}</p>
                           )}
                         </>
                       )}
