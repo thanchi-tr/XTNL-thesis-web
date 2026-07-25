@@ -348,10 +348,22 @@ export async function PUT(req: Request) {
     if (body.action === "challenge_start") {
       const cycle           = typeof body.cycle === "number" ? Math.floor(body.cycle) : -1;
       const challengeNumber = typeof body.challengeNumber === "number" ? Math.floor(body.challengeNumber) : 1;
-      if (current.challenge_cycle >= cycle) return resp(current);
+      // Re-read immediately before writing instead of trusting the `current`
+      // snapshot taken at the top of the handler. Two near-simultaneous
+      // challenge_start calls for the same cycle (e.g. the analyst has
+      // /session open in two tabs/devices, each running its own tick loop)
+      // can otherwise both read the same stale snapshot, both pass the
+      // guard, and race to overwrite each other's challenge_number — the
+      // number displayed to whoever's still looking at the first one then
+      // silently changes mid-challenge. This can't fully eliminate the race
+      // (writeState isn't a true compare-and-swap), but it shrinks the
+      // window from the whole request lifetime down to a single DB round
+      // trip, which is enough to make the collision practically unreachable.
+      const fresh = await readState();
+      if (fresh.challenge_cycle >= cycle) return resp(fresh);
       const expiresAt = new Date(Date.now() + 30_000).toISOString();
       const next: AlarmState = {
-        ...current,
+        ...fresh,
         challenge_number:     challengeNumber,
         challenge_cycle:      cycle,
         challenge_status:     "pending",

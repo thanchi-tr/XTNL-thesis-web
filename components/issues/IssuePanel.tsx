@@ -1077,9 +1077,38 @@ function IssueCard({
 }
 
 /* ── Main IssuePanel ─────────────────────────────────────────── */
-export default function IssuePanel({ showInsight = false }: { showInsight?: boolean }) {
+/**
+ * `layout="popup"` (default): the fixed FAB + slide-in side panel used on
+ * every page — unchanged.
+ * `layout="page"`: for the analytics page only. The FAB still renders (same
+ * position, same click target) but instead of owning its own open/closed
+ * state, it defers to the caller via `open`/`onOpenChange` — clicking it (or
+ * the page's own "Issue Resolver" tab button) switches the *page's* view
+ * rather than popping up a floating drawer. When `open`, the panel renders
+ * inline, full-width, redesigned for a main-screen layout (multi-column
+ * issue grid) instead of the popup's single narrow drawer column.
+ */
+export default function IssuePanel({
+  showInsight = false,
+  layout = "popup",
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  showInsight?: boolean;
+  layout?: "popup" | "page";
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const { data: session }               = useSession();
-  const [open,           setOpen]           = useState(false);
+  const isPage                          = layout === "page";
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open    = isPage ? (controlledOpen ?? false) : internalOpen;
+  const setOpen = isPage
+    ? (updater: boolean | ((v: boolean) => boolean)) => {
+        const next = typeof updater === "function" ? (updater as (v: boolean) => boolean)(open) : updater;
+        onOpenChange?.(next);
+      }
+    : setInternalOpen;
   const [tab,            setTab]            = useState<TabFilter>("open");
   const [issues,         setIssues]         = useState<Issue[]>([]);
   const [loading,        setLoading]        = useState(false);
@@ -1277,8 +1306,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
         )}
       </button>
 
-      {/* Insight overlay panel — wide panel to the left of the issues panel (desktop only) */}
-      {open && tab === "insight" && showInsight && canResolve && !isMobile && (
+      {/* Insight overlay panel — wide panel to the left of the issues panel
+          (popup + desktop only; page layout renders Insight inline instead). */}
+      {open && tab === "insight" && showInsight && canResolve && !isMobile && !isPage && (
         <>
           {/* Backdrop — blurred, click outside to close */}
           <div
@@ -1360,11 +1390,11 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
         </>
       )}
 
-      {/* Side panel */}
+      {/* Side panel (popup layout) / inline full-screen panel (page layout) */}
       {open && (
         <>
-          {/* Mobile backdrop */}
-          {isMobile && (
+          {/* Mobile backdrop — popup layout only; page layout has no overlay, it's inline content */}
+          {!isPage && isMobile && (
             <div
               onClick={() => setOpen(false)}
               style={{
@@ -1377,7 +1407,15 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             />
           )}
         <div
-          style={isMobile ? {
+          style={isPage ? {
+            width:         "100%",
+            minHeight:     "60vh",
+            background:    "var(--card,#0b1622)",
+            border:        "1px solid var(--line,rgba(255,255,255,0.06))",
+            borderRadius:  "10px",
+            display:       "flex",
+            flexDirection: "column",
+          } : isMobile ? {
             position:      "fixed",
             left:          0,
             right:         0,
@@ -1404,8 +1442,8 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             flexDirection: "column",
           }}
         >
-          {/* Mobile drag handle */}
-          {isMobile && (
+          {/* Mobile drag handle — popup layout only */}
+          {!isPage && isMobile && (
             <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--line-hi,rgba(255,255,255,0.11))" }} />
             </div>
@@ -1414,14 +1452,14 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
           {/* Panel header */}
           <div
             style={{
-              padding:      isMobile ? "8px 15px 0" : "15px 15px 0",
+              padding:      isPage ? "18px 20px 0" : isMobile ? "8px 15px 0" : "15px 15px 0",
               borderBottom: "1px solid var(--line,rgba(255,255,255,0.06))",
               flexShrink:   0,
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "11px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "15px", fontWeight: 700 }}>Issues</span>
+                <span style={{ fontSize: isPage ? "20px" : "15px", fontWeight: 700 }}>{isPage ? "Issue Resolver" : "Issues"}</span>
                 <span
                   style={{
                     padding:       "2px 8px",
@@ -1518,8 +1556,9 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             </div>
           )}
 
-          {/* Scrollable body */}
-          <div className="iss-scroll" style={{ flex: 1, overflowY: "auto" }}>
+          {/* Scrollable body — page layout is inline content, so the page itself
+              scrolls; popup layout is a fixed drawer, so it scrolls internally. */}
+          <div className="iss-scroll" style={{ flex: 1, overflowY: isPage ? "visible" : "auto" }}>
             {tab !== "insight" && tab !== "tools" && !creating && (
               <KmsDashboard issues={issues} />
             )}
@@ -1535,7 +1574,7 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
             {tab === "tools" && canResolve ? (
               <ToolRegistry issues={issues} canManage={canResolve} onRefresh={loadIssues} />
             ) : tab === "insight" && showInsight && canResolve ? (
-              isMobile
+              (isMobile || isPage)
                 ? <InsightTab issues={issues} />
                 : <div style={{ textAlign: "center", padding: "52px 20px", color: "var(--ink-2,#5a7490)", fontSize: "12px", lineHeight: 1.7 }}>
                     <div style={{ fontSize: "22px", marginBottom: "8px" }}>↔</div>
@@ -1552,7 +1591,17 @@ export default function IssuePanel({ showInsight = false }: { showInsight?: bool
                 :                    "No baseline-restored issues"}
               </div>
             ) : (
-              <div style={{ padding: "12px 11px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div
+                style={isPage ? {
+                  padding:              "14px",
+                  display:              "grid",
+                  gridTemplateColumns:  "repeat(auto-fill, minmax(360px, 1fr))",
+                  gap:                  "10px",
+                  alignItems:           "start",
+                } : {
+                  padding: "12px 11px", display: "flex", flexDirection: "column", gap: "8px",
+                }}
+              >
                 {filtered.map(issue => (
                   <IssueCard
                     key={issue.issue_id}

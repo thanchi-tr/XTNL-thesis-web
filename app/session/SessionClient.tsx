@@ -10,6 +10,7 @@ import { playAlarmBeeps, unlockAudio } from "@/lib/alarmAudio";
 import IssuePanel from "@/components/issues/IssuePanel";
 import OngoingStrategy from "@/components/issues/OngoingStrategy";
 import FirmwareCopyButton from "@/components/session/FirmwareCopyButton";
+import PipelineStagingGate from "@/components/session/PipelineStagingGate";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -4913,6 +4914,8 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
                 </button>
                 <FirmwareCopyButton showToast={showToast} refreshSignal={signoffRefresh} />
               </div>
+
+              <PipelineStagingGate showToast={showToast} />
 
               <EntryChecklistToggle showToast={showToast} locked={isDriftAlert} refreshSignal={driftRefreshSignal} />
               <AttentionChallengeToggle showToast={showToast} refreshSignal={driftRefreshSignal} />

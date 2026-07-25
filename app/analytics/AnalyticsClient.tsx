@@ -2367,6 +2367,12 @@ type LiveStatus  = "idle" | "loading" | "loaded" | "error";
 interface LiveMeta { filename: string; reportDate: string; fetchedAt?: string }
 
 export default function AnalyticsClient({ user }: { user: { email?: string; name?: string } }) {
+  /* Session Statistics (the existing dashboard) vs. Issue Resolver — mutually
+     exclusive full-screen views on this page only. The floating issue toggle
+     (IssuePanel's FAB) doubles as the Issue Resolver activator here instead
+     of popping up its usual side panel — see `layout="page"` below. */
+  const [analyticsView, setAnalyticsView] = useState<"stats" | "issues">("stats");
+
   const [dataSource, setDataSource] = useState<DataSource>("live");
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("idle");
   const [liveError,  setLiveError]  = useState<string | null>(null);
@@ -2483,6 +2489,40 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
           <div style={{ height: 1, background: "var(--line)" }} />
         </div>
 
+        {/* View toggle — Session Statistics (the dashboard below) vs. Issue
+            Resolver (full-screen, redesigned). Mutually exclusive. */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
+          {([
+            { key: "stats" as const,  label: "Session Statistics" },
+            { key: "issues" as const, label: "Issue Resolver" },
+          ]).map(({ key, label }) => {
+            const active = analyticsView === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setAnalyticsView(key)}
+                aria-pressed={active}
+                className="mono"
+                style={{
+                  padding:       "7px 16px",
+                  borderRadius:  6,
+                  border:        `1px solid ${active ? "var(--green)" : "var(--line)"}`,
+                  background:    active ? "rgba(0,204,122,0.10)" : "transparent",
+                  color:         active ? "var(--green)" : "var(--ink-2)",
+                  fontSize:      10.5,
+                  fontWeight:    700,
+                  letterSpacing: "0.06em",
+                  cursor:        "pointer",
+                }}
+              >
+                {label.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+
+        {analyticsView === "stats" && (
+        <>
         <RetroSignoffPanel />
 
         {/* Data source panel */}
@@ -2776,11 +2816,23 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
 
         {/* Session schedule config — strategist defines when alarm is active vs break */}
         <SessionScheduleConfig hourly={report?.hourly ?? {}} />
+        </>
+        )}
+
+        {/* Issue Resolver — the same IssuePanel component/FAB used on every
+            other page, one persistent instance. layout="page" makes its FAB
+            defer to this page's view state instead of owning its own
+            open/closed state, and renders the panel inline full-screen (here,
+            in normal document flow) instead of as a floating drawer when
+            `open`. Mounted once (not split by analyticsView) so its loaded
+            issue list and UI state survive toggling back and forth. */}
+        <IssuePanel
+          showInsight
+          layout="page"
+          open={analyticsView === "issues"}
+          onOpenChange={isOpen => setAnalyticsView(isOpen ? "issues" : "stats")}
+        />
       </div>
-
-
-      {/* Issue tracker — fixed FAB, visible in analytics view; Insight tab for strategist */}
-      <IssuePanel showInsight />
     </div>
   );
 }
