@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth }                           from "@/auth";
-import { readFile, writeFile, mkdir }     from "fs/promises";
-import { join }                           from "path";
+import { unstable_cache, revalidateTag }  from "next/cache";
 import { getMondayAESTKey }               from "@/lib/weekKey";
 
 /* ── Config ─────────────────────────────────────────────────── */
@@ -16,14 +15,7 @@ const REPORT_BASE   = (process.env.REPORT_BASE_URL ?? "XTNLSolutions/Operations/
 /* Fixed live report path — pipeline writes here every Monday */
 const LIVE_FILE = "live.general.txt";
 const LIVE_PATH = `${REPORT_BASE}/${LIVE_FILE}`;
-
-/* ── Server-side report cache ────────────────────────────────
-   The report is pulled from OneDrive ON DEMAND (analyst weekend
-   session → POST) and cached locally on the server. Page loads
-   read through this cache and only touch OneDrive on a cold miss.
-   On Vercel the CWD is read-only, so the cache lives in /tmp.     */
-const DATA_DIR    = process.env.VERCEL ? "/tmp/xtnl-data" : join(process.cwd(), "data");
-const CACHE_FILE  = join(DATA_DIR, "report-cache.json");
+const CACHE_TAG = "xtnl-live-report";
 
 interface CachedReport {
   content:    string;
@@ -33,19 +25,51 @@ interface CachedReport {
   weekKey:    string;   // weekKey at time of pull (== reportDate)
 }
 
-async function readCache(): Promise<CachedReport | null> {
-  try {
-    const raw = await readFile(CACHE_FILE, "utf-8");
-    return JSON.parse(raw) as CachedReport;
-  } catch {
-    return null;   // no file / unreadable → treated as a cache miss
+/* ── Two-tier server cache ────────────────────────────────────
+   The report is genuinely static for the whole trading week (the pipeline
+   writes it once, Monday) — for a given week it never changes, so it's
+   safe to cache indefinitely and only invalidate explicitly.
+
+   Tier 1 (fastest) — a module-level variable. Costs zero I/O, but only
+   lives for as long as this particular server instance stays warm; empty
+   again after a cold start.
+
+   Tier 2 (durable) — Next.js's Data Cache via unstable_cache. Unlike a raw
+   file under /tmp (the previous approach here), this is NOT wiped on cold
+   start and IS shared across concurrently-scaled instances on Vercel — a
+   genuine server-side cache, not a per-instance illusion of one. Keyed by
+   weekKey, so a new trading week naturally gets a fresh cache entry with
+   no explicit invalidation needed; the on-demand POST refresh explicitly
+   revalidates the tag so every instance's next read — durable or memory —
+   picks up the fresh pull instead of serving stale same-week data. */
+let memCache: CachedReport | null = null;
+
+async function pullFromOneDrive(weekKey: string): Promise<CachedReport> {
+  const token = await getGraphToken();
+  const items = await listChildren(token, REPORT_BASE);
+
+  const item = items.find(f => (f.name as string) === LIVE_FILE);
+  if (!item) {
+    const names = items.map(f => f.name as string).join(", ");
+    throw new Error(`"${LIVE_FILE}" not found in Reports folder. Items found: [${names || "none"}]`);
   }
+
+  const content = await downloadById(token, item.id as string);
+
+  return {
+    content,
+    filename:   LIVE_FILE,
+    reportDate: weekKey,
+    fetchedAt:  new Date().toISOString(),
+    weekKey,
+  };
 }
 
-async function writeCache(report: CachedReport): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(CACHE_FILE, JSON.stringify(report), "utf-8");
-}
+const getDurableCached = unstable_cache(
+  (weekKey: string) => pullFromOneDrive(weekKey),
+  ["xtnl-live-report"],
+  { tags: [CACHE_TAG] },
+);
 
 /* ── Graph API helpers ──────────────────────────────────────── */
 async function getGraphToken(): Promise<string> {
@@ -94,40 +118,10 @@ async function downloadById(token: string, itemId: string): Promise<string> {
   return res.text();
 }
 
-/* ── OneDrive pull ──────────────────────────────────────────────
-   Strategy: list the Reports folder children, find the file by name
-   (avoids Graph API's tilde-in-path-segment bug), then download by
-   item ID. This is the expensive path — three sequential Graph calls.
-   Only invoked on a cold cache miss (GET) or an on-demand refresh (POST). */
-async function pullFromOneDrive(weekKey: string, log?: string[]): Promise<CachedReport> {
-  const token = await getGraphToken();
-  log?.push("Graph token acquired");
-
-  const items = await listChildren(token, REPORT_BASE);
-  log?.push(`Listed ${items.length} item(s) in Reports folder`);
-
-  const item = items.find(f => (f.name as string) === LIVE_FILE);
-  if (!item) {
-    const names = items.map(f => f.name as string).join(", ");
-    throw new Error(`"${LIVE_FILE}" not found in Reports folder. Items found: [${names || "none"}]`);
-  }
-
-  const content = await downloadById(token, item.id as string);
-  log?.push(`Downloaded ${content.length} chars`);
-
-  return {
-    content,
-    filename:   LIVE_FILE,
-    reportDate: weekKey,
-    fetchedAt:  new Date().toISOString(),
-    weekKey,
-  };
-}
-
 /* Shape the JSON payload returned to clients (never expose the raw cache struct). */
 function toResponse(
   report: CachedReport,
-  source: "cache" | "onedrive",
+  source: "memory" | "cache" | "onedrive",
   extra: Record<string, unknown> = {},
 ) {
   return {
@@ -135,7 +129,7 @@ function toResponse(
     filename:   report.filename,
     reportDate: report.reportDate,
     fetchedAt:  report.fetchedAt,
-    source,                                              // "cache" | "onedrive"
+    source,                                              // "memory" | "cache" | "onedrive"
     stale:      report.weekKey !== getMondayAESTKey(),   // cached data is from a prior week
     ...extra,
   };
@@ -146,11 +140,11 @@ function isRefresher(session: unknown): boolean {
   return roles.some(r => ["analyst", "strategist", "fund_manager"].includes(r));
 }
 
-/* ── GET — read-through cache ────────────────────────────────────
-   Serve the locally-cached report immediately. Only when the cache
-   is genuinely empty (cold miss) do we pull from OneDrive, populate
-   the cache, and return. Never revalidates against OneDrive on a
-   time schedule — fresh data arrives via the on-demand POST refresh. */
+/* ── GET — read-through, two-tier cache ──────────────────────────
+   Tier 1: in-process memory, if it's still this week's report — instant,
+   zero I/O. Tier 2: the durable Data Cache, which pulls from OneDrive
+   itself on a genuine miss (new week, or first request since a cold
+   deploy) and is shared across every server instance, not just this one. */
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!(session as { twoFactorVerified?: boolean } | null)?.twoFactorVerified)
@@ -158,27 +152,20 @@ export async function GET(req: NextRequest) {
 
   const debug = process.env.NODE_ENV === "development" &&
                 req.nextUrl.searchParams.get("debug") === "1";
-  const log: string[] = [];
+  const weekKey = getMondayAESTKey();
 
-  const cached = await readCache();
-  if (cached) {
-    log.push(`Cache hit — pulled ${cached.fetchedAt}, week ${cached.weekKey}`);
-    return NextResponse.json(toResponse(cached, "cache", debug ? { _log: log } : {}));
+  if (memCache && memCache.weekKey === weekKey) {
+    return NextResponse.json(toResponse(memCache, "memory", debug ? { _log: ["Memory tier hit"] } : {}));
   }
 
-  /* Cold miss — no cache on this server instance yet. Pull once. */
-  const weekKey = getMondayAESTKey();
-  log.push(`Cache miss — pulling ${LIVE_PATH} from OneDrive user ${USER_ID}`);
   try {
-    const report = await pullFromOneDrive(weekKey, log);
-    await writeCache(report);
-    log.push("Cache populated");
-    return NextResponse.json(toResponse(report, "onedrive", debug ? { _log: log } : {}));
+    const report = await getDurableCached(weekKey);
+    memCache = report; // sync the memory tier so subsequent requests on this instance skip straight to tier 1
+    return NextResponse.json(toResponse(report, "cache", debug ? { _log: [`Durable cache read for week ${weekKey}`] } : {}));
   } catch (e) {
     console.error("[report GET]", e);
-    log.push(`Error: ${String(e)}`);
     return NextResponse.json(
-      { error: "Failed to load report. Please try again later.", ...(debug ? { _log: log } : {}) },
+      { error: "Failed to load report. Please try again later.", ...(debug ? { _log: [`Error: ${String(e)}`] } : {}) },
       { status: 500 }
     );
   }
@@ -186,8 +173,11 @@ export async function GET(req: NextRequest) {
 
 /* ── POST — on-demand refresh ────────────────────────────────────
    Invoked by the analyst during the weekend analysis session. Always
-   pulls fresh from OneDrive and overwrites the server cache. Gated to
-   roles that run analysis so the expensive Graph path can't be abused. */
+   pulls fresh from OneDrive, bypassing both cache tiers, then syncs this
+   instance's memory tier immediately and revalidates the durable tier's
+   tag so every other instance's next read also pulls fresh instead of
+   serving the now-stale same-week entry. Gated to roles that run analysis
+   so the expensive Graph path can't be abused. */
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!(session as { twoFactorVerified?: boolean } | null)?.twoFactorVerified)
@@ -197,14 +187,15 @@ export async function POST(req: NextRequest) {
 
   const debug = process.env.NODE_ENV === "development" &&
                 req.nextUrl.searchParams.get("debug") === "1";
-  const log: string[] = [];
   const weekKey = getMondayAESTKey();
+  const log: string[] = [];
 
   try {
     log.push(`On-demand refresh — pulling ${LIVE_PATH} from OneDrive user ${USER_ID}`);
-    const report = await pullFromOneDrive(weekKey, log);
-    await writeCache(report);
-    log.push("Cache overwritten with fresh pull");
+    const report = await pullFromOneDrive(weekKey);
+    memCache = report;
+    revalidateTag(CACHE_TAG);
+    log.push("Memory tier synced, durable tier revalidated");
     return NextResponse.json(toResponse(report, "onedrive", debug ? { _log: log } : {}));
   } catch (e) {
     console.error("[report POST]", e);

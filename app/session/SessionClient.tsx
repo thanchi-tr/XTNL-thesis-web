@@ -14,6 +14,17 @@ import PipelineStagingGate from "@/components/session/PipelineStagingGate";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
+// A "fail" challenge_status is only reset to null server-side on the next
+// "start" action — it is NOT cleared on "stop", and the alarm's `running`
+// flag stays true continuously across day boundaries (sessions are only
+// suppressed off-hours client-side, never actually stopped daily). Without
+// a freshness check, a fail from the last challenge of one session would
+// otherwise stay flagged as "fail compliance" indefinitely — including into
+// an analyst's weekend review of a weekday fail. 6h comfortably covers the
+// longest session window (up to ~5h, e.g. 20:00-01:00 overnight) while
+// guaranteeing it reads as stale well before the next day/session.
+const CHALLENGE_FAIL_FRESHNESS_MS = 6 * 60 * 60 * 1000;
+
 /* ═══════════════════════════════════════════════════════════
    TYPES
 ═══════════════════════════════════════════════════════════ */
@@ -3099,8 +3110,16 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
   /* Notify parent of running state changes */
   useEffect(() => { onRunningChange?.(srv.running); }, [srv.running, onRunningChange]);
 
-  /* Notify parent of challenge status changes */
-  useEffect(() => { onChallengeStatusChange?.(srv.challenge_status); }, [srv.challenge_status, onChallengeStatusChange]);
+  /* Notify parent of challenge status changes — a stale "fail" (see
+     CHALLENGE_FAIL_FRESHNESS_MS) is reported as null so it can't linger
+     into a later session/day as an active fail-compliance flag. */
+  useEffect(() => {
+    const status = srv.challenge_status;
+    const isStaleFail = status === "fail"
+      && !!srv.challenge_expires_at
+      && (Date.now() - new Date(srv.challenge_expires_at).getTime()) > CHALLENGE_FAIL_FRESHNESS_MS;
+    onChallengeStatusChange?.(isStaleFail ? null : status);
+  }, [srv.challenge_status, srv.challenge_expires_at, onChallengeStatusChange]);
 
   /* Notify parent of entry checklist enabled state */
   useEffect(() => { onEntryChecklistEnabledChange?.(srv.entry_checklist_enabled); }, [srv.entry_checklist_enabled, onEntryChecklistEnabledChange]);
