@@ -992,6 +992,7 @@ function LiveTable({ tz, isAnalyst, onRefresh, onHydrate }: {
   const [sortKey,    setSortKey]    = useState<LiveSortKey>("entry");
   const [sortDir,    setSortDir]    = useState<1 | -1>(-1);
   const [liveFilter, setLiveFilter] = useState<"queue" | "all" | "processed">("queue");
+  const [showExpanded, setShowExpanded] = useState(false);
 
   const fetchRows = useCallback(async (w: number) => {
     setLoading(true);
@@ -1078,6 +1079,7 @@ function LiveTable({ tz, isAnalyst, onRefresh, onHydrate }: {
   };
 
   return (
+    <>
     <div className="card">
       <CardHeader
         eyebrow="Live" eyebrowColor="var(--red)" title="Trade"
@@ -1124,6 +1126,17 @@ function LiveTable({ tz, isAnalyst, onRefresh, onHydrate }: {
               })}
             </div>
             <IconBtn icon="refresh" onClick={() => fetchRows(weeks)}/>
+            <button
+              type="button"
+              className="desktop-only-btn"
+              onClick={() => setShowExpanded(true)}
+              title="Expand table"
+              style={{ background: "none", border: "none", padding: 4, cursor: "pointer", color: "var(--ink-3)", alignItems: "center" }}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M6 2H2v4M10 2h4v4M2 10v4h4M14 10v4h-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
             {isAnalyst && pendingCount > 0 && (
               <button
                 onClick={handleSubmit}
@@ -1245,6 +1258,133 @@ function LiveTable({ tz, isAnalyst, onRefresh, onHydrate }: {
         </table>
       </HorizScrollContainer>
     </div>
+    {showExpanded && <LiveTableExpandModal rows={sorted} tz={tz} onClose={() => setShowExpanded(false)} />}
+    </>
+  );
+}
+
+/* Full-screen, centered "review mode" view of the live trade table — desktop
+   only (see .desktop-only-btn). Read-only (no draft editing — that stays in
+   the inline table); adds a per-row checkbox so the analyst can select any
+   subset of trades and see their cumulative result R at a glance. */
+function LiveTableExpandModal({ rows, tz, onClose }: { rows: LiveRow[]; tz: string; onClose: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const toggle = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const allSelected = rows.length > 0 && rows.every(r => selected.has(r.trade_id));
+  const toggleAll   = () => setSelected(allSelected ? new Set() : new Set(rows.map(r => r.trade_id)));
+
+  const cumulativeR = rows
+    .filter(r => selected.has(r.trade_id))
+    .reduce((sum, r) => sum + (r.result_r ?? 0), 0);
+  const rColor = cumulativeR > 0 ? "var(--green)" : cumulativeR < 0 ? "var(--red)" : "var(--ink-2)";
+
+  return createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 1180, maxHeight: "86vh",
+          background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10,
+          boxShadow: "0 8px 56px rgba(0,0,0,0.72)",
+          display: "flex", flexDirection: "column", overflow: "hidden",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="section-eyebrow" style={{ color: "var(--red)" }}>Live</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--ink-0)" }}>Trade — Full View</span>
+            <span className="chip chip-muted">{rows.length} rows</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {selected.size > 0 && (
+              <span className="mono" style={{
+                fontSize: 11.5, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
+                color: rColor, border: `1px solid ${rColor}`,
+              }}>
+                {selected.size} selected · {cumulativeR > 0 ? "+" : ""}{cumulativeR.toFixed(2)}R
+              </span>
+            )}
+            <button
+              type="button" onClick={onClose} aria-label="Close"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", fontSize: 18, lineHeight: 1, padding: 4 }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div style={{ overflow: "auto" }}>
+          <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ ...TH, width: 30 }}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" />
+                </th>
+                {LIVE_COLS.map(({ label, key }) => (
+                  <th key={key} style={TH}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={LIVE_COLS.length + 1} style={{ padding: "44px 0", textAlign: "center", color: "var(--ink-3)", fontSize: 12.5 }}>No trades</td></tr>
+              )}
+              {rows.map((r, i) => {
+                const id    = r.trade_id;
+                const isSel = selected.has(id);
+                const incomplete = BOOL_FIELDS.some(f => (r[f] as boolean | null) === null);
+                return (
+                  <tr key={i} style={{ background: isSel ? "rgba(0,204,122,0.06)" : "transparent" }}>
+                    <td style={{ ...TD, width: 30 }}>
+                      <input type="checkbox" checked={isSel} onChange={() => toggle(id)} />
+                    </td>
+                    <td style={{ ...TD, fontSize: 10, color: "var(--ink-3)" }}>{id.slice(0, 8)}…</td>
+                    <td style={TD}>{fmtTz(r.entry, tz)}</td>
+                    <td style={TD}>{fmtTz(r.exit, tz)}</td>
+                    <td style={{ ...TD, color: r.result_r > 0 ? "var(--green)" : r.result_r < 0 ? "var(--red)" : "var(--ink-3)" }}>
+                      {r.result_r != null ? (r.result_r > 0 ? "+" : "") + r.result_r.toFixed(2) + "R" : "—"}
+                    </td>
+                    {(["cor_dir","cor_lock","cor_target","cor_rm","cor_entry"] as const).map(f => (
+                      <td key={f} style={TD}><BoolBadge value={r[f] as boolean | null} /></td>
+                    ))}
+                    <td style={TD}><BoolBadge value={r.is_bad} invert /></td>
+                    <td style={TD}>
+                      {incomplete
+                        ? <span style={{ fontSize: 10, fontWeight: 700, color: "var(--red)", letterSpacing: "0.05em" }}>INCOMPLETE</span>
+                        : <span style={{ fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.05em" }}>DONE</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -4234,7 +4374,8 @@ function SessionCountdown({ hero = false }: { hero?: boolean }) {
 /* ═══════════════════════════════════════════════════════════
    MAIN EXPORT
 ═══════════════════════════════════════════════════════════ */
-export default function SessionClient({ user, viewMode }: { user: User; viewMode: "operator" | "analyst" }) {
+export default function SessionClient({ user, viewMode, roles }: { user: User; viewMode: "operator" | "analyst"; roles: string[] }) {
+  const isStrategist = roles.includes("strategist");
   const [mode,         setMode]         = useState<Mode>(viewMode);
   const [modeOverride, setModeOverride] = useState<Mode | null>(null);
   const [greeting,      setGreeting]      = useState("Welcome back");
@@ -4617,18 +4758,20 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
             <div className="session-sidebar session-sidebar-340">
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
 
-              <div className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                <span className="label-xs" style={{ color: "var(--ink-3)" }}>WEEKLY REVIEW</span>
-                <button
-                  className="btn btn-secondary"
-                  onClick={handleMarkReviewed}
-                  disabled={signoffMarking}
-                  style={{ opacity: signoffMarking ? 0.6 : 1, cursor: signoffMarking ? "not-allowed" : "pointer" }}
-                >
-                  {signoffMarking ? "Marking…" : "Mark Week Reviewed"}
-                </button>
-                <FirmwareCopyButton showToast={showToast} refreshSignal={signoffRefresh} />
-              </div>
+              {isStrategist && (
+                <div className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span className="label-xs" style={{ color: "var(--ink-3)" }}>WEEKLY REVIEW</span>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handleMarkReviewed}
+                    disabled={signoffMarking}
+                    style={{ opacity: signoffMarking ? 0.6 : 1, cursor: signoffMarking ? "not-allowed" : "pointer" }}
+                  >
+                    {signoffMarking ? "Marking…" : "Mark Week Reviewed"}
+                  </button>
+                  <FirmwareCopyButton showToast={showToast} refreshSignal={signoffRefresh} />
+                </div>
+              )}
 
               <PipelineStagingGate showToast={showToast} />
 

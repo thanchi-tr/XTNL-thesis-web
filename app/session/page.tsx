@@ -43,6 +43,7 @@ export default async function SessionPage() {
     <SessionClient
       user={{ email: session.userEmail, name: session.userName }}
       viewMode={currentMode}
+      roles={roles}
     />
   );
 }

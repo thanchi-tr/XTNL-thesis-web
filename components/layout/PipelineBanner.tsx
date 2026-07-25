@@ -469,6 +469,19 @@ export default function PipelineBanner() {
     return () => window.removeEventListener("pipeline-refresh", handler);
   }, [fetchPipeline]);
 
+  /* Fired by PipelineStagingGate.tsx once its 1-minute post-live-run popup
+     finishes — runs the exact same completion flow a human clicking
+     "Analysis Session" would (audit-report fetch + current-week check +
+     celebration overlay), just triggered automatically instead of by hand. */
+  useEffect(() => {
+    const handler = () => {
+      if (pipe?.processDone && !analysisDone && !analysisChecking) handleAnalysisSession();
+    };
+    window.addEventListener("trigger-analysis-session", handler);
+    return () => window.removeEventListener("trigger-analysis-session", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipe?.processDone, analysisDone, analysisChecking]);
+
   function isCurrentWeekReport(raw: string): boolean {
     const m = raw.match(/TIMESTAMP:\s*(\d{4}-\d{2}-\d{2})/);
     if (!m) return false;

@@ -538,3 +538,10 @@ a { transition: color 0.15s, opacity 0.15s; }
 
 /* KaTeX */
 .katex { color: var(--ink-0) !important; }
+
+/* Desktop-only controls — e.g. the Live Trade table's expand-to-modal
+   button, which relies on screen real estate a phone/tablet doesn't have. */
+.desktop-only-btn { display: inline-flex; }
+@media (max-width: 768px) {
+  .desktop-only-btn { display: none !important; }
+}
