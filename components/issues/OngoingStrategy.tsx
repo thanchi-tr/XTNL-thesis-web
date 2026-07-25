@@ -38,17 +38,18 @@ export default function OngoingStrategy() {
       if (!r.ok) { setError("Failed to load strategies"); return; }
       const issues: any[] = await r.json();
       const active: Strategy[] = issues
-        .filter(i => i.solution_id && i.solution_description)
-        .map(i => ({
+        .map(i => ({ i, sol: (i.solutions ?? []).find((s: any) => s.status === "active") }))
+        .filter(({ sol }) => !!sol)
+        .map(({ i, sol }) => ({
           issue_id:              i.issue_id,
           title:                 i.title,
           priority:              i.priority,
-          solution_id:           i.solution_id,
-          solution_description:  i.solution_description,
-          solution_proposed_by:  i.solution_proposed_by ?? "",
-          solution_endorsements: i.solution_endorsements ?? 0,
-          solution_disregards:   i.solution_disregards ?? 0,
-          solution_created_at:   i.solution_created_at ?? "",
+          solution_id:           sol.id,
+          solution_description:  sol.description,
+          solution_proposed_by:  sol.proposed_by ?? "",
+          solution_endorsements: sol.endorsements ?? 0,
+          solution_disregards:   sol.disregards ?? 0,
+          solution_created_at:   sol.created_at ?? "",
         }))
         .sort((a, b) =>
           a.priority - b.priority ||

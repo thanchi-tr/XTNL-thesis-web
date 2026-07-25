@@ -4,20 +4,7 @@ import { supabase }  from "@/lib/supabase";
 import {
   isValidTaxonomyPath, toKmsStatus, tradingSessionsSince, OOS_SESSIONS_REQUIRED,
 } from "@/lib/kms";
-
-type CurrentSolution = {
-  id:              string;
-  description:     string;
-  proposed_by:     string;
-  created_at:      string;
-  endorsements:    number;
-  disregards:      number;
-  votes:           number;
-  observed_week_1: string | null;
-  observed_week_2: string | null;
-  observed_week_3: string | null;
-  all_observed_at: string | null;
-};
+import type { Solution } from "@/lib/solutions";
 
 export async function GET() {
   const session = await auth();
@@ -26,7 +13,6 @@ export async function GET() {
 
   const [
     { data: issues, error: issErr },
-    { data: scratchedEvents, error: evtErr },
     { data: deployments, error: depErr },
     { data: tools, error: toolErr },
   ] = await Promise.all([
@@ -36,35 +22,15 @@ export async function GET() {
       .order("priority",    { ascending: true  })
       .order("raise_count", { ascending: false })
       .order("created_at",  { ascending: false }),
-    supabase
-      .from("issue_events")
-      .select("issue_id, payload, created_at")
-      .eq("event_type", "SOLUTION_SCRATCHED")
-      .order("created_at", { ascending: false }),
     supabase.from("tool_deployments").select("*").order("deployed_at", { ascending: false }),
     supabase.from("digital_tools").select("tool_id, name, category, version, deprecated"),
   ]);
 
   if (issErr) return NextResponse.json({ error: issErr.message }, { status: 500 });
-  if (evtErr) return NextResponse.json({ error: evtErr.message }, { status: 500 });
   // Tool tables may not exist until the KMS migration runs — degrade gracefully.
   const deps     = depErr  ? [] : (deployments ?? []);
   const toolRows = toolErr ? [] : (tools ?? []);
   const toolMap  = new Map(toolRows.map(t => [t.tool_id, t]));
-
-  const scratchedMap = new Map<string, any[]>();
-  for (const e of scratchedEvents ?? []) {
-    const arr = scratchedMap.get(e.issue_id) ?? [];
-    arr.push({
-      solution_id:  e.payload?.solution_id ?? null,
-      description:  e.payload?.description ?? "",
-      proposed_by:  e.payload?.proposed_by ?? "unknown",
-      created_at:   e.payload?.proposed_at ?? e.created_at,
-      scratched_at: e.payload?.scratched_at ?? e.created_at,
-      scratched_by: e.payload?.scratched_by ?? null,
-    });
-    scratchedMap.set(e.issue_id, arr);
-  }
 
   const depMap = new Map<string, any[]>();
   for (const d of deps) {
@@ -111,7 +77,7 @@ export async function GET() {
   const promote: string[] = [];
 
   const merged = topLevel.map((i: any) => {
-    const sol: CurrentSolution | null = i.current_solution ?? null;
+    const solutions: Solution[] = i.solutions ?? [];
     let kms = toKmsStatus(i.kms_status, i.status);
     const oosStart = i.oos_started_at ?? i.staging_at ?? null;
     const oosSessions = kms === "OOS_VALIDATION" && oosStart ? tradingSessionsSince(oosStart, now) : 0;
@@ -153,18 +119,7 @@ export async function GET() {
       created_at:             i.created_at,
       closed_at:              i.closed_at            ?? null,
       resolution_note:        i.resolution_note      ?? null,
-      solution_id:            sol?.id                ?? null,
-      solution_description:   sol?.description       ?? null,
-      solution_proposed_by:   sol?.proposed_by       ?? null,
-      solution_created_at:    sol?.created_at        ?? null,
-      solution_votes:         sol?.votes             ?? 0,
-      solution_endorsements:  sol?.endorsements      ?? 0,
-      solution_disregards:    sol?.disregards        ?? 0,
-      observed_week_1:        sol?.observed_week_1   ?? null,
-      observed_week_2:        sol?.observed_week_2   ?? null,
-      observed_week_3:        sol?.observed_week_3   ?? null,
-      all_observed_at:        sol?.all_observed_at   ?? null,
-      scratched_solutions:    scratchedMap.get(i.issue_id) ?? [],
+      solutions,
       deployments:            depMap.get(i.issue_id) ?? [],
       sub_issues:             subMap.get(i.issue_id) ?? [],
     };

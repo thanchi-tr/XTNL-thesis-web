@@ -1,11 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { auth }      from "@/auth";
-import { supabase }  from "@/lib/supabase";
-import { randomUUID } from "crypto";
+import { auth }             from "@/auth";
+import { supabase }         from "@/lib/supabase";
+import { randomUUID }       from "crypto";
+import { getMondayAESTKey } from "@/lib/weekKey";
+import { scratchActive, type Solution } from "@/lib/solutions";
 
 /** PUT — propose a new solution.
- *  Any existing active solution is scratched (written to the event log as history)
- *  before the new one is set as current_solution on the issue. */
+ *  Any existing active solution is marked scratched IN PLACE (stays in the
+ *  `solutions` array, not moved out to an event-log-only history) so it can
+ *  later be restored. The new solution is appended as the active one,
+ *  tagged with the current week — see lib/solutions.ts. */
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ issueId: string }> }
@@ -26,28 +30,31 @@ export async function PUT(
   const proposed_by = (session as any).userEmail ?? "unknown";
   const now         = new Date().toISOString();
 
-  // Fetch current issue to read existing active solution (if any)
   const { data: issue, error: fetchErr } = await supabase
     .from("issues")
-    .select("current_solution, status")
+    .select("solutions, status")
     .eq("issue_id", issueId)
     .single();
 
-  if (fetchErr || !issue)
+  if (fetchErr || !issue) {
+    if (fetchErr) console.error("[solution route] fetch failed", fetchErr);
     return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+  }
 
-  const existing = issue.current_solution as Record<string, any> | null;
+  const existing = (issue.solutions as Solution[] | null) ?? [];
 
-  // If an active solution exists, append a SOLUTION_SCRATCHED event for history
-  if (existing?.id) {
+  // Log the outgoing active solution (if any) for the audit trail — the
+  // array itself, not this event, is now the source of truth for display.
+  const outgoing = existing.find(s => s.status === "active");
+  if (outgoing) {
     await supabase.from("issue_events").insert({
       issue_id:   issueId,
       event_type: "SOLUTION_SCRATCHED",
       actor:      proposed_by,
       payload: {
-        solution_id:  existing.id,
-        description:  existing.description,
-        proposed_by:  existing.proposed_by,
+        solution_id:  outgoing.id,
+        description:  outgoing.description,
+        proposed_by:  outgoing.proposed_by,
         scratched_at: now,
         scratched_by: proposed_by,
       },
@@ -55,13 +62,15 @@ export async function PUT(
     });
   }
 
-  // Build the new active solution snapshot
-  const newSolutionId = randomUUID();
-  const newSolution = {
-    id:              newSolutionId,
+  const newSolution: Solution = {
+    id:              randomUUID(),
     description,
     proposed_by,
     created_at:      now,
+    week_tag:        getMondayAESTKey(),
+    status:          "active",
+    scratched_at:    null,
+    scratched_by:    null,
     endorsements:    0,
     disregards:      0,
     votes:           0,
@@ -71,18 +80,18 @@ export async function PUT(
     all_observed_at: null,
   };
 
-  // Append SOLUTION_PROPOSED event
+  const nextSolutions = [...scratchActive(existing, proposed_by, now), newSolution];
+
   const { error: evtErr } = await supabase.from("issue_events").insert({
     issue_id:   issueId,
     event_type: "SOLUTION_PROPOSED",
     actor:      proposed_by,
-    payload: { solution_id: newSolutionId, description, proposed_by },
+    payload:    { solution_id: newSolution.id, description, proposed_by },
     created_at: now,
   });
   if (evtErr) return NextResponse.json({ error: evtErr.message }, { status: 500 });
 
-  // Update issue: set new current_solution + advance to in_progress if still open
-  const statusUpdate: Record<string, unknown> = { current_solution: newSolution };
+  const statusUpdate: Record<string, unknown> = { solutions: nextSolutions };
   if (issue.status === "open") statusUpdate.status = "in_progress";
 
   const { error: updErr } = await supabase
@@ -91,10 +100,11 @@ export async function PUT(
     .eq("issue_id", issueId);
 
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
-  return NextResponse.json({ ok: true, solution_id: newSolutionId });
+  return NextResponse.json({ ok: true, solution_id: newSolution.id });
 }
 
-/** DELETE — scratch the active solution and revert issue to open. */
+/** DELETE — scratch the active solution (stays in the array, restorable)
+ *  and revert the issue to open if nothing else is active. */
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ issueId: string }> }
@@ -113,26 +123,28 @@ export async function DELETE(
 
   const { data: issue, error: fetchErr } = await supabase
     .from("issues")
-    .select("current_solution, status")
+    .select("solutions, status")
     .eq("issue_id", issueId)
     .single();
 
-  if (fetchErr || !issue)
+  if (fetchErr || !issue) {
+    if (fetchErr) console.error("[solution route] fetch failed", fetchErr);
     return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+  }
 
-  const existing = issue.current_solution as Record<string, any> | null;
-  if (!existing?.id)
+  const existing = (issue.solutions as Solution[] | null) ?? [];
+  const active = existing.find(s => s.status === "active");
+  if (!active)
     return NextResponse.json({ error: "No active solution to scratch" }, { status: 404 });
 
-  // Append SOLUTION_SCRATCHED event
   const { error: evtErr } = await supabase.from("issue_events").insert({
     issue_id:   issueId,
     event_type: "SOLUTION_SCRATCHED",
     actor:      scratched_by,
     payload: {
-      solution_id:  existing.id,
-      description:  existing.description,
-      proposed_by:  existing.proposed_by,
+      solution_id:  active.id,
+      description:  active.description,
+      proposed_by:  active.proposed_by,
       scratched_at: now,
       scratched_by,
     },
@@ -140,11 +152,10 @@ export async function DELETE(
   });
   if (evtErr) return NextResponse.json({ error: evtErr.message }, { status: 500 });
 
-  // Clear current_solution and revert issue to open
   const { error: updErr } = await supabase
     .from("issues")
     .update({
-      current_solution: null,
+      solutions: scratchActive(existing, scratched_by, now),
       ...(issue.status === "in_progress" ? { status: "open" } : {}),
     })
     .eq("issue_id", issueId);

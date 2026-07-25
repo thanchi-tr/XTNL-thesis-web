@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth }     from "@/auth";
 import { supabase } from "@/lib/supabase";
+import { activeSolution, type Solution } from "@/lib/solutions";
 
 /** POST — endorse the active solution for an issue. */
 export async function POST(
@@ -20,16 +21,17 @@ export async function POST(
 
   const { data: issue, error: fetchErr } = await supabase
     .from("issues")
-    .select("current_solution")
+    .select("solutions")
     .eq("issue_id", issueId)
     .single();
 
-  if (fetchErr || !issue?.current_solution)
+  const solutions = (issue?.solutions as Solution[] | null) ?? [];
+  const sol = activeSolution(solutions);
+  if (fetchErr || !sol) {
+    if (fetchErr) console.error("[solution endorse] fetch failed", fetchErr);
     return NextResponse.json({ error: "No active solution found" }, { status: 404 });
+  }
 
-  const sol = issue.current_solution as Record<string, any>;
-
-  // Append event to the audit log
   await supabase.from("issue_events").insert({
     issue_id:   issueId,
     event_type: "SOLUTION_ENDORSED",
@@ -37,11 +39,12 @@ export async function POST(
     payload:    { solution_id: sol.id, endorser: actor },
   });
 
-  // Increment denormalized counter in current_solution JSONB
   const endorsements = (sol.endorsements ?? 0) + 1;
+  const nextSolutions = solutions.map(s => s.id === sol.id ? { ...s, endorsements } : s);
+
   const { error: updErr } = await supabase
     .from("issues")
-    .update({ current_solution: { ...sol, endorsements } })
+    .update({ solutions: nextSolutions })
     .eq("issue_id", issueId);
 
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });

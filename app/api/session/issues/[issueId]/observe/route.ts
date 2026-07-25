@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth }      from "@/auth";
 import { supabase }  from "@/lib/supabase";
+import { activeSolution, type Solution } from "@/lib/solutions";
 
 /** PATCH — mark an observed-resolve week (1, 2, or 3).
  *  Weeks must be checked in order. When week 3 is checked the issue
@@ -25,15 +26,18 @@ export async function PATCH(
 
   const { data: issue, error: fetchErr } = await supabase
     .from("issues")
-    .select("current_solution, status")
+    .select("solutions, status")
     .eq("issue_id", issueId)
     .single();
 
-  if (fetchErr || !issue)
+  if (fetchErr || !issue) {
+    if (fetchErr) console.error("[observe] fetch failed", fetchErr);
     return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+  }
 
-  const sol = issue.current_solution as Record<string, any> | null;
-  if (!sol?.id)
+  const solutions = (issue.solutions as Solution[] | null) ?? [];
+  const sol = activeSolution(solutions);
+  if (!sol)
     return NextResponse.json({ error: "No active solution for this issue" }, { status: 404 });
 
   // Enforce sequential order
@@ -45,7 +49,6 @@ export async function PATCH(
   const now   = new Date().toISOString();
   const actor = (session as any).userEmail ?? "unknown";
 
-  // Append SOLUTION_OBSERVED event
   const { error: evtErr } = await supabase.from("issue_events").insert({
     issue_id:   issueId,
     event_type: "SOLUTION_OBSERVED",
@@ -55,13 +58,14 @@ export async function PATCH(
   });
   if (evtErr) return NextResponse.json({ error: evtErr.message }, { status: 500 });
 
-  // Update denormalized solution snapshot
-  const updatedSol = { ...sol, [`observed_week_${week}`]: now };
-  const issueUpdate: Record<string, unknown> = { current_solution: updatedSol };
+  const key = `observed_week_${week}` as const;
+  const updatedSol: Solution = { ...sol, [key]: now };
+  if (week === 3) updatedSol.all_observed_at = now;
 
-  // All 3 weeks observed → transition to staging
+  const nextSolutions = solutions.map(s => s.id === sol.id ? updatedSol : s);
+  const issueUpdate: Record<string, unknown> = { solutions: nextSolutions };
+
   if (week === 3) {
-    updatedSol.all_observed_at = now;
     issueUpdate.status     = "staging";
     issueUpdate.staging_at = now;
   }

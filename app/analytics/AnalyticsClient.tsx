@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { getMondayAESTKey } from "@/lib/weekKey";
 import IssuePanel from "@/components/issues/IssuePanel";
 import FirmwareCopyButton from "@/components/session/FirmwareCopyButton";
+import Sev1Banner from "@/components/session/Sev1Banner";
 
 /* ─── Types ─────────────────────────────────────────────── */
 
@@ -2470,6 +2471,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
 
   return (
     <div style={{ paddingTop: "calc(var(--nav-h) + 28px)", minHeight: "100vh", background: "var(--base)" }}>
+      <Sev1Banner />
       <div className="site-container" style={{ paddingBottom: 60 }}>
 
         {/* Header */}

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth }      from "@/auth";
 import { supabase }  from "@/lib/supabase";
+import { activeSolution, type Solution } from "@/lib/solutions";
 
 /** POST — RELAPSE confirmation.
  *  Invoked by the triage intercept (operator confirms a historical match) or by
@@ -22,12 +23,14 @@ export async function POST(
 
   const { data: issue, error: fetchErr } = await supabase
     .from("issues")
-    .select("issue_id, status, kms_status, priority, reopen_count, raise_count, current_solution")
+    .select("issue_id, status, kms_status, priority, reopen_count, raise_count, solutions")
     .eq("issue_id", issueId)
     .single();
 
-  if (fetchErr || !issue)
+  if (fetchErr || !issue) {
+    if (fetchErr) console.error("[reopen] fetch failed", fetchErr);
     return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+  }
 
   const priority_before = issue.priority as number;
   const priority_after  = Math.max(0, priority_before - 1);
@@ -66,30 +69,30 @@ export async function POST(
       .eq("id", activeDep.id);
   }
 
-  // Reset active solution observation state (legacy solution flow)
-  const updatedSolution = issue.current_solution
-    ? {
-        ...issue.current_solution,
-        observed_week_1: null,
-        observed_week_2: null,
-        observed_week_3: null,
-        all_observed_at: null,
-      }
-    : null;
+  // A relapse means containment failed — reset the active solution's
+  // observation progress (it stays active, just has to re-earn its 3 weeks)
+  // rather than touching anything scratched.
+  const solutions = (issue.solutions as Solution[] | null) ?? [];
+  const active = activeSolution(solutions);
+  const updatedSolutions = active
+    ? solutions.map(s => s.id === active.id
+        ? { ...s, observed_week_1: null, observed_week_2: null, observed_week_3: null, all_observed_at: null }
+        : s)
+    : solutions;
 
   // Revert to active threat. reopen_count only ever increments (DB-enforced).
   const { error: issueErr } = await supabase
     .from("issues")
     .update({
-      status:           "open",
-      kms_status:       "RELAPSED",
-      priority:         priority_after,
-      reopen_count:     (issue.reopen_count as number) + 1,
-      raise_count:      (issue.raise_count  as number ?? 0) + 1,
-      staging_at:       null,
-      oos_started_at:   null,
-      baseline_at:      null,
-      current_solution: updatedSolution,
+      status:         "open",
+      kms_status:     "RELAPSED",
+      priority:       priority_after,
+      reopen_count:   (issue.reopen_count as number) + 1,
+      raise_count:    (issue.raise_count  as number ?? 0) + 1,
+      staging_at:     null,
+      oos_started_at: null,
+      baseline_at:    null,
+      solutions:      updatedSolutions,
     })
     .eq("issue_id", issueId);
 

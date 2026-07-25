@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { KMS_STATUS_META, toKmsStatus, taxonomyLabels, priorityToSev, SEV_META } from "@/lib/kms";
 import { getRunbook } from "@/lib/runbooks";
+import type { Solution } from "@/lib/solutions";
 import TriageReportForm from "@/components/issues/kms/TriageReportForm";
 import KmsDashboard     from "@/components/issues/kms/KmsDashboard";
 import ToolRegistry     from "@/components/issues/kms/ToolRegistry";
@@ -25,15 +26,6 @@ interface SubIssue {
   created_at:  string;
 }
 
-interface ScratchedSolution {
-  solution_id:  string;
-  description:  string;
-  proposed_by:  string;
-  created_at:   string;
-  scratched_at: string | null;
-  scratched_by: string | null;
-}
-
 interface Issue {
   issue_id:               string;
   title:                  string;
@@ -53,18 +45,7 @@ interface Issue {
   staging_days_remaining: number | null;
   closed_at:              string | null;
   resolution_note:        string | null;
-  solution_id:            string | null;
-  solution_description:   string | null;
-  solution_proposed_by:   string | null;
-  solution_created_at:    string | null;
-  solution_votes:         number;
-  solution_endorsements:  number;
-  solution_disregards:    number;
-  observed_week_1:        string | null;
-  observed_week_2:        string | null;
-  observed_week_3:        string | null;
-  all_observed_at:        string | null;
-  scratched_solutions:    ScratchedSolution[];
+  solutions:              Solution[];
   sub_issues:             SubIssue[];
   /* KMS survivability pipeline */
   kms_status?:            string | null;
@@ -577,7 +558,7 @@ function RecordSection({
 /* ── RESOLVE section ─────────────────────────────────────────── */
 function ResolveSection({
   issue, canResolve, canManage, canRecord, solvingId, setSolvingId, onRefresh, onSetError,
-  endorsedSolutions, disregardedSolutions, onEndorse, onDisregard,
+  endorsedSolutions, disregardedSolutions, onEndorse, onDisregard, onRestore,
 }: {
   issue: Issue;
   canResolve: boolean;
@@ -591,8 +572,8 @@ function ResolveSection({
   disregardedSolutions: Set<string>;
   onEndorse: (issueId: string, solutionId: string) => void;
   onDisregard: (issueId: string, solutionId: string) => void;
+  onRestore: (issueId: string, solutionId: string) => void;
 }) {
-  const [scratchedOpen, setScratchedOpen] = useState(false);
   const [solText,       setSolText]       = useState("");
   const [closeForm,     setCloseForm]     = useState(false);
   const [closeNote,     setCloseNote]     = useState("");
@@ -603,6 +584,15 @@ function ResolveSection({
   const isSolving  = solvingId === issue.issue_id;
   const isStaging  = issue.status === "staging";
   const isArchived = issue.status === "archived";
+
+  const active = issue.solutions.find(s => s.status === "active") ?? null;
+  // Active first, then scratched newest-first — a stable, predictable order
+  // rather than raw creation order, since that's what "which one is current
+  // vs. what did we try before" actually needs.
+  const ordered = [...issue.solutions].sort((a, b) => {
+    if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   async function run(fn: () => Promise<string | null>, after?: () => void) {
     setBusy(true);
@@ -628,9 +618,9 @@ function ResolveSection({
       {/* Header */}
       <div style={{ fontSize: "10px", fontWeight: 700, color: "#00cc7a", letterSpacing: "0.5px" }}>
         RESOLVER
-        {issue.solution_proposed_by && (
+        {active && (
           <span style={{ fontWeight: 400, color: "var(--ink-2,#5a7490)", marginLeft: "6px" }}>
-            · {shortEmail(issue.solution_proposed_by)}
+            · {shortEmail(active.proposed_by)}
           </span>
         )}
         {issue.reopen_count > 0 && (
@@ -656,7 +646,7 @@ function ResolveSection({
       )}
 
       {/* No solution placeholder */}
-      {!isArchived && !issue.solution_id && !isSolving && (
+      {!isArchived && ordered.length === 0 && !isSolving && (
         <p style={{ margin: 0, fontSize: "12px", color: "var(--ink-2,#5a7490)", fontStyle: "italic" }}>
           No solution proposed yet.
         </p>
@@ -704,159 +694,163 @@ function ResolveSection({
         </div>
       )}
 
-      {/* Active solution card — shown even when issue is archived (solution can remain on-going) */}
-      {issue.solution_description && !isSolving && (
-        <div
-          style={{
-            padding:       "8px 10px",
-            borderRadius:  "5px",
-            background:    "var(--raised,#0f1e2e)",
-            border:        "1px solid var(--line,rgba(255,255,255,0.06))",
-            display:       "flex",
-            flexDirection: "column",
-            gap:           "8px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-            <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.6, color: "var(--ink-1,#9ab0c8)", flex: 1 }}>
-              {issue.solution_description}
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexShrink: 0, alignItems: "flex-end" }}>
-              {!canResolve && canRecord && issue.solution_id && (() => {
-                const endorsed    = endorsedSolutions.has(issue.solution_id!);
-                const disregarded = disregardedSolutions.has(issue.solution_id!);
-                const actioned    = endorsed || disregarded;
-                return (
-                  <div style={{ display: "flex", gap: "4px" }}>
-                    <button
-                      onClick={() => { if (!actioned && issue.solution_id) onEndorse(issue.issue_id, issue.solution_id); }}
-                      disabled={busy || actioned}
-                      title={endorsed ? "You've endorsed this solution" : "Endorse this solution"}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: "4px",
-                        padding: "2px 8px", borderRadius: "4px",
-                        border: `1px solid ${endorsed ? "rgba(0,204,122,0.5)" : "rgba(0,204,122,0.25)"}`,
-                        background: endorsed ? "rgba(0,204,122,0.18)" : "rgba(0,204,122,0.06)",
-                        color: "#00cc7a", fontSize: "10px",
-                        cursor: actioned ? "default" : "pointer", fontWeight: 700,
-                        opacity: disregarded ? 0.4 : 1,
-                      }}
-                    >
-                      ✓ {issue.solution_endorsements}
-                    </button>
-                    <button
-                      onClick={() => { if (!actioned && issue.solution_id) onDisregard(issue.issue_id, issue.solution_id); }}
-                      disabled={busy || actioned}
-                      title={disregarded ? "You've disregarded this solution" : "Disregard this solution"}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: "4px",
-                        padding: "2px 8px", borderRadius: "4px",
-                        border: `1px solid ${disregarded ? "rgba(240,58,87,0.5)" : "rgba(240,58,87,0.25)"}`,
-                        background: disregarded ? "rgba(240,58,87,0.18)" : "rgba(240,58,87,0.06)",
-                        color: "#f03a57", fontSize: "10px",
-                        cursor: actioned ? "default" : "pointer", fontWeight: 700,
-                        opacity: endorsed ? 0.4 : 1,
-                      }}
-                    >
-                      ✗ {issue.solution_disregards}
-                    </button>
+      {/* All solutions — active one full-strength, scratched ones grayed out
+          inline (not a separate collapsed history) with a Restore action. */}
+      {ordered.length > 0 && !isSolving && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          {ordered.map(sol => {
+            const isActive = sol.status === "active";
+            const endorsed    = endorsedSolutions.has(sol.id);
+            const disregarded = disregardedSolutions.has(sol.id);
+            const actioned    = endorsed || disregarded;
+            return (
+              <div
+                key={sol.id}
+                style={{
+                  padding:       "8px 10px",
+                  borderRadius:  "5px",
+                  background:    isActive ? "var(--raised,#0f1e2e)" : "rgba(255,255,255,0.02)",
+                  border:        `1px solid ${isActive ? "var(--line,rgba(255,255,255,0.06))" : "rgba(255,255,255,0.04)"}`,
+                  opacity:       isActive ? 1 : 0.55,
+                  display:       "flex",
+                  flexDirection: "column",
+                  gap:           "8px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{
+                      margin: 0, fontSize: "12px", lineHeight: 1.6,
+                      color: isActive ? "var(--ink-1,#9ab0c8)" : "var(--ink-2,#5a7490)",
+                      textDecoration: isActive ? "none" : "line-through",
+                    }}>
+                      {sol.description}
+                    </p>
+                    <div style={{ fontSize: "9px", color: "var(--ink-3,#2a3d52)", marginTop: "4px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      <span>{shortEmail(sol.proposed_by)} · {timeAgo(sol.created_at)}</span>
+                      {sol.week_tag && (
+                        <span title="Week this solution was assigned as active" style={{ color: isActive ? "#00b4ff" : "var(--ink-3,#2a3d52)" }}>
+                          · w/c {sol.week_tag}
+                        </span>
+                      )}
+                      {!isActive && sol.scratched_by && (
+                        <span>· scratched by {shortEmail(sol.scratched_by)}{sol.scratched_at ? ` ${timeAgo(sol.scratched_at)}` : ""}</span>
+                      )}
+                    </div>
                   </div>
-                );
-              })()}
-              {canManage && !isStaging && (
-                <button
-                  onClick={() => run(() => callApi(`/api/session/issues/${issue.issue_id}/solution`, { method: "DELETE" }))}
-                  disabled={busy}
-                  title="Discard this solution permanently — it moves to scratched history below"
-                  style={{
-                    padding: "2px 8px", borderRadius: "4px",
-                    border: "1px solid rgba(240,58,87,0.3)", background: "rgba(240,58,87,0.08)",
-                    color: "#f03a57", fontSize: "10px", cursor: "pointer", flexShrink: 0, fontWeight: 600,
-                  }}
-                >
-                  ✗ Scratch
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Observed weeks */}
-          <div>
-            <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", fontWeight: 700, marginBottom: "6px", letterSpacing: "0.4px" }}>
-              OBSERVED RESOLVE
-            </div>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              <ObsBox
-                done={!!issue.observed_week_1}
-                label="Week 1"
-                onClick={canManage && !issue.observed_week_1
-                  ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
-                      method: "PATCH", body: JSON.stringify({ week: 1 }),
-                    }))
-                  : undefined}
-              />
-              <ObsBox
-                done={!!issue.observed_week_2}
-                label="Week 2"
-                onClick={canManage && !issue.observed_week_2 && !!issue.observed_week_1
-                  ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
-                      method: "PATCH", body: JSON.stringify({ week: 2 }),
-                    }))
-                  : undefined}
-              />
-              <ObsBox
-                done={!!issue.observed_week_3}
-                label="Week 3"
-                onClick={canManage && !issue.observed_week_3 && !!issue.observed_week_2
-                  ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
-                      method: "PATCH", body: JSON.stringify({ week: 3 }),
-                    }))
-                  : undefined}
-              />
-            </div>
-            {isStaging && issue.staging_days_remaining !== null && (
-              <div style={{ marginTop: "5px", fontSize: "10px", color: "#f0a030" }}>
-                ⏳ {issue.staging_days_remaining}d remaining in staging
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Scratched solutions toggle */}
-      {issue.scratched_solutions.length > 0 && (
-        <div>
-          <button
-            onClick={() => setScratchedOpen(v => !v)}
-            title="View previously discarded solution attempts for this issue"
-            style={{
-              background: "none", border: "none", color: "var(--ink-2,#5a7490)",
-              fontSize: "11px", cursor: "pointer", padding: "0",
-            }}
-          >
-            {scratchedOpen ? "▾" : "▸"} {issue.scratched_solutions.length} scratched
-          </button>
-          {scratchedOpen && (
-            <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "4px" }}>
-              {issue.scratched_solutions.map(s => (
-                <div
-                  key={s.solution_id}
-                  style={{
-                    padding: "6px 8px", borderRadius: "4px",
-                    background: "var(--raised,#0f1e2e)", border: "1px solid var(--line,rgba(255,255,255,0.06))",
-                  }}
-                >
-                  <p style={{ margin: 0, fontSize: "11px", color: "var(--ink-2,#5a7490)", textDecoration: "line-through", lineHeight: 1.5 }}>
-                    {s.description}
-                  </p>
-                  <div style={{ fontSize: "9px", color: "var(--ink-3,#2a3d52)", marginTop: "3px" }}>
-                    {shortEmail(s.scratched_by ?? s.proposed_by)}
-                    {s.scratched_at ? ` · ${timeAgo(s.scratched_at)}` : ""}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexShrink: 0, alignItems: "flex-end" }}>
+                    {isActive && !canResolve && canRecord && (
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        <button
+                          onClick={() => { if (!actioned) onEndorse(issue.issue_id, sol.id); }}
+                          disabled={busy || actioned}
+                          title={endorsed ? "You've endorsed this solution" : "Endorse this solution"}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: "4px",
+                            padding: "2px 8px", borderRadius: "4px",
+                            border: `1px solid ${endorsed ? "rgba(0,204,122,0.5)" : "rgba(0,204,122,0.25)"}`,
+                            background: endorsed ? "rgba(0,204,122,0.18)" : "rgba(0,204,122,0.06)",
+                            color: "#00cc7a", fontSize: "10px",
+                            cursor: actioned ? "default" : "pointer", fontWeight: 700,
+                            opacity: disregarded ? 0.4 : 1,
+                          }}
+                        >
+                          ✓ {sol.endorsements}
+                        </button>
+                        <button
+                          onClick={() => { if (!actioned) onDisregard(issue.issue_id, sol.id); }}
+                          disabled={busy || actioned}
+                          title={disregarded ? "You've disregarded this solution" : "Disregard this solution"}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: "4px",
+                            padding: "2px 8px", borderRadius: "4px",
+                            border: `1px solid ${disregarded ? "rgba(240,58,87,0.5)" : "rgba(240,58,87,0.25)"}`,
+                            background: disregarded ? "rgba(240,58,87,0.18)" : "rgba(240,58,87,0.06)",
+                            color: "#f03a57", fontSize: "10px",
+                            cursor: actioned ? "default" : "pointer", fontWeight: 700,
+                            opacity: endorsed ? 0.4 : 1,
+                          }}
+                        >
+                          ✗ {sol.disregards}
+                        </button>
+                      </div>
+                    )}
+                    {isActive && canManage && !isStaging && (
+                      <button
+                        onClick={() => run(() => callApi(`/api/session/issues/${issue.issue_id}/solution`, { method: "DELETE" }))}
+                        disabled={busy}
+                        title="Scratch this solution — it stays visible below and can be restored"
+                        style={{
+                          padding: "2px 8px", borderRadius: "4px",
+                          border: "1px solid rgba(240,58,87,0.3)", background: "rgba(240,58,87,0.08)",
+                          color: "#f03a57", fontSize: "10px", cursor: "pointer", flexShrink: 0, fontWeight: 600,
+                        }}
+                      >
+                        ✗ Scratch
+                      </button>
+                    )}
+                    {!isActive && canManage && (
+                      <button
+                        onClick={() => onRestore(issue.issue_id, sol.id)}
+                        disabled={busy}
+                        title="Bring this solution back as the active one"
+                        style={{
+                          padding: "2px 8px", borderRadius: "4px",
+                          border: "1px solid rgba(0,180,255,0.3)", background: "rgba(0,180,255,0.08)",
+                          color: "#00b4ff", fontSize: "10px", cursor: "pointer", flexShrink: 0, fontWeight: 600,
+                        }}
+                      >
+                        ↺ Restore
+                      </button>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                {/* Observed weeks — active solution only */}
+                {isActive && (
+                  <div>
+                    <div style={{ fontSize: "9px", color: "var(--ink-2,#5a7490)", fontWeight: 700, marginBottom: "6px", letterSpacing: "0.4px" }}>
+                      OBSERVED RESOLVE
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      <ObsBox
+                        done={!!sol.observed_week_1}
+                        label="Week 1"
+                        onClick={canManage && !sol.observed_week_1
+                          ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
+                              method: "PATCH", body: JSON.stringify({ week: 1 }),
+                            }))
+                          : undefined}
+                      />
+                      <ObsBox
+                        done={!!sol.observed_week_2}
+                        label="Week 2"
+                        onClick={canManage && !sol.observed_week_2 && !!sol.observed_week_1
+                          ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
+                              method: "PATCH", body: JSON.stringify({ week: 2 }),
+                            }))
+                          : undefined}
+                      />
+                      <ObsBox
+                        done={!!sol.observed_week_3}
+                        label="Week 3"
+                        onClick={canManage && !sol.observed_week_3 && !!sol.observed_week_2
+                          ? () => run(() => callApi(`/api/session/issues/${issue.issue_id}/observe`, {
+                              method: "PATCH", body: JSON.stringify({ week: 3 }),
+                            }))
+                          : undefined}
+                      />
+                    </div>
+                    {isStaging && issue.staging_days_remaining !== null && (
+                      <div style={{ marginTop: "5px", fontSize: "10px", color: "#f0a030" }}>
+                        ⏳ {issue.staging_days_remaining}d remaining in staging
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -865,14 +859,14 @@ function ResolveSection({
         {canManage && !isArchived && !isSolving && (
           <button
             onClick={() => setSolvingId(issue.issue_id)}
-            title={issue.solution_id ? "Replace the current solution text" : "Write a free-text mitigation note for this issue"}
+            title={active ? "Replace the current solution text" : "Write a free-text mitigation note for this issue"}
             style={{
               padding: "4px 10px", borderRadius: "4px",
               border: "1px solid rgba(0,204,122,0.3)", background: "rgba(0,204,122,0.08)",
               color: "#00cc7a", fontSize: "11px", cursor: "pointer", fontWeight: 500,
             }}
           >
-            {issue.solution_id ? "↺ Revise Solution" : "+ Propose Solution"}
+            {active ? "↺ Revise Solution" : "+ Propose Solution"}
           </button>
         )}
 
@@ -994,7 +988,7 @@ function ResolveSection({
 /* ── Issue card ──────────────────────────────────────────────── */
 function IssueCard({
   issue, expanded, onToggle, canRecord, canResolve, canManage, solvingId, setSolvingId, onRefresh, onSetError,
-  endorsedSolutions, disregardedSolutions, onEndorse, onDisregard,
+  endorsedSolutions, disregardedSolutions, onEndorse, onDisregard, onRestore,
 }: {
   issue: Issue; expanded: boolean; onToggle: () => void;
   canRecord: boolean; canResolve: boolean; canManage: boolean;
@@ -1003,6 +997,7 @@ function IssueCard({
   endorsedSolutions: Set<string>; disregardedSolutions: Set<string>;
   onEndorse: (issueId: string, solutionId: string) => void;
   onDisregard: (issueId: string, solutionId: string) => void;
+  onRestore: (issueId: string, solutionId: string) => void;
 }) {
   const p = issue.priority;
   const c = CAT[issue.category] ?? CAT.other;
@@ -1133,6 +1128,7 @@ function IssueCard({
             disregardedSolutions={disregardedSolutions}
             onEndorse={onEndorse}
             onDisregard={onDisregard}
+            onRestore={onRestore}
           />
         </div>
       )}
@@ -1223,6 +1219,13 @@ export default function IssuePanel({
       setApiError(err);
       setDisregardedSolutions(prev => { const s = new Set(prev); s.delete(solutionId); return s; });
     } else { loadIssues(); }
+  }
+
+  async function handleRestore(issueId: string, solutionId: string) {
+    const err = await callApi(`/api/session/issues/${issueId}/solution/restore`, {
+      method: "POST", body: JSON.stringify({ solution_id: solutionId }),
+    });
+    if (err) setApiError(err); else loadIssues();
   }
 
   useEffect(() => {
@@ -1683,6 +1686,7 @@ export default function IssuePanel({
                     disregardedSolutions={disregardedSolutions}
                     onEndorse={handleEndorse}
                     onDisregard={handleDisregard}
+                    onRestore={handleRestore}
                   />
                 ))}
               </div>
