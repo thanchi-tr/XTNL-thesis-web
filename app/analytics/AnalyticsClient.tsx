@@ -6,6 +6,8 @@ import { getMondayAESTKey } from "@/lib/weekKey";
 import IssuePanel from "@/components/issues/IssuePanel";
 import FirmwareCopyButton from "@/components/session/FirmwareCopyButton";
 import AuditReportButton from "@/components/session/AuditReportButton";
+import SOPBuilderButton from "@/components/session/SOPBuilderButton";
+import EnforceSopManager from "@/components/session/EnforceSopManager";
 import Sev1Banner from "@/components/session/Sev1Banner";
 
 /* ─── Types ─────────────────────────────────────────────── */
@@ -2369,11 +2371,15 @@ type LiveStatus  = "idle" | "loading" | "loaded" | "error";
 interface LiveMeta { filename: string; reportDate: string; fetchedAt?: string }
 
 export default function AnalyticsClient({ user }: { user: { email?: string; name?: string } }) {
-  /* Session Statistics (the existing dashboard) vs. Issue Resolver — mutually
-     exclusive full-screen views on this page only. The floating issue toggle
-     (IssuePanel's FAB) doubles as the Issue Resolver activator here instead
-     of popping up its usual side panel — see `layout="page"` below. */
-  const [analyticsView, setAnalyticsView] = useState<"stats" | "issues">("stats");
+  /* Session Statistics (the existing dashboard) vs. Issue Resolver vs.
+     Enforce SOP — mutually exclusive full-screen views on this page only.
+     The floating issue toggle (IssuePanel's FAB) doubles as the Issue
+     Resolver activator here instead of popping up its usual side panel —
+     see `layout="page"` below. */
+  const [analyticsView, setAnalyticsView] = useState<"stats" | "issues" | "enforce">("stats");
+
+  const { data: sessionForRoles } = useSession();
+  const isStrategist = ((sessionForRoles as any)?.roles ?? []).some((r: string) => ["strategist", "fund_manager"].includes(r));
 
   const [dataSource, setDataSource] = useState<DataSource>("live");
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("idle");
@@ -2486,6 +2492,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
             </span>
             {/* Read-only here — sign-off itself happens in the session (analyst view) */}
             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              <SOPBuilderButton />
               <AuditReportButton />
               <FirmwareCopyButton />
             </div>
@@ -2497,8 +2504,9 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
             Resolver (full-screen, redesigned). Mutually exclusive. */}
         <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
           {([
-            { key: "stats" as const,  label: "Session Statistics" },
-            { key: "issues" as const, label: "Issue Resolver" },
+            { key: "stats" as const,   label: "Session Statistics" },
+            { key: "issues" as const,  label: "Issue Resolver" },
+            ...(isStrategist ? [{ key: "enforce" as const, label: "Enforce SOP" }] : []),
           ]).map(({ key, label }) => {
             const active = analyticsView === key;
             return (
@@ -2821,6 +2829,10 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
         {/* Session schedule config — strategist defines when alarm is active vs break */}
         <SessionScheduleConfig hourly={report?.hourly ?? {}} />
         </>
+        )}
+
+        {analyticsView === "enforce" && isStrategist && (
+          <EnforceSopManager />
         )}
 
         {/* Issue Resolver — the same IssuePanel component/FAB used on every
