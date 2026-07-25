@@ -21,6 +21,7 @@ import {
   TAXONOMY, triageScore, similarityPct, TRIAGE_MATCH_THRESHOLD,
   KMS_STATUS_META, toKmsStatus, taxonomyLabels, type KmsStatus,
 } from "@/lib/kms";
+import { getRunbook } from "@/lib/runbooks";
 
 export interface TriageLedgerIssue {
   issue_id: string;
@@ -71,6 +72,7 @@ export default function TriageReportForm({
   const domainNode = useMemo(() => TAXONOMY.find(d => d.id === domain), [domain]);
   const subNode    = useMemo(() => domainNode?.subs.find(s => s.id === subsystem), [domainNode, subsystem]);
   const leafValid  = !!subNode?.leaves.find(l => l.id === leaf);
+  const runbook    = useMemo(() => getRunbook(leaf), [leaf]);
   const draftReady = leafValid && title.trim().length >= 4;
 
   function resetFork() { setFork("idle"); setMatches([]); setScanMs(null); setErr(null); }
@@ -177,6 +179,24 @@ export default function TriageReportForm({
           </select>
         </div>
       </div>
+
+      {/* ── Runbook — surfaces the instant a leaf is selected, so there's
+           nothing to search for while actively logging a live incident ── */}
+      {runbook && (
+        <div style={{
+          padding: "8px 10px", borderRadius: 8,
+          border: "1px solid rgba(0,180,255,0.22)", background: "rgba(0,180,255,0.05)",
+        }}>
+          <div className="mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", color: "#00b4ff", marginBottom: 5 }}>
+            RUNBOOK — {runbook.title.toUpperCase()}
+          </div>
+          <ol style={{ margin: 0, paddingLeft: 16, display: "flex", flexDirection: "column", gap: 4 }}>
+            {runbook.steps.map((step, i) => (
+              <li key={i} style={{ fontSize: 11, color: "var(--ink-1,#9ab0c8)", lineHeight: 1.5 }}>{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       {/* ── Symptom telemetry ── */}
       <div>

@@ -11,6 +11,7 @@ import IssuePanel from "@/components/issues/IssuePanel";
 import OngoingStrategy from "@/components/issues/OngoingStrategy";
 import FirmwareCopyButton from "@/components/session/FirmwareCopyButton";
 import PipelineStagingGate from "@/components/session/PipelineStagingGate";
+import OpsGovernanceGuard from "@/components/session/OpsGovernanceGuard";
 
 const IS_DEV = process.env.NODE_ENV === "development";
 
@@ -4818,6 +4819,7 @@ export default function SessionClient({ user, viewMode }: { user: User; viewMode
   return (
     <div style={{ minHeight: "100%", paddingBottom: 64 }}>
       <Toaster toasts={toasts} />
+      <OpsGovernanceGuard />
       <div className="site-container" style={{ paddingTop: 20 }}>
 
         {/* ── PAGE HEADER ──────────────────────────────────── */}

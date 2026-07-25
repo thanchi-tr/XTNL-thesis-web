@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { KMS_STATUS_META, toKmsStatus, taxonomyLabels } from "@/lib/kms";
+import { KMS_STATUS_META, toKmsStatus, taxonomyLabels, priorityToSev, SEV_META } from "@/lib/kms";
+import { getRunbook } from "@/lib/runbooks";
 import TriageReportForm from "@/components/issues/kms/TriageReportForm";
 import KmsDashboard     from "@/components/issues/kms/KmsDashboard";
 import ToolRegistry     from "@/components/issues/kms/ToolRegistry";
@@ -199,6 +200,29 @@ function PriorityBadge({ p }: { p: number }) {
   );
 }
 
+function SevBadge({ priority }: { priority: number }) {
+  const sev  = priorityToSev(priority);
+  const meta = SEV_META[sev];
+  return (
+    <span
+      title={meta.directive}
+      className="mono"
+      style={{
+        padding:       "2px 6px",
+        borderRadius:  "4px",
+        fontSize:      "9px",
+        fontWeight:    700,
+        letterSpacing: "0.05em",
+        background:    meta.bg,
+        color:         meta.color,
+        flexShrink:    0,
+      }}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
 function CategoryBadge({ cat }: { cat: Category }) {
   const c = CAT[cat] ?? CAT.other;
   return (
@@ -258,6 +282,44 @@ function ObsBox({ done, label, onClick }: { done: boolean; label: string; onClic
     >
       {done ? "✓" : "○"} {label}
     </button>
+  );
+}
+
+/* ── Actionable runbook ──────────────────────────────────────── */
+function RunbookCard({ leafId }: { leafId?: string | null }) {
+  const [open, setOpen] = useState(true);
+  const runbook = getRunbook(leafId);
+  if (!runbook) return null;
+  return (
+    <div style={{
+      borderRadius: 6, border: "1px solid rgba(0,180,255,0.22)", background: "rgba(0,180,255,0.05)",
+      overflow: "hidden",
+    }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        title={open ? "Collapse runbook" : "Expand runbook"}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 6,
+          padding: "6px 9px", background: "none", border: "none", cursor: "pointer",
+        }}
+      >
+        <span style={{ fontSize: 10, color: "#00b4ff" }}>▸</span>
+        <span className="mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", color: "#00b4ff" }}>
+          RUNBOOK
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 500, color: "var(--ink-1,#9ab0c8)", flex: 1, textAlign: "left" }}>
+          {runbook.title}
+        </span>
+        <span style={{ fontSize: 10, color: "var(--ink-2,#5a7490)" }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <ol style={{ margin: 0, padding: "0 12px 10px 26px", display: "flex", flexDirection: "column", gap: 5 }}>
+          {runbook.steps.map((step, i) => (
+            <li key={i} style={{ fontSize: 11.5, color: "var(--ink-1,#9ab0c8)", lineHeight: 1.55 }}>{step}</li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 
@@ -977,6 +1039,7 @@ function IssueCard({
         }}
       >
         <PriorityBadge p={p} />
+        <SevBadge priority={p} />
         <span style={{ fontSize: "9px", color: c.color, flexShrink: 0 }}>{c.icon}</span>
         <span
           style={{
@@ -1050,6 +1113,7 @@ function IssueCard({
               </div>
             )}
           </div>
+          <RunbookCard leafId={issue.leaf_node} />
           <RecordSection
             issue={issue}
             canRecord={canRecord}

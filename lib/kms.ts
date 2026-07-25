@@ -79,6 +79,26 @@ export const TAXONOMY: TaxonomyDomain[] = [
       ]},
     ],
   },
+  {
+    id: "trust_governance", label: "Trust Governance", hint: "Capital Floor · Code-Freeze",
+    subs: [
+      { id: "capital_floor", label: "Capital Floor Safety", leaves: [
+        { id: "weekly_drawdown_floor_breach",   label: "Weekly drawdown floor breach" },
+        { id: "cumulative_r_ceiling_approach",  label: "Cumulative R ceiling approach" },
+        { id: "fund_size_drift_unverified",     label: "Fund size drift unverified" },
+      ]},
+      { id: "code_freeze", label: "Code-Freeze Violation", leaves: [
+        { id: "unauthorized_firmware_mutation", label: "Unauthorized firmware mutation" },
+        { id: "off_window_deploy",              label: "Off-window deploy" },
+        { id: "untested_config_push",           label: "Untested config push" },
+      ]},
+      { id: "audit_integrity", label: "Audit Integrity", leaves: [
+        { id: "auditor_schema_exhaustion",      label: "LLM auditor schema exhaustion" },
+        { id: "ledger_reconciliation_mismatch", label: "Ledger reconciliation mismatch" },
+        { id: "signoff_bypass",                 label: "Weekly sign-off bypass" },
+      ]},
+    ],
+  },
 ];
 
 /** Server-side lockout: true only for an exact Domain→Sub→Leaf path in the tree. */
@@ -94,6 +114,32 @@ export function taxonomyLabels(domain?: string | null, subsystem?: string | null
   const l = s?.leaves.find(x => x.id === leaf);
   return { domain: d?.label ?? null, subsystem: s?.label ?? null, leaf: l?.label ?? null };
 }
+
+/* ── Severity (SEV) mapping ────────────────────────────────────────────────
+ * Standardises the existing 0–5 priority scale (DIRE…INFO) into 4 SEV bands
+ * with an explicit operational directive per band. This does not invent a
+ * new severity source — it's a display/labeling layer over `priority`,
+ * which is already the real, stored field. There is no automated engine
+ * halt wired to this: the frontend has no live control over the Python
+ * pipeline's own halt state (that's set by the risk engine/LLM audit
+ * during a live run, not by the issue tracker), so SEV1's directive is a
+ * clear operator instruction, not a fabricated automation.              */
+
+export type Sev = 1 | 2 | 3 | 4;
+
+export function priorityToSev(priority: number): Sev {
+  if (priority <= 1) return 1; // DIRE, CRITICAL
+  if (priority === 2) return 2; // HIGH
+  if (priority <= 4) return 3; // MEDIUM, LOW
+  return 4;                     // INFO
+}
+
+export const SEV_META: Record<Sev, { label: string; color: string; bg: string; directive: string }> = {
+  1: { label: "SEV1", color: "#f03a57",           bg: "rgba(240,58,87,0.14)",   directive: "Halt live trading — resolve before continuing." },
+  2: { label: "SEV2", color: "#f0a030",           bg: "rgba(240,160,48,0.12)",  directive: "Resolve before next session." },
+  3: { label: "SEV3", color: "#4d9cf5",           bg: "rgba(77,156,245,0.10)",  directive: "Monitor — continued operation permitted." },
+  4: { label: "SEV4", color: "var(--ink-2,#5a7490)", bg: "rgba(142,163,190,0.08)", directive: "Log only." },
+};
 
 /* ── Survivability pipeline ───────────────────────────────────────────────── */
 
