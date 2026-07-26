@@ -13,7 +13,7 @@ const LINKS: { href: string; label: string; roles: string[] | null; hideWhenAuth
   { href: "/model",      label: "Simulator",  roles: null,                                    hideWhenAuthed: true,  accent: false },
   { href: "/data",       label: "Data",       roles: ["analyst", "fund_manager"],             hideWhenAuthed: false, accent: true  },
   { href: "/session",    label: "Session",    roles: ["operator", "analyst", "fund_manager"], hideWhenAuthed: false, accent: true  },
-  { href: "/analytics",  label: "Analytics",  roles: ["strategist", "fund_manager"],          hideWhenAuthed: false, accent: true  },
+  { href: "/analytics",  label: "Command Center", roles: ["strategist", "fund_manager"],       hideWhenAuthed: false, accent: true  },
 ];
 
 export default function NavBar() {

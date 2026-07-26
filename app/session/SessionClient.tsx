@@ -3624,31 +3624,53 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
       `}</style>
       <div style={{
         marginTop: 12,
-        background: "var(--sub)",
-        borderRadius: 8,
-        outline: `1px solid ${running ? "rgba(0,204,122,0.3)" : "var(--line-hi)"}`,
-        transition: "outline-color 0.2s",
+        position: "relative",
+        background: "var(--card)",
+        backgroundImage: "linear-gradient(160deg, rgba(255,255,255,0.03) 0%, transparent 50%)",
+        borderRadius: 10,
+        border: `1px solid ${running ? "rgba(0,204,122,0.32)" : "var(--line-hi)"}`,
+        boxShadow: running ? "0 4px 26px rgba(0,204,122,0.08)" : "0 2px 14px rgba(0,0,0,0.22)",
+        transition: "border-color 0.25s, box-shadow 0.25s",
         overflow: "hidden",
       }}>
+        {/* Top accent — quiet "this is live" trust mark, pulses only while armed */}
+        <div style={{
+          position: "absolute", top: 0, left: 14, right: 14, height: 1,
+          background: `linear-gradient(90deg, transparent, ${running ? "var(--green)" : "var(--line-hi)"}, transparent)`,
+          animation: running ? "alarmAccentPulse 3.2s ease-in-out infinite" : "none",
+        }} />
+        <style>{`@keyframes alarmAccentPulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }`}</style>
 
         {/* ── Header row ── */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", borderBottom: showSettings ? "1px solid var(--line)" : "none" }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-1)", letterSpacing: "0.01em", flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderBottom: showSettings ? "1px solid var(--line)" : "none" }}>
+          <span style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 24, height: 24, borderRadius: 6, flexShrink: 0,
+            background: running ? "rgba(0,204,122,0.12)" : "rgba(255,255,255,0.04)",
+            color: running ? "var(--green)" : "var(--ink-3)",
+            transition: "background 0.25s, color 0.25s",
+          }}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path d="M8 2v1.4M8 12.5c0 1.1-.9 2-2 2s-2-.9-2-2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              <path d="M3 12.5h10l-1.2-1.7c-.4-.55-.6-1.2-.6-1.87V6.7A3.2 3.2 0 0 0 8 3.5a3.2 3.2 0 0 0-3.2 3.2v2.23c0 .67-.2 1.32-.6 1.87L3 12.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+            </svg>
+          </span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink-0)", letterSpacing: "0.01em", flex: 1 }}>
             Focus Alarm
           </span>
           {running && (
-            <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--green)", background: "rgba(0,204,122,0.1)", padding: "2px 7px", borderRadius: 3, letterSpacing: "0.06em" }}>
-              ACTIVE
+            <span className="chip chip-green">
+              Active
             </span>
           )}
           {isScheduled && (
-            <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--amber)", background: "rgba(240,160,48,0.12)", padding: "2px 7px", borderRadius: 3, letterSpacing: "0.06em" }}>
-              SCHEDULED
+            <span className="chip chip-amber">
+              Scheduled
             </span>
           )}
           {tradingSessionMode && !isInTradingSessionMelbourne() && (
-            <span style={{ fontSize: 9.5, fontWeight: 700, color: "#4d9cf5", background: "rgba(77,156,245,0.1)", padding: "2px 7px", borderRadius: 3, letterSpacing: "0.06em" }}>
-              OFF-HOURS
+            <span className="chip chip-blue">
+              Off-Hours
             </span>
           )}
           {/* Challenge mute toggle */}
@@ -3658,12 +3680,13 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
             onClick={() => setChallengeSilenced(s => !s)}
             style={{
               display: "flex", alignItems: "center", gap: 4,
-              padding: "2px 8px", borderRadius: 3, border: "none",
-              background: challengeSilenced ? "rgba(255,100,100,0.12)" : "rgba(0,204,122,0.08)",
+              padding: "3px 9px", borderRadius: 6,
+              border: `1px solid ${challengeSilenced ? "rgba(255,100,100,0.22)" : "rgba(0,204,122,0.20)"}`,
+              background: challengeSilenced ? "rgba(255,100,100,0.10)" : "rgba(0,204,122,0.08)",
               color: challengeSilenced ? "#ff6464" : "var(--green)",
               fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em",
               cursor: "pointer", flexShrink: 0,
-              transition: "background 0.15s, color 0.15s",
+              transition: "background 0.15s, color 0.15s, border-color 0.15s",
             }}
           >
             {challengeSilenced ? (
@@ -3683,11 +3706,11 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
             aria-label="Toggle alarm settings"
             onClick={() => setShowSettings(s => !s)}
             style={{
-              width: 26, height: 26, borderRadius: 5, border: "1px solid var(--line-hi)",
+              width: 26, height: 26, borderRadius: 6, border: "1px solid var(--line-hi)",
               background: showSettings ? "rgba(0,204,122,0.1)" : "var(--raised)",
               color: showSettings ? "var(--green)" : "var(--ink-2)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer", flexShrink: 0, transition: "background 0.15s, color 0.15s",
+              cursor: "pointer", flexShrink: 0, transition: "background 0.15s, color 0.15s, border-color 0.15s",
             }}
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -3922,30 +3945,45 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         )}
 
         {/* ── Always-visible body ── */}
-        <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-
+        <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", gap: 11 }}>
 
           {/* Dual countdown tiles */}
           <div style={{ display: "flex", gap: 8 }}>
             <div style={{
-              flex: 1, padding: "7px 10px", borderRadius: 5,
-              background: running ? "var(--raised)" : "var(--card)",
-              border: `1px solid ${isAnalystMode ? "rgba(240,160,48,0.18)" : running && countdown !== null && countdown < 60 ? "rgba(0,204,122,0.25)" : "var(--line)"}`,
-              transition: "border-color 0.3s",
+              flex: 1, padding: "9px 11px", borderRadius: 8,
+              background: running ? "var(--raised)" : "var(--sub)",
+              backgroundImage: running ? "linear-gradient(160deg, rgba(255,255,255,0.03) 0%, transparent 55%)" : "none",
+              border: `1px solid ${isAnalystMode ? "rgba(240,160,48,0.20)" : running && countdown !== null && countdown < 60 ? "rgba(0,204,122,0.28)" : "var(--line-hi)"}`,
+              boxShadow: running ? "0 2px 10px rgba(0,0,0,0.18)" : "none",
+              transition: "border-color 0.3s, background 0.3s, box-shadow 0.3s",
             }}>
-              <p style={{ margin: "0 0 1px", fontSize: 9.5, fontWeight: 600, color: isAnalystMode ? "var(--amber)" : "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>Next Alarm</p>
-              <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: isAnalystMode ? "var(--amber)" : running && countdown !== null && countdown < 60 ? "var(--green)" : running ? "var(--ink-1)" : "var(--ink-3)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden style={{ color: isAnalystMode ? "var(--amber)" : "var(--ink-4)", flexShrink: 0 }}>
+                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.1"/>
+                  <path d="M6 3.2V6l1.8 1.2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+                </svg>
+                <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: isAnalystMode ? "var(--amber)" : "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Next Alarm</p>
+              </div>
+              <p className="data-value" style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", color: isAnalystMode ? "var(--amber)" : running && countdown !== null && countdown < 60 ? "var(--green)" : running ? "var(--ink-0)" : "var(--ink-3)" }}>
                 {running && countdown !== null ? fmtCountdown(countdown) : `${dispInterval - dispFocus}:00`}
               </p>
             </div>
             <div style={{
-              flex: 1, padding: "7px 10px", borderRadius: 5,
-              background: focusRemain ? "rgba(0,204,122,0.04)" : "var(--card)",
-              border: `1px solid ${focusRemain ? "rgba(0,204,122,0.18)" : "var(--line)"}`,
-              transition: "background 0.3s, border-color 0.3s",
+              flex: 1, padding: "9px 11px", borderRadius: 8,
+              background: focusRemain ? "rgba(0,204,122,0.05)" : "var(--sub)",
+              backgroundImage: focusRemain ? "linear-gradient(160deg, rgba(0,204,122,0.05) 0%, transparent 55%)" : "none",
+              border: `1px solid ${focusRemain ? "rgba(0,204,122,0.22)" : "var(--line-hi)"}`,
+              boxShadow: focusRemain ? "0 2px 10px rgba(0,0,0,0.18)" : "none",
+              transition: "background 0.3s, border-color 0.3s, box-shadow 0.3s",
             }}>
-              <p style={{ margin: "0 0 1px", fontSize: 9.5, fontWeight: 600, color: focusRemain ? "var(--green)" : "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>Focus Left</p>
-              <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 16, fontWeight: 700, color: focusRemain ? "var(--ink-1)" : "var(--ink-3)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden style={{ color: focusRemain ? "var(--green)" : "var(--ink-4)", flexShrink: 0 }}>
+                  <circle cx="6" cy="6" r="3.2" stroke="currentColor" strokeWidth="1.1"/>
+                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.1" opacity="0.4"/>
+                </svg>
+                <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: focusRemain ? "var(--green)" : "var(--ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>Focus Left</p>
+              </div>
+              <p className="data-value" style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", color: focusRemain ? "var(--ink-0)" : "var(--ink-3)" }}>
                 {focusRemain ? fmtCountdown(focusRemain) : `${dispFocus}:00`}
               </p>
             </div>
@@ -4001,29 +4039,31 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
               disabled={syncing}
               onClick={handleStop}
               style={{
-                width: "100%", padding: "9px 0", borderRadius: 6, border: "none",
-                background: "rgba(240,58,87,0.1)", color: "var(--red)",
-                outline: "1px solid rgba(240,58,87,0.28)",
+                width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid rgba(240,58,87,0.32)",
+                background: "rgba(240,58,87,0.10)", color: "var(--red)",
                 fontSize: 12.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
-                transition: "background 0.15s, color 0.15s, outline-color 0.15s",
+                transition: "background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s",
                 letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
               }}
+              onMouseEnter={e => { if (!syncing) { e.currentTarget.style.background = "rgba(240,58,87,0.16)"; e.currentTarget.style.borderColor = "rgba(240,58,87,0.5)"; } }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(240,58,87,0.10)"; e.currentTarget.style.borderColor = "rgba(240,58,87,0.32)"; }}
             >
               {syncing ? "Syncing…" : "Stop Alarm"}
             </button>
           ) : isScheduled ? (
             /* ── Scheduled: countdown + cancel ── */
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               <div style={{
-                padding: "9px 12px", borderRadius: 6,
-                background: "rgba(240,160,48,0.07)",
-                outline: "1px solid rgba(240,160,48,0.22)",
+                padding: "10px 12px", borderRadius: 8,
+                background: "rgba(240,160,48,0.06)",
+                backgroundImage: "linear-gradient(160deg, rgba(240,160,48,0.05) 0%, transparent 55%)",
+                border: "1px solid rgba(240,160,48,0.26)",
                 display: "flex", flexDirection: "column", gap: 3,
               }}>
-                <p style={{ margin: 0, fontSize: 9.5, fontWeight: 600, color: "var(--amber)", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>
+                <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: "var(--amber)", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>
                   Scheduled for {formatScheduledTime(srv.scheduled_start!)}
                 </p>
-                <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 700, color: "var(--ink-1)" }}>
+                <p className="data-value" style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--ink-0)" }}>
                   Starts in {fmtScheduleRemaining(srv.scheduled_start!)}
                 </p>
               </div>
@@ -4032,33 +4072,37 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                 disabled={syncing}
                 onClick={handleCancelSchedule}
                 style={{
-                  width: "100%", padding: "7px 0", borderRadius: 6, border: "none",
+                  width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid rgba(240,58,87,0.26)",
                   background: "rgba(240,58,87,0.07)", color: "var(--red)",
-                  outline: "1px solid rgba(240,58,87,0.22)",
                   fontSize: 11.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
+                  transition: "background 0.15s, border-color 0.15s",
                   letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
                 }}
+                onMouseEnter={e => { if (!syncing) { e.currentTarget.style.background = "rgba(240,58,87,0.13)"; e.currentTarget.style.borderColor = "rgba(240,58,87,0.4)"; } }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(240,58,87,0.07)"; e.currentTarget.style.borderColor = "rgba(240,58,87,0.26)"; }}
               >
                 {syncing ? "Syncing…" : "Cancel Schedule"}
               </button>
             </div>
           ) : (
             /* ── Idle: mode toggle + optional time picker + action ── */
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {/* Mode tabs */}
-              <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", outline: "1px solid var(--line-hi)", background: "var(--raised)" }}>
+              <div style={{ display: "flex", gap: 3, borderRadius: 7, padding: 3, border: "1px solid var(--line-hi)", background: "var(--sub)" }}>
                 {(["immediate", "schedule"] as const).map(mode => (
                   <button
                     key={mode}
                     type="button"
                     onClick={() => setScheduleMode(mode)}
                     style={{
-                      flex: 1, padding: "6px 0", border: "none",
-                      background: scheduleMode === mode ? "rgba(0,204,122,0.12)" : "transparent",
+                      flex: 1, padding: "6px 0", borderRadius: 5,
+                      border: scheduleMode === mode ? "1px solid rgba(0,204,122,0.3)" : "1px solid transparent",
+                      background: scheduleMode === mode ? "var(--raised)" : "transparent",
+                      boxShadow: scheduleMode === mode ? "0 2px 8px rgba(0,0,0,0.2)" : "none",
                       color: scheduleMode === mode ? "var(--green)" : "var(--ink-3)",
                       fontSize: 10.5, fontWeight: 700,
                       cursor: "pointer", letterSpacing: "0.04em",
-                      transition: "background 0.15s, color 0.15s",
+                      transition: "background 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s",
                     }}
                   >
                     {mode === "immediate" ? "Start Now" : "Schedule"}
@@ -4077,28 +4121,22 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                     value={scheduleTime}
                     onChange={e => setScheduleTime(e.target.value)}
                     style={{
-                      flex: 1, padding: "5px 8px", borderRadius: 4,
-                      background: "var(--card)", border: "1px solid var(--line-hi)",
-                      color: "var(--ink-1)", fontSize: 13, fontFamily: "var(--font-mono)",
+                      flex: 1, padding: "6px 9px", borderRadius: 6,
+                      background: "var(--sub)", border: "1px solid var(--line-hi)",
+                      color: "var(--ink-0)", fontSize: 13, fontFamily: "var(--font-mono)",
                       fontWeight: 700, outline: "none",
                     }}
                   />
                 </div>
               )}
 
-              {/* Action button */}
+              {/* Action button — same weight as every other primary CTA in the app */}
               <button
                 type="button"
                 disabled={syncing}
                 onClick={scheduleMode === "immediate" ? handleStart : handleSchedule}
-                style={{
-                  width: "100%", padding: "9px 0", borderRadius: 6, border: "none",
-                  background: "rgba(0,204,122,0.1)", color: "var(--green)",
-                  outline: "1px solid rgba(0,204,122,0.22)",
-                  fontSize: 12.5, fontWeight: 700, cursor: syncing ? "wait" : "pointer",
-                  transition: "background 0.15s, color 0.15s, outline-color 0.15s",
-                  letterSpacing: "0.02em", opacity: syncing ? 0.6 : 1,
-                }}
+                className="btn btn-primary"
+                style={{ width: "100%", padding: "10px 0", fontSize: 12.5, opacity: syncing ? 0.6 : 1, cursor: syncing ? "wait" : "pointer" }}
               >
                 {syncing ? "Syncing…" : scheduleMode === "immediate" ? "Start Alarm" : "Schedule Alarm"}
               </button>
@@ -4718,22 +4756,42 @@ export default function SessionClient({ user, viewMode, roles }: { user: User; v
                   shown at a time. The Entry Checklist tab itself only
                   appears once a strategist has enabled it (showChecklist);
                   the operator cannot toggle that, only pick between
-                  whichever tabs are actually available. */}
-              <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 12 }}>
+                  whichever tabs are actually available. Segmented-control
+                  treatment matches the Focus Alarm card's mode tabs above
+                  it, so the two blocks read as one design language. */}
+              <div style={{ display: "flex", gap: 3, padding: 3, marginBottom: 14, borderRadius: 8, border: "1px solid var(--line-hi)", background: "var(--sub)" }}>
                 {(["checklist", "comment", "enforce"] as const)
                   .filter(tool => tool !== "checklist" || showChecklist)
                   .map(tool => {
                     const active = opSidebarTool === tool;
+                    const icon = tool === "checklist" ? (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+                        <path d="M3 4.5h10M3 8h10M3 11.5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <path d="M13 11l1 1 2-2" stroke="var(--green)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity={active ? 1 : 0.5}/>
+                      </svg>
+                    ) : tool === "comment" ? (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+                        <path d="M2 3.5h12v7H6.5L3 13.5V10.5H2v-7Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+                        <path d="M8 1.5 13.5 3.5V7.5C13.5 10.9 11.1 13.4 8 14.5C4.9 13.4 2.5 10.9 2.5 7.5V3.5L8 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                        <path d="M5.8 8l1.6 1.6 2.8-3.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    );
                     return (
                       <button key={tool} type="button" onClick={() => setOpSidebarTool(tool)} style={{
-                        padding: "8px 16px", border: "none", background: "none",
-                        borderBottom: `2px solid ${active ? "var(--green)" : "transparent"}`,
-                        marginBottom: -1,
-                        color: active ? "var(--ink-0)" : "var(--ink-3)",
-                        fontSize: 12, fontWeight: active ? 700 : 400,
-                        letterSpacing: "0.015em", cursor: "pointer",
-                        transition: "color 0.15s, border-color 0.15s",
+                        flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+                        padding: "8px 4px", borderRadius: 6,
+                        border: active ? "1px solid rgba(0,204,122,0.3)" : "1px solid transparent",
+                        background: active ? "var(--raised)" : "transparent",
+                        boxShadow: active ? "0 2px 8px rgba(0,0,0,0.2)" : "none",
+                        color: active ? "var(--green)" : "var(--ink-3)",
+                        fontSize: 10, fontWeight: 700, letterSpacing: "0.01em", lineHeight: 1.25, textAlign: "center" as const,
+                        cursor: "pointer",
+                        transition: "background 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s",
                       }}>
+                        {icon}
                         {tool === "checklist" ? "Entry Checklist" : tool === "comment" ? "Add Comment" : "Enforce SOP"}
                       </button>
                     );
