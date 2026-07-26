@@ -2485,10 +2485,10 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4, flexWrap: "wrap", rowGap: 10 }}>
             <h1 className="mono" style={{ fontSize: 18, fontWeight: 700, letterSpacing: "0.12em", color: "var(--ink-0)" }}>
-              COMMAND CENTER
+              GOVERNANCE
             </h1>
             <span className="mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--ink-3)" }}>
-              REPORTING · SOP GOVERNANCE · ISSUE RESOLUTION
+              REPORTING · SOP ENFORCEMENT · ISSUE RESOLUTION
             </span>
             {/* Read-only here — sign-off itself happens in the session (analyst view) */}
             <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>

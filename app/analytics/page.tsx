@@ -3,7 +3,7 @@ import { redirect }      from "next/navigation";
 import type { Metadata } from "next";
 import AnalyticsClient   from "./AnalyticsClient";
 
-export const metadata: Metadata = { title: "Command Center" };
+export const metadata: Metadata = { title: "Governance" };
 
 export default async function AnalyticsPage() {
   const session = await auth();
