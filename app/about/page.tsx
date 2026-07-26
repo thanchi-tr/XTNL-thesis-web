@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import ScrollDivider from "@/components/about/ScrollDivider";
 import ProjectTimeline from "@/components/about/ProjectTimeline";
 import LogoPortrait from "@/components/about/LogoPortrait";
 import SafetyPlacard from "@/components/about/SafetyPlacard";
@@ -32,11 +33,6 @@ function SectionLabel({ children, accent = "var(--green)" }: { children: React.R
     </div>
   );
 }
-
-function Divider() {
-  return <div className="xtnl-divider-glow" style={{ width: "100%", height: 1, background: "var(--line)", margin: "72px 0" }} />;
-}
-
 
 /* ── Page ───────────────────────────────────────────────── */
 export default function AboutPage() {
@@ -106,12 +102,18 @@ export default function AboutPage() {
             <span className="mono" style={{ fontSize: 8.5, fontWeight: 700, color: "var(--ink-3)", letterSpacing: "0.14em" }}>
               IDENTITY
             </span>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, margin: "12px 0 30px" }}>
-              <StatCard label="FOUNDED" value="Apr 2020" />
-              <StatCard label="CURRENT PHASE" value="Phase 3" />
-              <StatCard label="PIPELINE MODULES" value="SSoT" />
-            </div>
           </Reveal>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, margin: "12px 0 30px" }}>
+            {[
+              ["FOUNDED", "Apr 2020"],
+              ["CURRENT PHASE", "Phase 3"],
+              ["PIPELINE MODULES", "SSoT"],
+            ].map(([label, value], i) => (
+              <Reveal key={label} variant="scale" delay={90 + i * 60}>
+                <StatCard label={label} value={value} />
+              </Reveal>
+            ))}
+          </div>
 
           <Reveal delay={120}>
             <span className="mono" style={{ fontSize: 8.5, fontWeight: 700, color: "var(--ink-3)", letterSpacing: "0.14em" }}>
@@ -122,16 +124,22 @@ export default function AboutPage() {
               until it clears the target — and the operator has to sustain their own threshold to
               keep trading it.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-              <StatCard label="MIN. DETERMINISM" value={<CountUp value={65} suffix="%" />} />
-              <StatCard label="TARGET DETERMINISM" value={<CountUp value={90} suffix="%" />} />
-              <StatCard label="OPERATOR THRESHOLD" value={<CountUp value={85} suffix="%" />} />
-            </div>
           </Reveal>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+            {[
+              ["MIN. DETERMINISM", <CountUp key="a" value={65} suffix="%" />],
+              ["TARGET DETERMINISM", <CountUp key="b" value={90} suffix="%" />],
+              ["OPERATOR THRESHOLD", <CountUp key="c" value={85} suffix="%" />],
+            ].map(([label, value], i) => (
+              <Reveal key={label as string} variant="scale" delay={180 + i * 60}>
+                <StatCard label={label as string} value={value} />
+              </Reveal>
+            ))}
+          </div>
         </div>
       </section>
 
-      <Divider />
+      <ScrollDivider />
 
       {/* Origin story */}
       <section style={{ paddingBottom: 56 }}>
@@ -201,7 +209,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <Divider />
+      <ScrollDivider />
 
       {/* Founder */}
       <section style={{ paddingBottom: 80 }}>
@@ -212,22 +220,27 @@ export default function AboutPage() {
               Background
             </h2>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 32 }}>
-              {[
-                ["Born",      "8 June 1999 · Melbourne, VIC"],
-                ["Secondary", "Westall Secondary College · ATAR 94.65 (2017)"],
-                ["Tertiary",  "University of Melbourne · Bachelor of Science (Computing & Software Systems)"],
-                ["Domain",    "Quantitative trading, pipeline engineering, statistical methodology"],
-                ["Location",  "Melbourne, VIC, Australia"],
-                ["Entity",    "XTNL Solutions · ABN 96 412 697 885"],
-              ].map(([label, value]) => (
-                <div key={label} style={{ background: "var(--sub)", border: "1px solid var(--line)", borderRadius: 6, padding: "14px 16px" }}>
+          </Reveal>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 32 }}>
+            {[
+              ["Born",      "8 June 1999 · Melbourne, VIC"],
+              ["Secondary", "Westall Secondary College · ATAR 94.65 (2017)"],
+              ["Tertiary",  "University of Melbourne · Bachelor of Science (Computing & Software Systems)"],
+              ["Domain",    "Quantitative trading, pipeline engineering, statistical methodology"],
+              ["Location",  "Melbourne, VIC, Australia"],
+              ["Entity",    "XTNL Solutions · ABN 96 412 697 885"],
+            ].map(([label, value], i) => (
+              <Reveal key={label} delay={i * 45} threshold={0.15}>
+                <div style={{ background: "var(--sub)", border: "1px solid var(--line)", borderRadius: 6, padding: "14px 16px" }}>
                   <div className="mono" style={{ fontSize: 8.5, color: "var(--ink-3)", letterSpacing: "0.10em", marginBottom: 5 }}>{label}</div>
                   <div style={{ fontSize: 13, color: "var(--ink-1)", lineHeight: 1.5 }}>{value}</div>
                 </div>
-              ))}
-            </div>
+              </Reveal>
+            ))}
+          </div>
 
+          <Reveal>
             <p style={sub}>
               The project originated during undergraduate study in Computing and Software Systems,
               initially applying published discretionary methodologies to live markets.
@@ -242,12 +255,12 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <Divider />
+      <ScrollDivider />
 
       {/* Timeline */}
       <section style={{ paddingBottom: 100 }}>
         <div className="site-container">
-          <Reveal>
+          <Reveal variant="scale">
             <SectionLabel>PROJECT TIMELINE</SectionLabel>
             <h2 style={{ fontSize: "clamp(16px, 2.5vw, 22px)", fontWeight: 700, color: "var(--ink-0)", marginBottom: 20, lineHeight: 1.3 }}>
               Development History
@@ -258,16 +271,18 @@ export default function AboutPage() {
             </p>
           </Reveal>
 
-          <ProjectTimeline />
+          <Reveal delay={90} threshold={0.05}>
+            <ProjectTimeline />
+          </Reveal>
         </div>
       </section>
 
-      <Divider />
+      <ScrollDivider />
 
       {/* CTA */}
       <section style={{ paddingBottom: 100 }}>
         <div className="site-container" style={{ maxWidth: 680 }}>
-          <Reveal>
+          <Reveal variant="scale">
             <Eyebrow>Documentation</Eyebrow>
             <h2 style={{ fontSize: "clamp(16px, 2.5vw, 24px)", fontWeight: 700, color: "var(--ink-0)", marginBottom: 16, lineHeight: 1.3 }}>
               Further reading
@@ -276,6 +291,8 @@ export default function AboutPage() {
               The institutional prospectus covers the statistical framework, edge definitions,
               risk model, and system performance metrics in detail.
             </p>
+          </Reveal>
+          <Reveal delay={100}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <Link href="/prospectus" className="btn btn-primary xtnl-cta-glow" style={{ fontSize: 12, padding: "9px 22px" }}>
                 Read Prospectus
