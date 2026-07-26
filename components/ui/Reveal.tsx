@@ -8,9 +8,22 @@ interface RevealProps {
   threshold?: number;  // 0–1, default 0.08
   className?: string;
   style?: React.CSSProperties;
+  /** "up" (default, unchanged) — translateY fade.
+   *  "scale" — soft scale + fade, no vertical travel; reads more like a
+   *  materialisation than a slide, used sparingly for section headers. */
+  variant?: "up" | "scale";
 }
 
-export default function Reveal({ children, delay = 0, threshold = 0.08, className = "", style }: RevealProps) {
+const HIDDEN_TRANSFORM: Record<NonNullable<RevealProps["variant"]>, string> = {
+  up: "translateY(18px)",
+  scale: "scale(0.96)",
+};
+const SHOWN_TRANSFORM: Record<NonNullable<RevealProps["variant"]>, string> = {
+  up: "translateY(0)",
+  scale: "scale(1)",
+};
+
+export default function Reveal({ children, delay = 0, threshold = 0.08, className = "", style, variant = "up" }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,7 +34,7 @@ export default function Reveal({ children, delay = 0, threshold = 0.08, classNam
       ([entry]) => {
         if (entry.isIntersecting) {
           el.style.opacity = "1";
-          el.style.transform = "translateY(0)";
+          el.style.transform = SHOWN_TRANSFORM[variant];
           obs.disconnect();
         }
       },
@@ -29,7 +42,7 @@ export default function Reveal({ children, delay = 0, threshold = 0.08, classNam
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [threshold]);
+  }, [threshold, variant]);
 
   return (
     <div
@@ -37,7 +50,7 @@ export default function Reveal({ children, delay = 0, threshold = 0.08, classNam
       className={className}
       style={{
         opacity: 0,
-        transform: "translateY(18px)",
+        transform: HIDDEN_TRANSFORM[variant],
         transition: `opacity 0.52s cubic-bezier(0.4,0,0.2,1) ${delay}ms, transform 0.52s cubic-bezier(0.4,0,0.2,1) ${delay}ms`,
         ...style,
       }}

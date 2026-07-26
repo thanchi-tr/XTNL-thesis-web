@@ -545,3 +545,60 @@ a { transition: color 0.15s, opacity 0.15s; }
 @media (max-width: 768px) {
   .desktop-only-btn { display: none !important; }
 }
+
+/* ── About page — extra flourish ─────────────────────────── */
+@keyframes xtnlShimmer {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.xtnl-shimmer-text {
+  background: linear-gradient(100deg, var(--ink-0) 20%, #6dffc4 38%, #4d9cf5 50%, var(--ink-0) 68%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: xtnlShimmer 7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .xtnl-shimmer-text { animation: none; color: var(--ink-0); background: none; }
+}
+
+@keyframes xtnlDividerTravel {
+  0%   { left: -12%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: 108%; opacity: 0; }
+}
+.xtnl-divider-glow {
+  position: relative;
+  overflow: visible;
+}
+.xtnl-divider-glow::after {
+  content: "";
+  position: absolute;
+  top: -1.5px; width: 90px; height: 4px;
+  background: radial-gradient(ellipse, rgba(0,240,144,0.9) 0%, rgba(0,240,144,0) 72%);
+  animation: xtnlDividerTravel 6.5s cubic-bezier(0.45,0,0.55,1) infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .xtnl-divider-glow::after { display: none; }
+}
+
+.xtnl-cta-glow {
+  position: relative;
+  transition: transform 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+.xtnl-cta-glow:hover { transform: translateY(-2px); }
+.xtnl-cta-glow::before {
+  content: "";
+  position: absolute; inset: -3px; border-radius: 12px;
+  background: linear-gradient(120deg, rgba(0,240,144,0.55), rgba(77,156,245,0.5));
+  opacity: 0; filter: blur(10px);
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+.xtnl-cta-glow:hover::before { opacity: 1; }
+
+@keyframes xtnlPlacardPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.12); } }
+.xtnl-placard-pulse { display: inline-block; animation: xtnlPlacardPulse 2.4s ease-in-out infinite; }
