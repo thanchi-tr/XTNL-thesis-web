@@ -4,3 +4,4 @@ out/
 build/
 .env*.local
 data/totp-enrolled.json
+coverage/
