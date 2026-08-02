@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { useSession } from "next-auth/react";
 import type { SopRow } from "@/lib/sopTypes";
 import { EntryChecklistToggle, AttentionChallengeToggle } from "@/components/session/AnalystToggles";
 import { readCache, writeCache } from "@/lib/staleCache";
+
+const MIN_ROWS = 1;
+const MAX_ROWS = 12;
 
 const SOPS_CACHE_KEY   = "xtnl_sop_checklists_cache_v1";
 const BASELINE_CACHE_KEY = "xtnl_sop_enforcement_baseline_cache_v1";
@@ -44,10 +49,24 @@ type SubView = "active" | "archived";
  * behind their own action.
  */
 export default function EnforceSopManager() {
+  const { data: session } = useSession();
+  const roles: string[] = (session as any)?.roles ?? [];
+  const canEdit = roles.includes("strategist");
+
   const [sops,      setSops]      = useState<SopRow[]>(() => readCache<SopRow[]>(SOPS_CACHE_KEY) ?? []);
   const [loading,   setLoading]   = useState(() => readCache<SopRow[]>(SOPS_CACHE_KEY) === null);
   const [syncing,   setSyncing]   = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  /* Detail popup */
+  const [detailSop,  setDetailSop]  = useState<SopRow | null>(null);
+  const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
+  const [editTitle,  setEditTitle]  = useState("");
+  const [editItems,  setEditItems]  = useState<string[]>([""]);
+  const [editTags,   setEditTags]   = useState<string[]>([]);
+  const [editTagDraft, setEditTagDraft] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError,  setEditError]  = useState<string | null>(null);
 
   const [subView, setSubView] = useState<SubView>("active");
 
@@ -130,6 +149,66 @@ export default function EnforceSopManager() {
       setSaveErr("Failed to update that checklist's status");
     }
     setArchivingId(null);
+  };
+
+  const openDetail = (s: SopRow) => {
+    setDetailSop(s);
+    setDetailMode("view");
+    setEditError(null);
+  };
+  const closeDetail = () => { setDetailSop(null); setDetailMode("view"); setEditError(null); };
+
+  const startEdit = () => {
+    if (!detailSop) return;
+    setEditTitle(detailSop.title);
+    setEditItems(detailSop.items.length ? [...detailSop.items] : [""]);
+    setEditTags([...detailSop.tags]);
+    setEditTagDraft("");
+    setEditError(null);
+    setDetailMode("edit");
+  };
+
+  const addEditRow    = () => setEditItems(prev => prev.length < MAX_ROWS ? [...prev, ""] : prev);
+  const removeEditRow = (i: number) => setEditItems(prev => prev.length > MIN_ROWS ? prev.filter((_, idx) => idx !== i) : prev);
+  const setEditRow    = (i: number, v: string) => setEditItems(prev => prev.map((it, idx) => idx === i ? v : it));
+
+  const commitEditTagDraft = () => {
+    const t = editTagDraft.trim();
+    setEditTagDraft("");
+    if (!t) return;
+    setEditTags(prev => prev.some(x => x.toLowerCase() === t.toLowerCase()) ? prev : [...prev, t]);
+  };
+  const removeEditTag = (t: string) => setEditTags(prev => prev.filter(x => x !== t));
+
+  const saveEdit = async () => {
+    if (!detailSop) return;
+    setEditError(null);
+    const cleanItems = editItems.map(i => i.trim()).filter(Boolean);
+    if (cleanItems.length < MIN_ROWS) { setEditError("At least 1 checklist row is required"); return; }
+    if (cleanItems.length > MAX_ROWS) { setEditError(`At most ${MAX_ROWS} checklist rows are allowed`); return; }
+    if (!editTitle.trim()) { setEditError("Title is required"); return; }
+
+    setEditSaving(true);
+    try {
+      const payload = { title: editTitle.trim(), tags: editTags, items: cleanItems };
+      const r = await fetch(`/api/session/sops/${detailSop.id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error ?? "Failed to save");
+      }
+      const j = await r.json().catch(() => ({}));
+      const updated: SopRow = j.row ?? { ...detailSop, ...payload, updated_at: new Date().toISOString() };
+      const nextSops = sops.map(s => s.id === detailSop.id ? updated : s);
+      setSops(nextSops);
+      writeCache(SOPS_CACHE_KEY, nextSops);
+      setDetailSop(updated);
+      setDetailMode("view");
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Failed to save");
+    }
+    setEditSaving(false);
   };
 
   const dirty = useMemo(() => {
@@ -253,11 +332,15 @@ export default function EnforceSopManager() {
                       type="checkbox"
                       checked={selectedIds.has(s.id)}
                       onChange={() => toggleSelected(s.id)}
+                      onClick={e => e.stopPropagation()}
                       style={{ marginTop: 3, flexShrink: 0, cursor: "pointer", width: 15, height: 15, accentColor: "var(--green)" }}
                       aria-label={`Enforce ${s.title}`}
                     />
                   )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    onClick={() => openDetail(s)}
+                    style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                  >
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--ink-0)" }}>{s.title}</p>
                     <p style={{ margin: "3px 0 0", fontSize: 10.5, color: "var(--ink-3)" }}>
                       {s.items.length} row{s.items.length !== 1 ? "s" : ""}
@@ -271,7 +354,7 @@ export default function EnforceSopManager() {
                   <button
                     type="button"
                     disabled={archivingId === s.id}
-                    onClick={() => setStatus(s.id, subView === "active" ? "archived" : "active")}
+                    onClick={e => { e.stopPropagation(); setStatus(s.id, subView === "active" ? "archived" : "active"); }}
                     className="btn btn-ghost"
                     style={{ fontSize: 10.5, padding: "6px 10px", flexShrink: 0, opacity: archivingId === s.id ? 0.6 : 1 }}
                   >
@@ -298,6 +381,191 @@ export default function EnforceSopManager() {
         {saveMsg && <span style={{ fontSize: 11.5, color: "var(--green)", marginLeft: "auto" }}>✓ {saveMsg}</span>}
         {saveErr && <span style={{ fontSize: 11.5, color: "var(--red)", marginLeft: "auto" }}>{saveErr}</span>}
       </div>
+
+      {/* SOP detail / edit popup */}
+      {detailSop && typeof document !== "undefined" && createPortal(
+        <div
+          onClick={closeDetail}
+          style={{
+            position: "fixed", inset: 0, zIndex: 1000,
+            background: "rgba(0,0,0,0.6)",
+            backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+            display: "flex", alignItems: "flex-start", justifyContent: "center",
+            padding: "48px 20px", overflowY: "auto",
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: "100%", maxWidth: 640,
+              background: "var(--card)", border: "1px solid var(--line)",
+              borderRadius: 10, boxShadow: "0 8px 56px rgba(0,0,0,0.72)",
+              padding: 28,
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
+              <div>
+                <p className="section-eyebrow" style={{ margin: "0 0 4px" }}>SOP Checklist</p>
+                <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--ink-0)" }}>
+                  {detailMode === "edit" ? "Edit SOP Checklist" : detailSop.title}
+                </p>
+              </div>
+              <button
+                type="button" onClick={closeDetail} aria-label="Close"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", fontSize: 18, lineHeight: 1, padding: 4 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* ── View mode ─────────────────────────────── */}
+            {detailMode === "view" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--ink-3)" }}>
+                  <span>Status: <strong style={{ color: "var(--ink-1)" }}>{detailSop.status}</strong></span>
+                  <span>Updated {new Date(detailSop.updated_at).toLocaleString()}</span>
+                </div>
+
+                {detailSop.tags.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {detailSop.tags.map(t => <span key={t} className="chip chip-muted">{t}</span>)}
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.06em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginBottom: 8 }}>
+                    Checklist Rows
+                  </label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {detailSop.items.map((it, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                        <span style={{ width: 20, textAlign: "center", fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)", flexShrink: 0 }}>
+                          {i + 1}
+                        </span>
+                        <span style={{ fontSize: 12.5, color: "var(--ink-1)" }}>{it}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                  <button type="button" onClick={closeDetail} className="btn btn-ghost">Close</button>
+                  {canEdit && (
+                    <button type="button" onClick={startEdit} className="btn btn-primary">Edit</button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Edit mode (strategist only) ───────────── */}
+            {detailMode === "edit" && canEdit && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.06em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                    Title
+                  </label>
+                  <input
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value)}
+                    maxLength={200}
+                    style={{ width: "100%", boxSizing: "border-box", background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 6, padding: "10px 12px", fontSize: 13, color: "var(--ink-0)", outline: "none" }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.06em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                    Tags
+                  </label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 6, padding: "8px 10px" }}>
+                    {editTags.map(t => (
+                      <span key={t} className="chip chip-green" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        {t}
+                        <button
+                          type="button" onClick={() => removeEditTag(t)} aria-label={`Remove tag ${t}`}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, lineHeight: 1, fontSize: 11 }}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      value={editTagDraft}
+                      onChange={e => setEditTagDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commitEditTagDraft(); }
+                        else if (e.key === "Backspace" && !editTagDraft && editTags.length > 0) { setEditTags(prev => prev.slice(0, -1)); }
+                      }}
+                      onBlur={commitEditTagDraft}
+                      placeholder={editTags.length === 0 ? "Type a tag, press Enter…" : ""}
+                      style={{ flex: 1, minWidth: 100, background: "none", border: "none", outline: "none", fontSize: 12.5, color: "var(--ink-0)" }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.06em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                    Checklist Rows ({editItems.length}/{MAX_ROWS})
+                  </label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {editItems.map((it, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 20, textAlign: "center", fontSize: 10.5, fontFamily: "var(--font-mono)", color: "var(--ink-3)", flexShrink: 0 }}>
+                          {i + 1}
+                        </span>
+                        <input
+                          value={it}
+                          onChange={e => setEditRow(i, e.target.value)}
+                          placeholder={`Row ${i + 1}…`}
+                          maxLength={300}
+                          style={{ flex: 1, minWidth: 0, background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 6, padding: "8px 10px", fontSize: 12.5, color: "var(--ink-0)", outline: "none" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeEditRow(i)}
+                          disabled={editItems.length <= MIN_ROWS}
+                          aria-label={`Remove row ${i + 1}`}
+                          style={{
+                            width: 26, height: 26, flexShrink: 0, borderRadius: 6,
+                            background: "none", border: "1px solid var(--line)",
+                            color: editItems.length <= MIN_ROWS ? "var(--ink-4)" : "var(--red)",
+                            cursor: editItems.length <= MIN_ROWS ? "not-allowed" : "pointer",
+                            opacity: editItems.length <= MIN_ROWS ? 0.4 : 1,
+                            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addEditRow}
+                    disabled={editItems.length >= MAX_ROWS}
+                    className="btn btn-ghost"
+                    style={{ marginTop: 8, fontSize: 11.5, padding: "7px 14px", opacity: editItems.length >= MAX_ROWS ? 0.45 : 1, cursor: editItems.length >= MAX_ROWS ? "not-allowed" : "pointer" }}
+                  >
+                    + Add row
+                  </button>
+                </div>
+
+                {editError && <p style={{ color: "var(--red)", fontSize: 12, margin: 0 }}>{editError}</p>}
+
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                  <button type="button" onClick={() => setDetailMode("view")} className="btn btn-ghost">Cancel</button>
+                  <button type="button" onClick={saveEdit} disabled={editSaving} className="btn btn-primary">
+                    {editSaving
+                      ? <span style={{ display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Saving…</span>
+                      : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
