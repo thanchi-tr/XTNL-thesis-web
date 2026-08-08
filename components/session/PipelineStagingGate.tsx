@@ -350,7 +350,7 @@ export default function PipelineStagingGate({ showToast, allTradesProcessed }: {
         </div>
       )}
 
-      {hasDebugRun && (
+      {hasDebugRun && allTradesProcessed && (
         <button
           className="btn btn-primary"
           onClick={runLive}
