@@ -212,6 +212,13 @@ function melbNow() {
 ═══════════════════════════════════════════════════════════ */
 const INP = { width: "100%", boxSizing: "border-box" as const, background: "var(--sub)", border: "1px solid var(--line-hi)", borderRadius: 5, padding: "9px 11px", fontSize: 12.5, color: "var(--ink-0)", outline: "none", fontFamily: "inherit" };
 const LBL = { display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--ink-2)", letterSpacing: "0.05em", textTransform: "uppercase" as const, marginBottom: 5 };
+
+/* Flat, higher-data-ink field atoms — underline instead of a boxed/bordered
+   field, mono type, lowercase labels. Scoped to RecordTradeForm and
+   AddCommentForm only; every other form keeps INP/LBL unchanged. */
+const FLAT_INP = { width: "100%", boxSizing: "border-box" as const, background: "transparent", border: "none", borderBottom: "1px solid var(--line-hi)", borderRadius: 0, padding: "0 0 8px", fontSize: 13, color: "var(--ink-0)", outline: "none", fontFamily: "var(--font-mono), monospace" };
+const FLAT_LBL = { display: "block", fontSize: 10.5, fontWeight: 600, color: "var(--ink-2)", letterSpacing: "0.02em", textTransform: "lowercase" as const, marginBottom: 4, fontFamily: "var(--font-mono), monospace" };
+const FLAT_SUBMIT: React.CSSProperties = { width: "100%", padding: "11px", fontSize: 12.5, fontFamily: "var(--font-mono), monospace", textTransform: "lowercase", background: "transparent", border: "1px solid rgba(0,204,122,0.35)", borderRadius: 5, color: "var(--green)", fontWeight: 700, cursor: "pointer" };
 const TH  = { textAlign: "left" as const, padding: "8px 12px", fontSize: 10.5, fontWeight: 600, color: "var(--ink-2)", letterSpacing: "0.05em", textTransform: "uppercase" as const, whiteSpace: "nowrap" as const, borderBottom: "1px solid var(--line-hi)" };
 const TD  = { padding: "9px 12px", fontSize: 12.5, color: "var(--ink-1)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" as const, borderBottom: "1px solid var(--line)" };
 
@@ -545,7 +552,7 @@ function OptimalTable({ rows, loading, selected, onSelect, tz, onDelete, onRefre
   const confirmRow = confirmId ? rows.find(r => r.optimal_trade_id === confirmId) : null;
 
   return (
-    <div className="card" style={{ position: "relative" }}>
+    <div className="card" style={{ position: "relative", borderRadius: 6 }}>
       {/* ── Delete confirmation overlay ── */}
       {confirmId && (
         <div style={{
@@ -1081,7 +1088,7 @@ function LiveTable({ tz, isAnalyst, onRefresh, onHydrate }: {
 
   return (
     <>
-    <div className="card">
+    <div className="card" style={{ borderRadius: 6 }}>
       <CardHeader
         eyebrow="Live" eyebrowColor="var(--red)" title="Trade"
         badge={<span className="chip chip-red"><span style={{ display:"inline-block", width:5, height:5, borderRadius:"50%", background:"var(--red)", marginRight:5, verticalAlign:"middle" }}/>LIVE</span>}
@@ -1306,7 +1313,7 @@ function LiveTableExpandModal({ rows, tz, onClose }: { rows: LiveRow[]; tz: stri
         onClick={e => e.stopPropagation()}
         style={{
           width: "100%", maxWidth: 1180, maxHeight: "86vh",
-          background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10,
+          background: "var(--card)", border: "1px solid var(--line)", borderRadius: 6,
           boxShadow: "0 8px 56px rgba(0,0,0,0.72)",
           display: "flex", flexDirection: "column", overflow: "hidden",
         }}
@@ -1925,6 +1932,7 @@ function JournalTimeline({
       className="card"
       style={{
         overflow: "hidden",
+        borderRadius: 6,
         ...(isFullscreen ? {
           position: "fixed", inset: 0, zIndex: 9000,
           borderRadius: 0,
@@ -2138,7 +2146,7 @@ function RecordTradeForm({ selectedId, hydrate, onSuccess, showToast, baseTZ }: 
   const nowLabel = fmtTz(new Date().toISOString(), baseTZ);
 
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
+    <div className="card" style={{ overflow: "hidden", borderRadius: 6 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "4px 10px", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>Optimal Trade</span>
         <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{nowLabel}</span>
@@ -2168,8 +2176,8 @@ function RecordTradeForm({ selectedId, hydrate, onSuccess, showToast, baseTZ }: 
             <span style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5 }}>{lastErr}</span>
           </div>
         )}
-        <button type="submit" disabled={submitting} className="btn btn-primary" style={{ width: "100%", padding: "11px", fontSize: 12.5, marginTop: 2, opacity: submitting ? 0.6 : 1 }}>
-          {submitting ? "Saving…" : "Submit"}
+        <button type="submit" disabled={submitting} style={{ ...FLAT_SUBMIT, marginTop: 2, opacity: submitting ? 0.6 : 1, cursor: submitting ? "not-allowed" : "pointer" }}>
+          {submitting ? "saving…" : "submit"}
         </button>
       </form>
     </div>
@@ -2245,7 +2253,7 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, failCompliance,
   const nowLabel = fmtTz(new Date().toISOString(), baseTZ);
 
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
+    <div className="card" style={{ overflow: "hidden", borderRadius: 6 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>Add Comment</span>
@@ -2385,8 +2393,8 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, failCompliance,
             <span style={{ fontSize: 11.5, color: "var(--red)", lineHeight: 1.5 }}>{lastErr}</span>
           </div>
         )}
-        <button type="submit" className="btn btn-primary" disabled={!content.trim() || submitting} style={{ width: "100%", padding: "11px", fontSize: 12.5, opacity: submitting ? 0.6 : 1 }}>
-          {submitting ? "Saving…" : "Submit"}
+        <button type="submit" disabled={!content.trim() || submitting} style={{ ...FLAT_SUBMIT, opacity: !content.trim() || submitting ? 0.6 : 1, cursor: !content.trim() || submitting ? "not-allowed" : "pointer" }}>
+          {submitting ? "saving…" : "submit"}
         </button>
       </form>
     </div>
@@ -2473,7 +2481,7 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
   }
 
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
+    <div className="card" style={{ overflow: "hidden", borderRadius: 6 }}>
       <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
           <path d="M3 4h10M3 8h7M3 12h4" stroke="var(--green)" strokeWidth="1.5" strokeLinecap="round"/>
@@ -4663,7 +4671,7 @@ export default function SessionClient({ user, viewMode, roles }: { user: User; v
               <RecordTradeForm selectedId={selId} hydrate={hydrateValues} onSuccess={fetchOptimal} showToast={showToast} baseTZ={baseTZ} />
 
               {isStrategist && (
-                <div className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8, borderRadius: 6 }}>
                   <span className="label-xs" style={{ color: "var(--ink-3)" }}>WEEKLY REVIEW</span>
                   <button
                     className="btn btn-secondary"

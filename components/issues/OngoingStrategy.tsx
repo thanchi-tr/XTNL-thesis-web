@@ -84,9 +84,13 @@ export default function OngoingStrategy() {
   return (
     <div style={{ border: "1px solid var(--line,rgba(255,255,255,0.06))", borderRadius: 8, overflow: "hidden", background: "var(--sub,#07101c)" }}>
 
-      {/* Header */}
-      <button
+      {/* Header — a div (not a button) because it contains a real nested
+          refresh <button>; a <button> can't legally contain a <button>. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setCollapsed(v => !v)}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed(v => !v); } }}
         style={{
           width: "100%", background: "none", border: "none", cursor: "pointer",
           display: "flex", alignItems: "center", gap: 8,
@@ -115,7 +119,7 @@ export default function OngoingStrategy() {
         <span style={{ color: "var(--ink-2,#5a7490)", fontSize: 11 }}>
           {collapsed ? "▸" : "▾"}
         </span>
-      </button>
+      </div>
 
       {!collapsed && (
         <div style={{ borderTop: "1px solid var(--line,rgba(255,255,255,0.06))" }}>

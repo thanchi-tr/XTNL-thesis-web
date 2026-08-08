@@ -105,8 +105,14 @@ function TimeSpinner({ value, min, max, onChange, onComplete, inputRef, as24Hour
   const tryCommit = (raw: string): boolean => {
     const n = parseInt(raw, 10);
     if (isNaN(n)) return false;
+    // Hour field: a typed value is always read as 24-hour, not as "whatever
+    // AM/PM happens to be selected right now" — 07 -> 7 AM, 19 -> 7 PM,
+    // 12 -> 12 PM (noon), 00 -> 12 AM (midnight), regardless of prior state.
+    if (as24Hour) {
+      if (n >= 0 && n <= 23) { as24Hour(n); setDraft(null); return true; }
+      return false;
+    }
     if (n >= min && n <= max) { onChange(n); setDraft(null); return true; }
-    if (as24Hour && n >= 0 && n <= 23) { as24Hour(n); setDraft(null); return true; }
     return false;
   };
 

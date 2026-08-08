@@ -288,7 +288,7 @@ export default function PipelineStagingGate({ showToast, allTradesProcessed }: {
   const statusLabel   = !hasDebugRun ? "No preview yet" : outlierCount > 0 ? `${outlierCount} flagged` : "Clean";
 
   return (
-    <div className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+    <div className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8, borderRadius: 6 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span className="label-xs" style={{ color: "var(--ink-3)" }}>PIPELINE STAGING GATE</span>
         <span
