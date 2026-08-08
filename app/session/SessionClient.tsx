@@ -4677,7 +4677,7 @@ export default function SessionClient({ user, viewMode, roles }: { user: User; v
                 </div>
               )}
 
-              <PipelineStagingGate showToast={showToast} />
+              <PipelineStagingGate showToast={showToast} allTradesProcessed={pipeProcessDone} />
 
               <AddCommentForm tradeId={selectedTradeId ?? undefined} isAnalyst failCompliance={challengeStatus === "fail"} onSuccess={fetchJournal} showToast={showToast} baseTZ={baseTZ} />
 

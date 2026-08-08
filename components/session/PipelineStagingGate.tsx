@@ -160,10 +160,13 @@ function LiveRunOverlay({ onDone, onCancel }: { onDone: () => void; onCancel: ()
  * flagged outliers, then explicitly commit the same run live.
  *
  * Client-side state only — nothing here needs to survive a reload or be
- * seen by a different analyst, unlike weekly sign-off. "Approve & Run Live"
- * stays disabled until a debug preview has completed in this browser tab.
+ * seen by a different analyst, unlike weekly sign-off. "Run Debug Preview"
+ * stays disabled until every live trade for the week has been processed;
+ * "Approve & Run Live" doesn't render at all until a debug preview has
+ * completed in this browser tab — surfacing a disabled button before that
+ * point implied it was an alternative first step, when it isn't.
  */
-export default function PipelineStagingGate({ showToast }: { showToast?: ShowToast }) {
+export default function PipelineStagingGate({ showToast, allTradesProcessed }: { showToast?: ShowToast; allTradesProcessed: boolean }) {
   const [preview,          setPreview]          = useState<DebugPreview | null>(null);
   const [loading,          setLoading]          = useState(true);
   const [running,          setRunning]          = useState<"debug" | "live" | null>(null);
@@ -312,6 +315,12 @@ export default function PipelineStagingGate({ showToast }: { showToast?: ShowToa
         </div>
       )}
 
+      {!allTradesProcessed && !loading && (
+        <div style={{ fontSize: 11, color: "var(--amber)", lineHeight: 1.5 }}>
+          Waiting on unprocessed live trades — preview unlocks once every trade this week is scored.
+        </div>
+      )}
+
       {liveRunAt && (
         <div style={{ fontSize: 11, color: "var(--green)" }}>
           ✓ Live run triggered {new Date(liveRunAt).toLocaleTimeString()}
@@ -325,9 +334,13 @@ export default function PipelineStagingGate({ showToast }: { showToast?: ShowToa
       <button
         className="btn btn-secondary"
         onClick={runDebug}
-        disabled={running !== null}
-        title="Runs the pipeline without writing to the DB, calling the real LLM auditor, or uploading reports — only the quarantine preview is exported. Safe to re-run as many times as needed."
-        style={{ opacity: running !== null ? 0.6 : 1, cursor: running !== null ? "not-allowed" : "pointer" }}
+        disabled={running !== null || !allTradesProcessed}
+        title={
+          !allTradesProcessed
+            ? "All live trades for this week must be processed before a preview can run."
+            : "Runs the pipeline without writing to the DB, calling the real LLM auditor, or uploading reports — only the quarantine preview is exported. Safe to re-run as many times as needed."
+        }
+        style={{ opacity: running !== null || !allTradesProcessed ? 0.6 : 1, cursor: running !== null || !allTradesProcessed ? "not-allowed" : "pointer" }}
       >
         {running === "debug" ? "Running preview…" : "Run Debug Preview"}
       </button>
@@ -337,15 +350,17 @@ export default function PipelineStagingGate({ showToast }: { showToast?: ShowToa
         </div>
       )}
 
-      <button
-        className="btn btn-primary"
-        onClick={runLive}
-        disabled={running !== null || !hasDebugRun}
-        title={hasDebugRun ? "Commits this run live — real DB write, real LLM audit, real report uploads." : "Run a debug preview first"}
-        style={{ opacity: running !== null || !hasDebugRun ? 0.45 : 1, cursor: running !== null || !hasDebugRun ? "not-allowed" : "pointer" }}
-      >
-        Approve & Run Live
-      </button>
+      {hasDebugRun && (
+        <button
+          className="btn btn-primary"
+          onClick={runLive}
+          disabled={running !== null}
+          title="Commits this run live — real DB write, real LLM audit, real report uploads."
+          style={{ opacity: running !== null ? 0.45 : 1, cursor: running !== null ? "not-allowed" : "pointer" }}
+        >
+          Approve & Run Live
+        </button>
+      )}
 
       {showLiveOverlay && <LiveRunOverlay onDone={finishLiveOverlay} onCancel={cancelLiveOverlay} />}
     </div>
