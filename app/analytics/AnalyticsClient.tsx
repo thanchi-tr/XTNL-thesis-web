@@ -8,6 +8,7 @@ import FirmwareCopyButton from "@/components/session/FirmwareCopyButton";
 import AuditReportButton from "@/components/session/AuditReportButton";
 import SOPBuilderButton from "@/components/session/SOPBuilderButton";
 import EnforceSopManager from "@/components/session/EnforceSopManager";
+import CapitalInjectionPanel from "@/components/session/CapitalInjectionPanel";
 import Sev1Banner from "@/components/session/Sev1Banner";
 
 /* ─── Types ─────────────────────────────────────────────── */
@@ -2376,7 +2377,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
      The floating issue toggle (IssuePanel's FAB) doubles as the Issue
      Resolver activator here instead of popping up its usual side panel —
      see `layout="page"` below. */
-  const [analyticsView, setAnalyticsView] = useState<"stats" | "issues" | "enforce">("stats");
+  const [analyticsView, setAnalyticsView] = useState<"stats" | "issues" | "enforce" | "capital">("stats");
 
   const { data: sessionForRoles } = useSession();
   const isStrategist = ((sessionForRoles as any)?.roles ?? []).some((r: string) => ["strategist", "fund_manager"].includes(r));
@@ -2507,6 +2508,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
             { key: "stats" as const,   label: "Session Statistics" },
             { key: "issues" as const,  label: "Issue Resolver" },
             ...(isStrategist ? [{ key: "enforce" as const, label: "Enforce SOP" }] : []),
+            ...(isStrategist ? [{ key: "capital" as const, label: "Capital Injection" }] : []),
           ]).map(({ key, label }) => {
             const active = analyticsView === key;
             return (
@@ -2833,6 +2835,12 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
 
         {analyticsView === "enforce" && isStrategist && (
           <EnforceSopManager />
+        )}
+
+        {analyticsView === "capital" && isStrategist && (
+          <div style={CARD}>
+            <CapitalInjectionPanel />
+          </div>
         )}
 
         {/* Issue Resolver — the same IssuePanel component/FAB used on every
