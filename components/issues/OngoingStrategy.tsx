@@ -82,7 +82,7 @@ export default function OngoingStrategy() {
   if (strategies.length === 0 && !loading && !error) return null;
 
   return (
-    <div style={{ border: "1px solid var(--line,rgba(255,255,255,0.06))", borderRadius: 8, overflow: "hidden", background: "var(--sub,#07101c)" }}>
+    <div style={{ border: "1px solid var(--line,rgba(255,255,255,0.06))", borderRadius: 6, overflow: "hidden", background: "var(--sub,#07101c)" }}>
 
       {/* Header — a div (not a button) because it contains a real nested
           refresh <button>; a <button> can't legally contain a <button>. */}
@@ -94,7 +94,7 @@ export default function OngoingStrategy() {
         style={{
           width: "100%", background: "none", border: "none", cursor: "pointer",
           display: "flex", alignItems: "center", gap: 8,
-          padding: "10px 13px", textAlign: "left",
+          padding: "8px 13px", textAlign: "left",
         }}
       >
         <span style={{ fontSize: 10, fontWeight: 800, color: "#00cc7a", letterSpacing: "0.6px" }}>

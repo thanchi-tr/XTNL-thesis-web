@@ -144,8 +144,9 @@ export default function EnforceSopOperatorPanel({ onSuccess }: { onSuccess?: () 
       </div>
 
       {selected && (
-        <div className="card" style={{ padding: "14px 16px" }}>
-          <p style={{ margin: "0 0 10px", fontSize: 13.5, fontWeight: 700, color: "var(--ink-0)" }}>{selected.title}</p>
+        <div className="card" style={{ padding: 0, borderRadius: 6, overflow: "hidden" }}>
+          <p style={{ margin: 0, padding: "8px 16px", borderBottom: "1px solid var(--line)", fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>{selected.title}</p>
+          <div style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 }}>
             {selected.items.map((item, i) => {
               const checked = checkedItems.has(i);
@@ -189,6 +190,7 @@ export default function EnforceSopOperatorPanel({ onSuccess }: { onSuccess?: () 
           {completedIds.has(selected.id) && (
             <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--green)", textAlign: "center" }}>✓ Logged as completed</p>
           )}
+          </div>
         </div>
       )}
     </div>

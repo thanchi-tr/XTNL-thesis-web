@@ -180,7 +180,7 @@ export default function FrictionPanel({ f }: { f: FrictionReport }) {
       {metricsOpen && (
         <div className="grid-3-col" style={{ marginTop: -10 }}>
           {/* System State */}
-          <div className="card" style={{ padding: "12px 14px" }}>
+          <div className="card" style={{ padding: "12px 14px", borderRadius: 6 }}>
             <span className="chip chip-amber" style={{ marginBottom: 10, display: "inline-block", fontSize: 9 }}>System State</span>
             <MetricRow label="Streak"     value={f.state.streak} />
             <MetricRow label="Injection"  value={f.state.injection} accent={f.state.locked ? "var(--red)" : "var(--green)"} />
@@ -190,7 +190,7 @@ export default function FrictionPanel({ f }: { f: FrictionReport }) {
             {f.state.streakNote && <p style={{ marginTop: 8, fontSize: 10.5, color: "var(--ink-3)", fontStyle: "italic", lineHeight: 1.5 }}>{f.state.streakNote}</p>}
           </div>
           {/* Execution Truth */}
-          <div className="card" style={{ padding: "12px 14px" }}>
+          <div className="card" style={{ padding: "12px 14px", borderRadius: 6 }}>
             <span className="chip chip-blue" style={{ marginBottom: 10, display: "inline-block", fontSize: 9 }}>Execution</span>
             <MetricRow label="Rating"      value={String(f.exec.rating)} accent={ratingColor} />
             <MetricRow label="Leakage"     value={`${f.exec.leakage}R`}  accent={leakageColor} />
@@ -200,7 +200,7 @@ export default function FrictionPanel({ f }: { f: FrictionReport }) {
             <MetricRow label="Exemptions"  value={String(f.exec.exemptions)} accent="var(--amber)" />
           </div>
           {/* Probabilistic Edge */}
-          <div className="card" style={{ padding: "12px 14px" }}>
+          <div className="card" style={{ padding: "12px 14px", borderRadius: 6 }}>
             <span className="chip chip-green" style={{ marginBottom: 10, display: "inline-block", fontSize: 9 }}>Probabilistic Edge</span>
             <MetricRow label="System SQN"  value={String(f.edge.sqn)}       accent="var(--green)" />
             <MetricRow label="Stress SQN"  value={String(f.edge.stressSqn)} accent="var(--green)" />

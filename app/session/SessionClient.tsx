@@ -274,7 +274,7 @@ function CardHeader({ eyebrow, eyebrowColor, title, badge, actions, right }: {
   badge?: React.ReactNode; actions?: React.ReactNode; right?: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px 10px", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px 10px", padding: "8px 16px", borderBottom: "1px solid var(--line)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
         {eyebrow && <span className="section-eyebrow" style={{ color: eyebrowColor ?? "var(--green)" }}>{eyebrow}</span>}
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)", letterSpacing: "-0.01em" }}>{title}</span>
@@ -2147,7 +2147,7 @@ function RecordTradeForm({ selectedId, hydrate, onSuccess, showToast, baseTZ }: 
 
   return (
     <div className="card" style={{ overflow: "hidden", borderRadius: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "4px 10px", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "4px 10px", padding: "8px 16px", borderBottom: "1px solid var(--line)" }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>Optimal Trade</span>
         <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{nowLabel}</span>
       </div>
@@ -2254,7 +2254,7 @@ function AddCommentForm({ tradeId: initId, fullWidth, isAnalyst, failCompliance,
 
   return (
     <div className="card" style={{ overflow: "hidden", borderRadius: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", borderBottom: "1px solid var(--line)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>Add Comment</span>
           {isAnalyst && (
@@ -2482,7 +2482,7 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
 
   return (
     <div className="card" style={{ overflow: "hidden", borderRadius: 6 }}>
-      <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
           <path d="M3 4h10M3 8h7M3 12h4" stroke="var(--green)" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
@@ -3635,7 +3635,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         position: "relative",
         background: "var(--card)",
         backgroundImage: "linear-gradient(160deg, rgba(255,255,255,0.03) 0%, transparent 50%)",
-        borderRadius: 10,
+        borderRadius: 6,
         border: `1px solid ${running ? "rgba(0,204,122,0.32)" : "var(--line-hi)"}`,
         boxShadow: running ? "0 4px 26px rgba(0,204,122,0.08)" : "0 2px 14px rgba(0,0,0,0.22)",
         transition: "border-color 0.25s, box-shadow 0.25s",
@@ -3650,7 +3650,7 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
         <style>{`@keyframes alarmAccentPulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }`}</style>
 
         {/* ── Header row ── */}
-        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderBottom: showSettings ? "1px solid var(--line)" : "none" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 14px", borderBottom: showSettings ? "1px solid var(--line)" : "none" }}>
           <span style={{
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 24, height: 24, borderRadius: 6, flexShrink: 0,
