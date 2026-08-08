@@ -18,6 +18,15 @@ function Spinner({ size = 14 }: { size?: number }) {
 const MIN_ROWS = 1;
 const MAX_ROWS = 12;
 
+/* Flat outlined action style — matches the FLAT_SUBMIT convention used
+   across the session/governance forms instead of the solid .btn-primary fill. */
+const FLAT_SUBMIT: React.CSSProperties = {
+  fontFamily: "var(--font-mono), monospace", textTransform: "lowercase",
+  background: "transparent", border: "1px solid rgba(0,204,122,0.35)",
+  borderRadius: 5, color: "var(--green)", fontWeight: 700,
+  padding: "9px 16px", fontSize: 12.5, cursor: "pointer",
+};
+
 type View = "list" | "builder";
 
 /**
@@ -177,8 +186,8 @@ export default function SOPBuilderButton() {
             {/* ── List view ─────────────────────────────── */}
             {view === "list" && (
               <>
-                <button type="button" className="btn btn-primary" onClick={openNew} style={{ marginBottom: 16 }}>
-                  + New SOP
+                <button type="button" onClick={openNew} style={{ ...FLAT_SUBMIT, marginBottom: 16 }}>
+                  + new sop
                 </button>
 
                 {loading && (

@@ -1291,8 +1291,21 @@ const ROW_ALT = "rgba(255,255,255,0.025)";
 const CARD: React.CSSProperties = {
   background: "var(--card)",
   border: "1px solid var(--line)",
-  borderRadius: 8,
+  borderRadius: 6,
   padding: "16px 20px",
+};
+
+/* Flat outlined primary-action style — replaces the solid-fill .btn-primary
+   gradient pill across this page, matching the /session route convention. */
+const FLAT_SUBMIT: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid rgba(0,204,122,0.35)",
+  borderRadius: 5,
+  color: "var(--green)",
+  fontWeight: 700,
+  fontFamily: "var(--font-mono), monospace",
+  textTransform: "lowercase",
+  cursor: "pointer",
 };
 
 function MetricCard({ label, value, color, tooltip }: { label: string; value: string; color?: string; tooltip?: string }) {
@@ -1787,32 +1800,31 @@ function DecisionPanel({ m, sections }: { m: InferredMetrics; sections: Section[
   ];
 
   return (
-    <div style={{ background: bgAlpha, border: `1px solid ${borderAlpha}`, borderRadius: 10, padding: "22px 24px", marginBottom: 24 }}>
+    <div style={{ background: bgAlpha, border: `1px solid ${borderAlpha}`, borderRadius: 6, padding: "14px 16px", marginBottom: 16 }}>
 
-      {/* ── Row 1: verdict + recommend R ── */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
+      {/* ── Row 1: verdict + recommend R — spread across the full row so the card's right side carries information too ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, flexWrap: "wrap", marginBottom: 10 }}>
         <div>
-          <div className="mono" style={{ fontSize: 8, letterSpacing: "0.16em", color: statusColor, marginBottom: 6, opacity: 0.75 }}>SYSTEM DECISION</div>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: statusColor, letterSpacing: "0.04em", lineHeight: 1 }}>
+          <div className="mono" style={{ fontSize: 8, letterSpacing: "0.16em", color: statusColor, marginBottom: 4, opacity: 0.75 }}>SYSTEM DECISION</div>
+          <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: statusColor, letterSpacing: "0.04em", lineHeight: 1 }}>
             {parts[0]}
           </div>
           {parts[1] && (
-            <div className="mono" style={{ fontSize: 11, color: statusColor, opacity: 0.65, marginTop: 5, letterSpacing: "0.04em" }}>
+            <div className="mono" style={{ fontSize: 10.5, color: statusColor, opacity: 0.65, marginTop: 3, letterSpacing: "0.04em" }}>
               {parts[1].replace(/_/g, " ")}
             </div>
           )}
         </div>
 
-        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ textAlign: "right" }}>
-            <div className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)", marginBottom: 5 }}>RECOMMEND R</div>
-            <div className="mono" style={{ fontSize: 30, fontWeight: 800, color: m.recommendR > 0 ? "var(--green)" : "var(--amber)", lineHeight: 1 }}>
-              {m.recommendR.toFixed(3)}
+        <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div>
+            <div className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-3)", marginBottom: 3 }}>RECOMMEND R</div>
+            <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: m.recommendR > 0 ? "var(--green)" : "var(--amber)", lineHeight: 1 }}>
+              {m.recommendR.toFixed(3)} <span style={{ fontSize: 9, fontWeight: 400, color: "var(--ink-3)" }}>per trade</span>
             </div>
-            <div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", marginTop: 4 }}>per trade</div>
           </div>
           {primary && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
               <div>
                 <div className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)", marginBottom: 3 }}>SYS HEALTH</div>
                 <HealthBadge health={primary.health} />
@@ -1828,25 +1840,25 @@ function DecisionPanel({ m, sections }: { m: InferredMetrics; sections: Section[
         </div>
       </div>
 
-      {/* ── Row 2: Z-scores ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+      {/* ── Row 2: Z-scores — content-width cells, spread across the full row ── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", justifyContent: "space-between" }}>
         {zItems.map(({ label, value, tip }) => {
           const pos  = value >= 0;
           const mag  = Math.abs(value);
           const col  = mag > 1.5 ? (pos ? "var(--green)" : "var(--red)") : mag > 0.5 ? (pos ? "var(--ink-1)" : "var(--amber)") : "var(--ink-2)";
           return (
-            <div key={label} title={tip} style={{ background: "rgba(0,0,0,0.18)", borderRadius: 6, padding: "10px 12px" }}>
-              <div className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)", marginBottom: 4 }}>{label}</div>
-              <div className="mono" style={{ fontSize: 19, fontWeight: 700, color: col, lineHeight: 1 }}>
+            <div key={label} title={tip} style={{ background: "rgba(0,0,0,0.18)", borderRadius: 5, padding: "6px 10px", display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span className="mono" style={{ fontSize: 8, letterSpacing: "0.10em", color: "var(--ink-3)" }}>{label}</span>
+              <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: col, lineHeight: 1 }}>
                 {pos ? "+" : ""}{value.toFixed(3)}
-              </div>
+              </span>
             </div>
           );
         })}
       </div>
 
       {/* ── Row 3: execution quality ── */}
-      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", paddingTop: 14, borderTop: `1px solid ${borderAlpha}` }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", paddingTop: 10, borderTop: `1px solid ${borderAlpha}` }}>
         {[
           { label: "REALISED R",   value: fmt(m.realisedR, 2),    color: "var(--green)" },
           { label: "PERFECT R",    value: fmt(m.perfectExecuteR, 2), color: "var(--ink-2)" },
@@ -2128,7 +2140,7 @@ function SessionBuilder({
       )}
 
       {/* Row 3: Artifact — Expectancy bars + cumulative R trajectory */}
-      <div style={{ background: "rgba(0,0,0,0.28)", border: "1px solid var(--line-hi)", borderRadius: 11, overflow: "hidden" }}>
+      <div style={{ background: "rgba(0,0,0,0.28)", border: "1px solid var(--line-hi)", borderRadius: 8, overflow: "hidden" }}>
         {/* Chart legend header */}
         {compact ? (
           <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 13px 7px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
@@ -2660,8 +2672,7 @@ export default function AnalyticsClient({ user }: { user: { email?: string; name
                     <button
                       onClick={handleParse}
                       disabled={!raw.trim()}
-                      className="btn btn-primary"
-                      style={{ fontSize: 11, padding: "7px 20px", opacity: raw.trim() ? 1 : 0.4 }}
+                      style={{ ...FLAT_SUBMIT, fontSize: 11, padding: "7px 20px", opacity: raw.trim() ? 1 : 0.4, cursor: raw.trim() ? "pointer" : "not-allowed" }}
                     >
                       Parse Report
                     </button>
@@ -2951,7 +2962,7 @@ function RetroSignoffPanel() {
   }
 
   return (
-    <div style={{ background: "rgba(240,160,48,0.07)", border: "1px solid rgba(240,160,48,0.22)", borderRadius: 10, padding: "16px 20px", marginBottom: 24 }}>
+    <div style={{ background: "rgba(240,160,48,0.07)", border: "1px solid rgba(240,160,48,0.22)", borderRadius: 8, padding: "16px 20px", marginBottom: 24 }}>
       <div className="mono" style={{ fontSize: 8, letterSpacing: "0.16em", color: "var(--amber)", marginBottom: 10, opacity: 0.85 }}>
         MISSING ANALYST SIGN-OFF
       </div>
@@ -3081,27 +3092,21 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
   return (
     <div style={{
       marginTop: 24,
-      background: "linear-gradient(180deg, var(--raised) 0%, var(--card) 100%)",
-      border: "1px solid var(--line-hi)",
-      borderRadius: 14,
+      background: "var(--card)",
+      border: "1px solid var(--line)",
+      borderRadius: 6,
       overflow: "hidden",
-      boxShadow: "0 8px 30px rgba(0,0,0,0.28)",
     }}>
       {/* Header — matches other CARD section headers */}
       <div style={{
-        padding: "13px 22px",
+        padding: "8px 16px",
         borderBottom: "1px solid var(--line)",
         display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap",
-        background: "rgba(255,255,255,0.015)",
       }}>
         <span className="mono" style={{ fontSize: 10.5, letterSpacing: "0.18em", color: "var(--ink-1)", fontWeight: 600 }}>
           SESSION SCHEDULE
         </span>
-        <span style={{
-          fontSize: 8.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5,
-          background: "rgba(77,156,245,0.14)", color: "var(--blue)", letterSpacing: "0.12em",
-          border: "1px solid rgba(77,156,245,0.25)",
-        }}>
+        <span className="mono" style={{ fontSize: 8.5, fontWeight: 700, color: "var(--blue)", letterSpacing: "0.12em" }}>
           STRATEGIST
         </span>
         <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--ink-3)" }}>
@@ -3143,10 +3148,7 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
               ACTIVE WINDOWS
             </span>
             {!loading && windows.length > 0 && (
-              <span style={{
-                fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 4,
-                background: "rgba(0,204,122,0.14)", color: "var(--green)",
-              }}>
+              <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--green)" }}>
                 {windows.length}
               </span>
             )}
@@ -3173,7 +3175,7 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
                   <div key={i} style={{
                     position: "relative",
                     padding: "14px 38px 12px 18px",
-                    borderRadius: 10,
+                    borderRadius: 8,
                     border: "1px solid var(--line-hi)",
                     borderLeft: `3px solid ${edgeColor}`,
                     background: s && s.expect >= 0
@@ -3247,7 +3249,7 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
 
           {/* Composer */}
           <div style={{
-            padding: "15px 16px", borderRadius: 11,
+            padding: "15px 16px", borderRadius: 8,
             border: "1px solid var(--line-hi)",
             background: "var(--sub)",
             display: "flex", flexDirection: "column", gap: 11,
@@ -3324,10 +3326,11 @@ function SessionScheduleConfig({ hourly }: { hourly: Record<string, HourlyRow[]>
                 <button
                   onClick={addWindow}
                   disabled={saving || !timeOk || newDays.length === 0}
-                  className="btn btn-primary"
                   style={{
+                    ...FLAT_SUBMIT,
                     fontSize: 11, padding: "5px 14px",
                     opacity: (saving || !timeOk || newDays.length === 0) ? 0.35 : 1,
+                    cursor: (saving || !timeOk || newDays.length === 0) ? "not-allowed" : "pointer",
                   }}
                 >
                   {saving ? "Saving…" : "+ Add window"}

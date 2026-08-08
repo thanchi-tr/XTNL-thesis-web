@@ -2622,9 +2622,9 @@ function EntryChecklistForm({ baseTZ, onSuccess, showToast, sessionContract }: {
             style={{ flex: 1, padding: "10px 0", borderRadius: 5, background: "var(--sub)", border: "1px solid var(--line-hi)", color: "var(--ink-1)", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>
             Reset
           </button>
-          <button type="submit" disabled={submitting} className="btn btn-primary"
-            style={{ flex: 2, padding: "10px 0", fontSize: 12.5, opacity: submitting ? 0.6 : 1 }}>
-            {submitting ? "Submitting…" : "Submit Plan"}
+          <button type="submit" disabled={submitting}
+            style={{ ...FLAT_SUBMIT, flex: 2, padding: "10px 0", opacity: submitting ? 0.6 : 1, cursor: submitting ? "not-allowed" : "pointer" }}>
+            {submitting ? "submitting…" : "submit plan"}
           </button>
         </div>
       </form>
@@ -4138,15 +4138,20 @@ function AlarmConfig({ showToast, onRunningChange, isAnalystMode, onChallengeSta
                 </div>
               )}
 
-              {/* Action button — same weight as every other primary CTA in the app */}
+              {/* Action button — outlined, matching the flat submit style used across the session forms */}
               <button
                 type="button"
                 disabled={syncing}
                 onClick={scheduleMode === "immediate" ? handleStart : handleSchedule}
-                className="btn btn-primary"
-                style={{ width: "100%", padding: "10px 0", fontSize: 12.5, opacity: syncing ? 0.6 : 1, cursor: syncing ? "wait" : "pointer" }}
+                style={{
+                  width: "100%", padding: "11px 0", fontSize: 12.5,
+                  fontFamily: "var(--font-mono), monospace", textTransform: "lowercase",
+                  background: "transparent", border: "1px solid rgba(0,204,122,0.35)",
+                  borderRadius: 5, color: "var(--green)", fontWeight: 700,
+                  opacity: syncing ? 0.6 : 1, cursor: syncing ? "wait" : "pointer",
+                }}
               >
-                {syncing ? "Syncing…" : scheduleMode === "immediate" ? "Start Alarm" : "Schedule Alarm"}
+                {syncing ? "syncing…" : scheduleMode === "immediate" ? "start alarm" : "schedule alarm"}
               </button>
             </div>
           )}

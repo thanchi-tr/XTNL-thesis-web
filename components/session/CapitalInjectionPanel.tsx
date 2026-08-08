@@ -1,7 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { useSession } from "next-auth/react";
+
+/* Flat outlined primary-action style — matches the /session and /analytics
+   route convention (replaces the solid-fill .btn-primary gradient pill). */
+const FLAT_SUBMIT: CSSProperties = {
+  background: "transparent",
+  border: "1px solid rgba(0,204,122,0.35)",
+  borderRadius: 5,
+  color: "var(--green)",
+  fontWeight: 700,
+  fontFamily: "var(--font-mono), monospace",
+  textTransform: "lowercase",
+  cursor: "pointer",
+};
 
 function Spinner({ size = 14 }: { size?: number }) {
   return (
@@ -159,7 +172,7 @@ export default function CapitalInjectionPanel() {
       </p>
 
       {/* Strategist default fund */}
-      <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
+      <div style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "14px 16px", marginBottom: 16 }}>
         <div className="mono" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.1em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginBottom: 10 }}>
           Strategist Default Fund
         </div>
@@ -184,7 +197,7 @@ export default function CapitalInjectionPanel() {
       </div>
 
       {/* Deploy */}
-      <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "14px 16px" }}>
+      <div style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "14px 16px" }}>
         <div className="mono" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.1em", color: "var(--ink-3)", textTransform: "uppercase" as const, marginBottom: 10 }}>
           Deploy Capital
         </div>
@@ -196,8 +209,7 @@ export default function CapitalInjectionPanel() {
             type="button"
             onClick={deploy}
             disabled={!state.deployable || deploying}
-            className="btn btn-primary"
-            style={{ opacity: !state.deployable ? 0.5 : 1, cursor: !state.deployable ? "not-allowed" : "pointer" }}
+            style={{ ...FLAT_SUBMIT, padding: "9px 20px", fontSize: 12, opacity: !state.deployable ? 0.5 : 1, cursor: !state.deployable ? "not-allowed" : "pointer" }}
           >
             {deploying ? <span style={{ display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Deploying…</span> : "Deploy"}
           </button>

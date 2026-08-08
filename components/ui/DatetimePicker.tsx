@@ -60,17 +60,31 @@ function MoonIcon() {
   );
 }
 
+function CalendarIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+      <rect x="2" y="4" width="12" height="10" rx="1.8" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M5 2v3M11 2v3M2 7.5h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// Combined pill: AM/PM icon + label + calendar icon all share the one
+// colored background, and sit together at the trigger's right edge —
+// instead of the AM/PM badge living next to the date text and the
+// calendar icon floating alone on the far right.
 function AmPmBadge({ ampm }: { ampm: "AM" | "PM" }) {
   const c = AMPM_COLOR[ampm];
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", gap: 3,
-      padding: "1.5px 6px", borderRadius: 4,
+      display: "inline-flex", alignItems: "center", gap: 5,
+      padding: "3px 7px", borderRadius: 5,
       fontSize: 10, fontWeight: 800, letterSpacing: "0.03em",
       background: c.bg, color: c.fg, flexShrink: 0,
     }}>
       {ampm === "AM" ? <SunIcon /> : <MoonIcon />}
       {ampm}
+      <CalendarIcon />
     </span>
   );
 }
@@ -282,15 +296,13 @@ export function DatetimePicker({ value, onChange, style, required }: Props) {
           color: !!parsed ? "var(--ink-0)" : "var(--ink-3)",
           fontFamily: "var(--font-mono, monospace)",
           letterSpacing: "0.01em",
-          display: "flex", alignItems: "center", gap: 7, minWidth: 0,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0,
         }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{disp.dateTime}</span>
-          {disp.ampm && <AmPmBadge ampm={disp.ampm} />}
+          {disp.dateTime}
         </span>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: "var(--ink-2)", opacity: 0.7 }}>
-          <rect x="2" y="4" width="12" height="10" rx="1.8" stroke="currentColor" strokeWidth="1.3"/>
-          <path d="M5 2v3M11 2v3M2 7.5h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-        </svg>
+        {disp.ampm
+          ? <AmPmBadge ampm={disp.ampm} />
+          : <span style={{ color: "var(--ink-2)", opacity: 0.7, flexShrink: 0 }}><CalendarIcon /></span>}
       </button>
 
       {open && typeof window !== "undefined" && createPortal(

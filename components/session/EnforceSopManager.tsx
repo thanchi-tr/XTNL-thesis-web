@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import type { SopRow } from "@/lib/sopTypes";
@@ -12,6 +12,19 @@ const MAX_ROWS = 12;
 
 const SOPS_CACHE_KEY   = "xtnl_sop_checklists_cache_v1";
 const BASELINE_CACHE_KEY = "xtnl_sop_enforcement_baseline_cache_v1";
+
+/* Flat outlined primary-action style — matches the /session and /analytics
+   route convention (replaces the solid-fill .btn-primary gradient pill). */
+const FLAT_SUBMIT: CSSProperties = {
+  background: "transparent",
+  border: "1px solid rgba(0,204,122,0.35)",
+  borderRadius: 5,
+  color: "var(--green)",
+  fontWeight: 700,
+  fontFamily: "var(--font-mono), monospace",
+  textTransform: "lowercase",
+  cursor: "pointer",
+};
 
 interface BaselineCache { ids: number[]; weekKey: string | null }
 
@@ -369,7 +382,7 @@ export default function EnforceSopManager() {
 
       {/* Submit / Revert */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 22, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
-        <button type="button" onClick={handleSubmit} disabled={saving || !dirty} className="btn btn-primary" style={{ opacity: !dirty ? 0.5 : 1 }}>
+        <button type="button" onClick={handleSubmit} disabled={saving || !dirty} style={{ ...FLAT_SUBMIT, padding: "9px 20px", fontSize: 12, opacity: !dirty ? 0.5 : 1 }}>
           {saving ? <span style={{ display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Submitting…</span> : "Submit"}
         </button>
         <button type="button" onClick={handleRevert} disabled={saving || !dirty} className="btn btn-ghost" style={{ opacity: !dirty ? 0.5 : 1 }}>
@@ -399,7 +412,7 @@ export default function EnforceSopManager() {
             style={{
               width: "100%", maxWidth: 640,
               background: "var(--card)", border: "1px solid var(--line)",
-              borderRadius: 10, boxShadow: "0 8px 56px rgba(0,0,0,0.72)",
+              borderRadius: 8, boxShadow: "0 8px 56px rgba(0,0,0,0.72)",
               padding: 28,
             }}
           >
@@ -452,7 +465,7 @@ export default function EnforceSopManager() {
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
                   <button type="button" onClick={closeDetail} className="btn btn-ghost">Close</button>
                   {canEdit && (
-                    <button type="button" onClick={startEdit} className="btn btn-primary">Edit</button>
+                    <button type="button" onClick={startEdit} style={{ ...FLAT_SUBMIT, padding: "9px 20px", fontSize: 12 }}>Edit</button>
                   )}
                 </div>
               </div>
@@ -554,7 +567,7 @@ export default function EnforceSopManager() {
 
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
                   <button type="button" onClick={() => setDetailMode("view")} className="btn btn-ghost">Cancel</button>
-                  <button type="button" onClick={saveEdit} disabled={editSaving} className="btn btn-primary">
+                  <button type="button" onClick={saveEdit} disabled={editSaving} style={{ ...FLAT_SUBMIT, padding: "9px 20px", fontSize: 12, opacity: editSaving ? 0.6 : 1 }}>
                     {editSaving
                       ? <span style={{ display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Saving…</span>
                       : "Save Changes"}

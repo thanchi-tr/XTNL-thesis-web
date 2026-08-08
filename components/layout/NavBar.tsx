@@ -9,7 +9,6 @@ import XtnlLogo from "@/components/ui/XtnlLogo";
 
 const LINKS: { href: string; label: string; roles: string[] | null; hideWhenAuthed: boolean; accent: boolean }[] = [
   { href: "/",           label: "Overview",   roles: null,                                    hideWhenAuthed: false, accent: false },
-  { href: "/about",      label: "About",      roles: null,                                    hideWhenAuthed: false, accent: false },
   { href: "/prospectus", label: "Prospectus", roles: null,                                    hideWhenAuthed: false, accent: false },
   { href: "/model",      label: "Simulator",  roles: null,                                    hideWhenAuthed: true,  accent: false },
   { href: "/data",       label: "Data",       roles: ["analyst", "fund_manager"],             hideWhenAuthed: false, accent: true  },

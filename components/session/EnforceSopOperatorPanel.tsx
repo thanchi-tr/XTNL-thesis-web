@@ -180,12 +180,18 @@ export default function EnforceSopOperatorPanel({ onSuccess }: { onSuccess?: () 
             type="button"
             onClick={handleSubmit}
             disabled={submitting || !allChecked}
-            className="btn btn-primary"
-            style={{ width: "100%", opacity: submitting || !allChecked ? 0.5 : 1 }}
+            style={{
+              width: "100%", padding: "11px 0", fontSize: 12.5,
+              fontFamily: "var(--font-mono), monospace", textTransform: "lowercase",
+              background: "transparent", border: "1px solid rgba(0,204,122,0.35)",
+              borderRadius: 5, color: "var(--green)", fontWeight: 700,
+              opacity: submitting || !allChecked ? 0.5 : 1,
+              cursor: submitting || !allChecked ? "not-allowed" : "pointer",
+            }}
           >
             {submitting
-              ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> Submitting…</span>
-              : completedIds.has(selected.id) ? "Submit again" : "Submit"}
+              ? <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}><Spinner /> syncing…</span>
+              : completedIds.has(selected.id) ? "submit again" : "submit"}
           </button>
           {completedIds.has(selected.id) && (
             <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--green)", textAlign: "center" }}>✓ Logged as completed</p>
